@@ -1,27 +1,33 @@
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path.cwd()))
-from core.data import DataLoader, DataProcessor
-from core.config import config
-from core.logger import Logger
 from tqdm import tqdm
 import numpy as np
 import torch
 from sklearn.neighbors import NearestNeighbors
-from torch_geometric.data import Data  # type: ignore
+from torch_geometric.data import Data  
 import pickle
 import math
 from sklearn.model_selection import StratifiedShuffleSplit
-import ray # type: ignore
+import ray 
+
+sys.path.insert(0, str(Path.cwd()))
+
+from core.data import DataLoader, DataProcessor
+from core.logger import Logger
 
 
 class Graph:
-    def __init__(self):
-        self.bidirectional = config.graph.bidirectional
+    def __init__(self, config):
+        self.config           = config
+        self.bidirectional    = config.graph.bidirectional
+        self.k_neighbors      = config.graph.k_neighbors
+        self.knn_algorithm    = config.graph.knn_algorithm
+        self.light_column     = config.data.light_column
+        self.position_columns = config.data.position_columns
 
     def _create_nodes(self, event_dataframe):
-        light_col     = config.data.light_column
-        position_cols = list(config.data.position_columns)
+        light_col     = self.light_column
+        position_cols = list(self.position_columns)
         
         positions       = event_dataframe[position_cols].values.astype(np.float32)
         light_intensity = event_dataframe[light_col].fillna(0.0).values.astype(np.float32)
@@ -33,13 +39,13 @@ class Graph:
         return x, event_dataframe
 
     def _create_edges(self, node_dataframe):
-        position_columns = list(config.data.position_columns)
+        position_columns = list(self.position_columns)
         positions_array  = node_dataframe[position_columns].values.astype(np.float32)
 
         number_of_nodes = int(positions_array.shape[0])
-        effective_k     = max(1, min(int(config.graph.k_neighbors), number_of_nodes - 1))
+        effective_k     = max(1, min(int(self.k_neighbors), number_of_nodes - 1))
 
-        knn = NearestNeighbors(n_neighbors=effective_k + 1, algorithm=config.graph.knn_algorithm)
+        knn = NearestNeighbors(n_neighbors=effective_k + 1, algorithm=self.knn_algorithm)
         knn.fit(positions_array)
         neighbor_distances_array, neighbor_indices_array = knn.kneighbors(positions_array)
 
@@ -76,36 +82,52 @@ class Graph:
 
 
 class DatasetBuilder:
-    def __init__(self, output_dir, logger: Logger):
+    def __init__(self, output_dir, logger: Logger, config):
         self.logger = logger
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.config = config
+        self.zscore_threshold     = config.preprocessing.zscore_threshold
+        self.radius               = config.preprocessing.radius
+        self.scale_factor         = config.preprocessing.scale_factor
+        self.detection_efficiency = config.preprocessing.detection_efficiency
+        self.random_state         = config.split.random_state
+        self.coordinate_columns   = config.data.coordinate_columns
     
+        self.logger.section("[Dataset Builder]")
+        self.logger.subsection(f"Graph bidirectional : {config.graph.bidirectional}")
+        self.logger.subsection(f"Graph k_neighbors   : {config.graph.k_neighbors}")
+        self.logger.subsection(f"Graph knn_algorithm : {config.graph.knn_algorithm}")
+
     def _load_data(self):
         self.logger.subsection("Loading data")
-        loader = DataLoader(logger=self.logger)
+        loader = DataLoader(logger=self.logger, config=self.config)
         dataframes, target_df = loader.load()
-        self.logger.info(f"Loaded {len(dataframes)} events")
+        self.logger.subsection(f"Loaded {len(dataframes)} events")
         return dataframes, target_df
     
     def _process_data(self, dataframes):
         self.logger.subsection("Processing data")
-        preprocessor = DataProcessor(logger=self.logger)
+        preprocessor = DataProcessor(logger=self.logger, config=self.config)
 
         dataframes, outliers = preprocessor.detect_spatial_outliers(
             dataframes, 
-            config.preprocessing.zscore_threshold,
-            config.preprocessing.radius
+            self.zscore_threshold,
+            self.radius
         )
 
         total_outliers = sum(len(df) for df in outliers)
-        self.logger.info(f"Total outliers removed: {total_outliers}")
+        self.logger.subsection(f"Total outliers removed: {total_outliers}")
 
-        dataframes = preprocessor.scale_light_intensity(dataframes, config.preprocessing.scale_factor)
+        dataframes = preprocessor.scale_light_intensity(
+            dataframes, 
+            self.scale_factor
+        )
+        
         dataframes = preprocessor.apply_detection_efficiency(
             dataframes, 
-            config.preprocessing.detection_efficiency, 
-            seed=config.split.random_state
+            self.detection_efficiency, 
+            seed=self.random_state
         )
 
         dataframes = preprocessor.apply_log_transform(dataframes)
@@ -117,16 +139,16 @@ class DatasetBuilder:
         
         @ray.remote
         def build_graph_remote(event_df):
-            graph_builder = Graph()
+            graph_builder = Graph(config=self.config)
             graph = graph_builder.build_graph(event_df)
             return graph
         
-        self.logger.info(f"Building {len(dataframes)} graphs in parallel with Ray")
+        self.logger.subsection(f"Building {len(dataframes)} graphs in parallel with Ray")
         futures = [build_graph_remote.remote(df) for idx, df in enumerate(dataframes)]
 
         graphs = []
         batch_size = min(50, max(10, len(futures) // 20))
-        self.logger.info(f"Processing graph building with batch size {batch_size}")
+        self.logger.subsection(f"Processing graph building with batch size {batch_size}")
         with tqdm(total=len(futures), desc="Building graphs") as pbar:
             while futures:
                 ready, futures = ray.wait(futures, num_returns=min(batch_size, len(futures)))
@@ -135,20 +157,23 @@ class DatasetBuilder:
 
         num_nodes = [graph.x.shape[0] for graph in graphs]
         num_edges = [graph.edge_index.shape[1] for graph in graphs]
-        self.logger.info(f"Graphs: {len(graphs)} | Nodes: {np.mean(num_nodes):.0f}±{np.std(num_nodes):.0f} | Edges: {np.mean(num_edges):.0f}±{np.std(num_edges):.0f}")
+        
+        self.logger.subsection(f"Graphs: {len(graphs)}")
+        self.logger.subsection(f"Nodes: {np.mean(num_nodes):.0f}±{np.std(num_nodes):.0f}")
+        self.logger.subsection(f"Edges: {np.mean(num_edges):.0f}±{np.std(num_edges):.0f} \n")
         return graphs
 
     def _build_dataset(self, graphs, target_df):
         self.logger.subsection("Building dataset")
         dataset    = []
-        coord_cols = list(config.data.coordinate_columns)
+        coord_cols = list(self.coordinate_columns)
         
         for idx, graph in tqdm(enumerate(graphs), desc="Building dataset", total=len(graphs)):
             label   = torch.tensor(target_df.iloc[idx][coord_cols].values, dtype=torch.float32)
             graph.y = label.unsqueeze(0)
             dataset.append(graph)
 
-        self.logger.info(f"Dataset built with {len(dataset)} graphs")
+        self.logger.subsection(f"Dataset built with {len(dataset)} graphs \n")
         return dataset
 
     def _save_artifacts(self, dataset, target_df):
@@ -157,16 +182,19 @@ class DatasetBuilder:
         config_path = self.output_dir / "config.pkl"
         
         chunk_size = 100  
-        self.logger.info(f"Saving dataset in chunks of size {chunk_size}")
+        self.logger.subsection(f"Saving dataset in chunks of size {chunk_size}")
         num_chunks = math.ceil(len(dataset) / chunk_size)
-        self.logger.info(f"Saving dataset in {num_chunks} chunks")
+        self.logger.subsection(f"Saving dataset in {num_chunks} chunks")
+        
+        chunks_dir = self.output_dir / "chunks"
+        chunks_dir.mkdir(parents=True, exist_ok=True)
         
         for chunk_idx in tqdm(range(num_chunks), desc="Saving chunks"):
             start_idx = chunk_idx * chunk_size
             end_idx = min((chunk_idx + 1) * chunk_size, len(dataset))
             chunk = dataset[start_idx:end_idx]
             
-            chunk_path = self.output_dir / f"dataset_chunk_{chunk_idx}.pt"
+            chunk_path = self.output_dir / "chunks" / f"dataset_chunk_{chunk_idx}.pt"
             torch.save(chunk, chunk_path)
         
         metadata = {
@@ -183,9 +211,10 @@ class DatasetBuilder:
             pickle.dump(target_df, f)
 
         config_dict = {
-            'data_config'          : config.data,
-            'graph_config'         : config.graph,
-            'preprocessing_config' : config.preprocessing,
+            'data_config'          : self.config.data,
+            'graph_config'         : self.config.graph,
+            'preprocessing_config' : self.config.preprocessing,
+            'split_config'         : self.config.split,
             'dataset_len'          : len(dataset),
             'num_targets'          : len(target_df),
         }
@@ -193,18 +222,18 @@ class DatasetBuilder:
         with open(config_path, 'wb') as f:
             pickle.dump(config_dict, f)
         
-        self.logger.info(f"Artifacts saved: {self.output_dir.name} ({num_chunks} chunks)")
+        self.logger.subsection(f"Artifacts saved: {self.output_dir.name} ({num_chunks} chunks) \n")
 
     def run(self):
         self.logger.section("[Dataset Builder]")
-        self.logger.info(f"Output directory: {self.output_dir}")
+        self.logger.subsection(f"Output directory: {self.output_dir}")
         dataframes, target_df = self._load_data()
         dataframes            = self._process_data(dataframes)
         graphs                = self._build_graphs(dataframes)
         dataset               = self._build_dataset(graphs, target_df)
-        self.logger.info(f"Dataset built: {len(dataset)} graphs")
+        self.logger.subsection(f"Dataset built: {len(dataset)} graphs \n")
         self._save_artifacts(dataset, target_df)
-        self.logger.info("Dataset building process completed successfully")
+        self.logger.subsection("Dataset building process completed successfully \n")
 
 
 class DatasetNormalizer:
@@ -223,9 +252,10 @@ class DatasetNormalizer:
         self._compute_node_statistics(source_graphs)
         self._compute_edge_statistics(source_graphs)
         self._compute_target_statistics(source_graphs)
-        self.logger.info(f"Computed statistics from '{self.source_split}' split")
+        self.logger.subsection(f"Computed statistics from '{self.source_split}' split \n")
 
     def _compute_node_statistics(self, source_graphs):
+        self.logger.section("[Node statistics]")
         all_features = []
         for graph in source_graphs:
             if graph.x.numel() > 0:
@@ -235,9 +265,11 @@ class DatasetNormalizer:
         all_features   = np.vstack(all_features)
         self.node_mean = all_features.mean(axis=0)
         self.node_std  = all_features.std(axis=0) + 1e-8
-        self.logger.info(f"Node statistics: mean shape={self.node_mean.shape}, std shape={self.node_std.shape}")
+        
+        self.logger.subsection(f"Before - Node mean: {self.node_mean}, std: {self.node_std} \n")
 
     def _compute_edge_statistics(self, source_graphs):
+        self.logger.section("[Edge statistics]")
         all_edge_attrs = []
         for graph in source_graphs:
             if graph.edge_attr.numel() > 0:
@@ -247,9 +279,10 @@ class DatasetNormalizer:
         all_edge_attrs = np.vstack(all_edge_attrs)
         self.edge_mean = all_edge_attrs.mean(axis=0)
         self.edge_std  = all_edge_attrs.std(axis=0) + 1e-8
-        self.logger.info(f"Edge statistics: mean shape={self.edge_mean.shape}, std shape={self.edge_std.shape}")
+        self.logger.subsection(f"Before - Edge mean: {self.edge_mean}, std: {self.edge_std} \n")
         
     def _compute_target_statistics(self, source_graphs):
+        self.logger.section("[Target statistics]")
         all_targets = []
         for graph in source_graphs:
             if hasattr(graph, 'y') and graph.y is not None and graph.y.numel() > 0:
@@ -259,37 +292,53 @@ class DatasetNormalizer:
         all_targets      = np.vstack(all_targets)
         self.target_mean = all_targets.mean(axis=0)
         self.target_std  = all_targets.std(axis=0) + 1e-8
-        self.logger.info(f"Target statistics: mean shape={self.target_mean.shape}, std shape={self.target_std.shape}")
+        self.logger.subsection(f"Before - Target mean: {self.target_mean}, std: {self.target_std} \n")
         
     def normalize(self, splits):
+        self.logger.section("[Normalizing splits]")
         for split_name, graphs in splits.items():
             for graph in graphs:
                 graph.x = (graph.x - torch.tensor(self.node_mean, dtype=torch.float32)) / torch.tensor(self.node_std, dtype=torch.float32)
                 graph.edge_attr = (graph.edge_attr - torch.tensor(self.edge_mean, dtype=torch.float32)) / torch.tensor(self.edge_std, dtype=torch.float32)
 
-                mean_t = torch.tensor(self.target_mean, dtype=torch.float32)
-                std_t = torch.tensor(self.target_std, dtype=torch.float32)
+                mean_t  = torch.tensor(self.target_mean, dtype=torch.float32)
+                std_t   = torch.tensor(self.target_std,  dtype=torch.float32)
                 graph.y = (graph.y - mean_t) / std_t
+
+        train_graphs = splits[self.source_split]
+        node_after   = np.vstack([g.x.numpy() for g in train_graphs]).mean(axis=0), np.vstack([g.x.numpy() for g in train_graphs]).std(axis=0)
+        edge_after   = np.vstack([g.edge_attr.numpy() for g in train_graphs]).mean(axis=0), np.vstack([g.edge_attr.numpy() for g in train_graphs]).std(axis=0)
+        target_after = np.vstack([g.y.numpy() for g in train_graphs]).mean(axis=0), np.vstack([g.y.numpy() for g in train_graphs]).std(axis=0)
+        
+        self.logger.subsection(f"After - Node mean   : {node_after[0]},   std : {node_after[1]}")
+        self.logger.subsection(f"After - Edge mean   : {edge_after[0]},   std : {edge_after[1]}")
+        self.logger.subsection(f"After - Target mean : {target_after[0]}, std : {target_after[1]} \n")
         
         return splits
 
 
 class DatasetLoader:
-    def __init__(self, preprocessed_dir, logger: Logger):
-        self.preprocessed_dir = Path(preprocessed_dir)
-        self.config           = None
-        self.logger           = logger
+    def __init__(self, preprocessed_dir, logger: Logger, config=None):
+        self.config               = config
+        self.logger               = logger
+        self.coordinate_columns   = config.data.coordinate_columns
+        self.preprocessed_dir     = Path(preprocessed_dir)
 
-    def _balance_targets(self, target_df):
-        data_config = self.config.data
-        coord_cols = list(data_config.coordinate_columns)
+    def _balance_targets(self, target_df):   
+        self.logger.section("[Balancing targets]")
         
-        Y = target_df[coord_cols].to_numpy(dtype=np.float32)
+        Y = target_df[list(self.coordinate_columns)].to_numpy(dtype=np.float32)
         N = len(Y)
 
-        self.logger.subsection("Performing stratified split")
+        self.logger.subsection("Target distribution (before balancing)")
+        self.logger.subsection(f"Full dataset (N={N}):")
+        for dim_idx, col in enumerate(self.coordinate_columns):
+            self.logger.subsection(f"  {col:10s}: mean={Y[:, dim_idx].mean():7.4f}, std={Y[:, dim_idx].std():7.4f}, "
+                           f"min={Y[:, dim_idx].min():7.4f}, max={Y[:, dim_idx].max():7.4f}")
+
         n_bins = min(10, N // 10)  
-        self.logger.info(f"Binning coordinates into {n_bins} bins per dimension")
+        self.logger.subsection("Performing stratified split")
+        self.logger.subsection(f"Binning coordinates into {n_bins} bins per dimension")
         
         binned_coords = []
         for dim in range(Y.shape[1]):
@@ -304,22 +353,39 @@ class DatasetLoader:
         n_bins_actual = max(len(np.unique(bc)) for bc in binned_coords.T)
         strat_labels  = (binned_coords[:, 0] * n_bins_actual**2 + binned_coords[:, 1] * n_bins_actual + binned_coords[:, 2])
         
-        self.logger.info(f"Created {len(np.unique(strat_labels))} unique stratification groups")
-        
-        sss_test                = StratifiedShuffleSplit(n_splits=1, test_size=config.split.test_size, random_state=config.split.random_state)
+        self.logger.subsection(f"Created {len(np.unique(strat_labels))} unique stratification groups")
+        split_config = self.config.split
+       
+        sss_test                = StratifiedShuffleSplit(n_splits=1, test_size=split_config.test_size, random_state=split_config.random_state)
         train_val_idx, test_idx = next(sss_test.split(np.arange(N), strat_labels))
         
-        val_ratio_adjusted = config.split.val_ratio / (1 - config.split.test_size)
-        sss_val            = StratifiedShuffleSplit(n_splits=1, test_size=val_ratio_adjusted, random_state=config.split.random_state)
+        val_ratio_adjusted = split_config.val_ratio / (1 - split_config.test_size)
+        sss_val            = StratifiedShuffleSplit(n_splits=1, test_size=val_ratio_adjusted, random_state=split_config.random_state)
         train_idx, val_idx = next(sss_val.split(train_val_idx, strat_labels[train_val_idx]))
         
         train_idx = train_val_idx[train_idx]
         val_idx   = train_val_idx[val_idx]
 
-        self.logger.info(f"Split sizes: train={len(train_idx)} | val={len(val_idx)} | test={len(test_idx)}")
+        self.logger.subsection(f"Split sizes: train={len(train_idx)} | val={len(val_idx)} | test={len(test_idx)}")
+        
+        self.logger.subsection("Target distribution (after balancing)")
+        for split_name, indices in [("Train", train_idx), ("Val", val_idx), ("Test", test_idx)]:
+            self.logger.subsection(f"{split_name} split (N={len(indices)}):")
+            for dim_idx, col in enumerate(self.coordinate_columns):
+                split_data = Y[indices, dim_idx]
+                self.logger.subsection(f"  {col:10s}: mean={split_data.mean():7.4f}, std={split_data.std():7.4f}, "
+                               f"min={split_data.min():7.4f}, max={split_data.max():7.4f}")
+        
+        self.logger.subsection("Stratification group distribution")
+        for split_name, indices in [("Train", train_idx), ("Val", val_idx), ("Test", test_idx)]:
+            unique_groups = np.unique(strat_labels[indices])
+            self.logger.subsection(f"{split_name}: {len(unique_groups)} unique groups represented")
+        
+        self.logger.subsection("")
         return train_idx, val_idx, test_idx, Y, N
 
     def _attach_targets(self, graph_splits, idx_splits, Y: np.ndarray):
+        self.logger.section("[Attaching targets to graphs]")
         train_graphs, val_graphs, test_graphs = graph_splits
         train_idx,    val_idx,    test_idx    = idx_splits
 
@@ -333,10 +399,10 @@ class DatasetLoader:
         val_dataset   = _attach(val_graphs,   val_idx)
         test_dataset  = _attach(test_graphs,  test_idx)
 
-        self.logger.info(f"Targets attached to splits: train={len(train_dataset)} | val={len(val_dataset)} | test={len(test_dataset)}")
+        self.logger.subsection(f"Targets attached to splits: train={len(train_dataset)} | val={len(val_dataset)} | test={len(test_dataset)} \n")
         return train_dataset, val_dataset, test_dataset
 
-    def _normalize(self, splits, data_config):
+    def _normalize(self, splits):
         self.logger.subsection("Normalizing dataset")
         normalizer = DatasetNormalizer(logger=self.logger, source_split="train")
         normalizer.compute_stats(splits)
@@ -351,10 +417,11 @@ class DatasetLoader:
             "target_std" : normalizer.target_std,
         }
 
-        self.logger.info("Dataset normalization completed")
+        self.logger.subsection("Dataset normalization completed \n")
         return splits, metrics
 
     def _load_artifacts(self):
+        self.logger.section("[Loading artifacts]")  
         tp = self.preprocessed_dir / "target.pkl"
         cp = self.preprocessed_dir / "config.pkl"
         
@@ -366,16 +433,33 @@ class DatasetLoader:
         num_chunks = metadata['num_chunks']
         graphs = []
         
-        self.logger.info(f"Loading dataset from {num_chunks} chunks")
+        self.logger.subsection(f"Loading dataset from {num_chunks} chunks")
         for chunk_idx in tqdm(range(num_chunks), desc="Loading chunks"):
-            chunk_path = self.preprocessed_dir / f"dataset_chunk_{chunk_idx}.pt"
+            chunk_path = self.preprocessed_dir / "chunks" / f"dataset_chunk_{chunk_idx}.pt"
             chunk = torch.load(chunk_path, weights_only=False)
             graphs.extend(chunk)
      
         with open(tp, "rb") as f: target_df = pickle.load(f)
         with open(cp, "rb") as f: config    = pickle.load(f)
         
-        self.config = config
-        self.logger.info(f"Loaded artifacts from: {self.preprocessed_dir}")
+        self.logger.subsection(f"Loaded artifacts from: {self.preprocessed_dir} \n")
         return graphs, target_df, config
-    
+
+    def run(self):
+        self.logger.section("[Dataset Loader]")
+        graphs, target_df, saved_config = self._load_artifacts()
+        
+        train_idx, val_idx, test_idx, Y, N = self._balance_targets(target_df)
+        idx = (train_idx, val_idx, test_idx)
+        
+        train_balanced_graphs = [graphs[i] for i in train_idx]
+        val_balanced_graphs   = [graphs[i] for i in val_idx]
+        test_balanced_graphs  = [graphs[i] for i in test_idx]
+        
+        balanced_graphs = (train_balanced_graphs, val_balanced_graphs, test_balanced_graphs)
+        
+        raw_train_dataset, raw_val_dataset, raw_test_dataset = self._attach_targets(balanced_graphs, idx, Y)
+        raw_split = {"train": raw_train_dataset, "val": raw_val_dataset, "test": raw_test_dataset}
+        norm_split, norm_metrics = self._normalize(raw_split)
+        
+        return norm_split, norm_metrics, saved_config

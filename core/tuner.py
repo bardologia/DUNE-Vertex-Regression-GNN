@@ -1,20 +1,24 @@
-from logging import config
-import numpy as np
+
 import optuna
-from core import configder import DataLoader # type: ignore
 from pathlib import Path
+
+from torch_geometric.loader import DataLoader
 from .model import Model
 from .trainer import Trainer
-from logger import Logger
+from core.logger import Logger
 
-
-class GNNTuner:
-    def __init__(self, norm_metrics=None, dataset_config=None, config=None):
+class Tuner:
+    def __init__(self, norm_metrics=None, dataset_config=None, config=None, logger=None):
         self.study          = None
         self.norm_metrics   = norm_metrics
         self.dataset_config = dataset_config or {}
         self.config         = config
-        self.logger         = Logger(log_dir=None, name="GNNTuner", level="INFO")
+        self.logger         = logger
+        self.epochs         = self.config.tuning.epochs
+        self.n_trials       = self.config.tuning.n_trials
+        self.warmup_trials  = self.config.tuning.warmup_trials
+        self.random_state   = self.config.split.random_state
+        self.warmup_steps   = self.config.tuning.warmup_steps
 
     def _suggest_hyperparameters(self, trial):
         gcn_layers      = 3
@@ -69,8 +73,8 @@ class GNNTuner:
         self.config.training.batch_size = 128
         self.config.training.verbose    = False
         
-        trial_log_dir    = Path(self.config.io.logdir).parent / f"optuna_trial_{trial.number}"
-        self.config.io.logdir = str(trial_log_dir)
+        trial_log_dir    = Path(self.config.io.tunerdir) / f"optuna_trial_{trial.number}"
+        self.config.io.tunerdir = str(trial_log_dir)
         
         model = Model(self.config)
         
@@ -88,8 +92,8 @@ class GNNTuner:
             num_workers=0,
         )
         
-        logger = Logger(log_dir=self.config.io.logdir, name=f"trial_{trial.number}", level="WARNING")
-        
+        logger = Logger(log_dir=self.config.io.tunerdir, name=f"trial_{trial.number}", level="WARNING")
+                
         trainer = Trainer(
             model          = model,
             norm           = self.norm_metrics,
@@ -102,7 +106,7 @@ class GNNTuner:
         best_val = float("inf")
 
         try:
-            for epoch in range(self.config.training.epochs):
+            for epoch in range(self.config.tuning.epochs):
                 train_loss  = trainer.train_epoch(train_loader, epoch)
                 val_results = trainer.evaluate(val_loader, epoch, stage="validation")
                 val_loss    = val_results["avg_loss"]
@@ -111,8 +115,6 @@ class GNNTuner:
                 if val_loss < best_val:
                     best_val = float(val_loss)
 
-                trainer.tracker.log_scalar("validation/epoch_log_loss", np.log1p(val_loss),   epoch_num)
-                trainer.tracker.log_scalar("training/epoch_log_loss",   np.log1p(train_loss), epoch_num)
                 trainer.lr_scheduler.step()
 
                 trial.report(val_loss, step=epoch)
@@ -123,16 +125,14 @@ class GNNTuner:
                 if trainer.early_stopping(val_loss, trainer.model):
                     trainer.early_stopping.restore_model(trainer.model)
                     break
-
         finally:
             logger.close()
-            if hasattr(self.config.io, 'writer') and self.config.io.writer:
-                self.config.io.writer.close()
+            self.config.io.writer.close()
 
         trial.set_user_attr("val_loss_curve", trainer.val_losses)
         return best_val
 
-    def _optimize(self, train_dataset, val_dataset, n_trials):
+    def optimize(self, train_dataset, val_dataset, n_trials):
         optuna.logging.set_verbosity(optuna.logging.WARNING)
 
         sampler = optuna.samplers.TPESampler(seed=self.config.split.random_state)
@@ -140,7 +140,7 @@ class GNNTuner:
         self.study = optuna.create_study(
             direction="minimize", 
             sampler=sampler,
-            pruner=optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=5)
+            pruner=optuna.pruners.MedianPruner(n_startup_trials=self.warmup_trials, n_warmup_steps=self.warmup_steps)
         )
 
         self.study.optimize(
@@ -150,10 +150,10 @@ class GNNTuner:
         )
 
         self.logger.section("[Optimization Complete]")
-        self.logger.info(f"Best validation loss: {self.study.best_value:.6f}")
+        self.logger.subsection(f"Best validation loss: {self.study.best_value:.6f}")
         self.logger.subsection("Best hyperparameters:")
         for key, value in self.study.best_trial.params.items():
-            self.logger.info(f"  {key}: {value}")
+            self.logger.subsection(f"  {key}: {value}")
 
         return self.study
 
@@ -178,25 +178,17 @@ class GNNTuner:
         
         self.logger.section("[Applied Best Hyperparameters to Global Config]")
         self.logger.subsection("Model Configuration:")
-        self.logger.info(f"  GCN hidden dims: {self.config.model.gcn_hidden_dims}")
-        self.logger.info(f"  Regression hidden dims: {self.config.model.regression_hidden_dims}")
-        self.logger.info(f"  GAT heads: {self.config.model.gat_heads}")
-        self.logger.info(f"  GAT dropout: {self.config.model.gat_dropout}")
-        self.logger.info(f"  Regression dropout: {self.config.model.regression_dropout}")
+        self.logger.subsection(f"  GCN hidden dims: {self.config.model.gcn_hidden_dims}")
+        self.logger.subsection(f"  Regression hidden dims: {self.config.model.regression_hidden_dims}")
+        self.logger.subsection(f"  GAT heads: {self.config.model.gat_heads}")
+        self.logger.subsection(f"  GAT dropout: {self.config.model.gat_dropout}")
+        self.logger.subsection(f"  Regression dropout: {self.config.model.regression_dropout}")
         self.logger.subsection("Optimizer Configuration:")
-        self.logger.info(f"  LR regression head: {self.config.optimizer.lr_regression_head}")
-        self.logger.info(f"  LR pool: {self.config.optimizer.lr_pool}")
-        self.logger.info(f"  LR GCN: {self.config.optimizer.lr_gcn}")
-        self.logger.info(f"  Weight decay regression head: {self.config.optimizer.weight_decay_regression_head}")
-        self.logger.info(f"  Weight decay pool: {self.config.optimizer.weight_decay_pool}")
-        self.logger.info(f"  Weight decay GCN: {self.config.optimizer.weight_decay_gcn}")
+        self.logger.subsection(f"  LR regression head: {self.config.optimizer.lr_regression_head}")
+        self.logger.subsection(f"  LR pool: {self.config.optimizer.lr_pool}")
+        self.logger.subsection(f"  LR GCN: {self.config.optimizer.lr_gcn}")
+        self.logger.subsection(f"  Weight decay regression head: {self.config.optimizer.weight_decay_regression_head}")
+        self.logger.subsection(f"  Weight decay pool: {self.config.optimizer.weight_decay_pool}")
+        self.logger.subsection(f"  Weight decay GCN: {self.config.optimizer.weight_decay_gcn}")
         
         return self.config
-
-    @property
-    def best_params(self):
-        return self.study.best_trial.params
-    
-    @property
-    def best_value(self):
-        return self.study.best_value

@@ -5,11 +5,17 @@ from datetime import datetime
 from torch import nn
 from pathlib import Path
 from torch_geometric.nn import GATv2Conv, SAGPooling
+from core.model import MeanPooling, MaxPooling
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from scipy import stats
 from mpl_toolkits.mplot3d import Axes3D
+import optuna
+import optuna.visualization
+import optuna.visualization.matplotlib
+plt.style.use('seaborn-v0_8-darkgrid')
+
 
 
 class Logger:
@@ -47,9 +53,9 @@ class Logger:
             datefmt='%H:%M:%S'
         )
         
-        log_filename = f'{name}_{self.start_time.strftime("%Y%m%d_%H%M%S")}.log'
+        log_filename = f'{name}.log'
         if log_dir:
-            file_handler = logging.FileHandler(os.path.join(self.log_dir, log_filename), encoding='utf-8')
+            file_handler = logging.FileHandler(os.path.join(self.log_dir, log_filename), mode='w', encoding='utf-8')
             file_handler.setFormatter(file_formatter)
             file_handler.setLevel(log_level)
             self.logger.addHandler(file_handler)
@@ -94,6 +100,57 @@ class Logger:
         for handler in self.logger.handlers[:]:
             handler.close()
             self.logger.removeHandler(handler)
+    
+    @staticmethod
+    def save_profiler_results(stats, output):
+   
+        sorted_stats = sorted(stats.stats.items(), key=lambda x: x[1][3], reverse=True)
+        rows = []
+        
+        for func, (cc, nc, tt, ct, callers) in sorted_stats:
+            filename, lineno, func_name = func
+            per_call_total = tt / nc if nc > 0 else 0
+            per_call_cum = ct / nc if nc > 0 else 0
+            location = f"{filename}:{lineno}"
+            
+            rows.append({
+                'function': func_name,
+                'calls': str(nc),
+                'total_time': f"{tt:.6f}",
+                'per_call': f"{per_call_total:.6f}",
+                'cumulative': f"{ct:.6f}",
+                'per_call_cum': f"{per_call_cum:.6f}",
+                'location': location
+            })
+
+        col_names = ['Function', 'Calls', 'Total Time (s)', 'Per Call (s)', 'Cumulative Time (s)', 'Cumulative Per Call (s)', 'Location']
+        col_keys = ['function', 'calls', 'total_time', 'per_call', 'cumulative', 'per_call_cum', 'location']
+        
+        widths = []
+        for header, key in zip(col_names, col_keys):
+            max_width = len(header)
+            for row in rows:
+                max_width = max(max_width, len(row[key]))
+            widths.append(max_width)
+        
+        def fmt_row(cells):
+            return "| " + " | ".join(f"{c:<{w}}" for c, w in zip(cells, widths)) + " |"
+        
+        def fmt_sep():
+            return "| " + " | ".join("-" * w for w in widths) + " |"
+        
+        with open(output, 'w') as f:
+            f.write("# Profiler Results\n\n")
+            f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            f.write(fmt_row(col_names) + "\n")
+            f.write(fmt_sep() + "\n")
+            
+            for row in rows:
+                cells = [row[key] for key in col_keys]
+                f.write(fmt_row(cells) + "\n")
+        
+        print(f"\nFull profiler results saved to: {output}")
+        return output
 
 
 class ShapeLogger:
@@ -109,28 +166,38 @@ class ShapeLogger:
     nn.Tanh,
     GATv2Conv,
     SAGPooling,
+    MeanPooling,
+    MaxPooling,
 )):
         self.model         = model
         self.include_types = include_types
+        self.logger        = logger
         self.records       = []
         self.hooks         = []
-        self.logger        = logger
     
     def _hook(self, name):
         def fn(module, inputs, output):
             x = inputs[0]
             in_shape  = tuple(x.shape) if hasattr(x, "shape") else str(type(x))
-            out_shape = tuple(output.shape) if hasattr(output, "shape") else str(type(output))
+            if isinstance(output, tuple):
+                if hasattr(output[0], "shape"):
+                    out_shape = tuple(output[0].shape)
+                else:
+                    out_shape = f"tuple[{len(output)}]"
+            else:
+                out_shape = tuple(output.shape) if hasattr(output, "shape") else str(type(output))
+            
             self.records.append((name, module.__class__.__name__, in_shape, out_shape))
         
         return fn
 
     def attach(self):
-        self.logger.info("Hooks attached to layers for shape logging. \n")
+        self.logger.subsection("Hooks attached to layers for shape logging. \n")
         
         for name, module in self.model.named_modules():
             if name == "":
                 continue
+           
             if isinstance(module, self.include_types):
                 self.hooks.append(module.register_forward_hook(self._hook(name)))
         
@@ -140,7 +207,7 @@ class ShapeLogger:
         if self.hooks == []:
             return
 
-        self.logger.info("Hooks detached from layers. \n")
+        self.logger.subsection("Hooks detached from layers. \n")
 
         for h in self.hooks:
             h.remove()
@@ -193,7 +260,7 @@ class ShapeLogger:
     def save_markdown(self, path, title: str = "Shape Log", sort_by_layer: bool = False):
         md = self.to_markdown(title=title, sort_by_layer=sort_by_layer)
         Path(path).write_text(md, encoding="utf-8")
-        self.logger.info(f"Shape log saved to {path} \n")
+        self.logger.subsection(f"Shape log saved to {path} \n")
 
 
 class ModelSummary:
@@ -235,7 +302,7 @@ class ModelSummary:
 
     def run(self):
         self.logger.section("[Model Summary]")
-        self.logger.info("Generating model architecture summary")
+        self.logger.subsection("Generating model architecture summary")
         self.total_params = 0
 
         for name, module in self.model.named_modules():
@@ -250,7 +317,7 @@ class ModelSummary:
     def save_markdown(self, path: str, title: str = "Model Summary"):
         md = self.to_markdown(title=title)
         Path(path).write_text(md, encoding="utf-8")
-        self.logger.info(f"Model summary saved to {path} \n")
+        self.logger.subsection(f"Model summary saved to {path} \n")
 
 
 class DiagnosticPlots:
@@ -689,7 +756,7 @@ class Tracker:
             
                 grad_flat     = grad.flatten()
                 grad_mean     = grad_flat.mean().item()
-                grad_std      = grad_flat.std().item()
+                grad_std      = grad_std = grad_flat.std(unbiased=False).item() if grad_flat.numel() > 1 else 0.0
                 grad_min      = grad_flat.min().item()
                 grad_max      = grad_flat.max().item()
                 grad_abs_mean = grad_flat.abs().mean().item()
@@ -904,19 +971,6 @@ class Tracker:
                 dead_percent = 100.0 * dead_weights / weight_flat.numel()
                 self.writer.add_scalar(f'weights/dead_percent/{name}', dead_percent, step)
     
-    def log_batch_statistics(self, batch_errors: list, step: int, stage: str = "train"):
-        batch_errors_np = np.array(batch_errors)
-        
-        fig = DiagnosticPlots._batch_variance_plot(batch_errors, stage)
-        self.writer.add_figure(f'batch_stats/{stage}_error_variance', fig, step)
-        plt.close(fig)
-        
-        self.writer.add_scalar(f'batch_stats/{stage}/mean', batch_errors_np.mean(), step)
-        self.writer.add_scalar(f'batch_stats/{stage}/std', batch_errors_np.std(), step)
-        self.writer.add_scalar(f'batch_stats/{stage}/min', batch_errors_np.min(), step)
-        self.writer.add_scalar(f'batch_stats/{stage}/max', batch_errors_np.max(), step)
-        self.writer.add_scalar(f'batch_stats/{stage}/range', batch_errors_np.max() - batch_errors_np.min(), step)
-    
     def log_data_distribution(self, train_data, val_data, test_data, step: int):
         datasets = {'train': train_data, 'val': val_data, 'test': test_data}
         
@@ -960,3 +1014,66 @@ class Tracker:
         
     def close(self):
         self.writer.close()
+
+
+class OptunaPlots:
+    def __init__(self, out_dir=None, dpi=150):
+        self.out_dir = out_dir
+        self.dpi = dpi
+        
+    def save_all_plots(self, study, out_dir=None, dpi=None):
+        os.makedirs(out_dir, exist_ok=True)
+        
+        plots = {
+            "optimization_history" : optuna.visualization.matplotlib.plot_optimization_history,
+            "intermediate_values"  : optuna.visualization.matplotlib.plot_intermediate_values,
+            "param_importances"    : optuna.visualization.matplotlib.plot_param_importances,
+            "parallel_coordinate"  : optuna.visualization.matplotlib.plot_parallel_coordinate,
+            "contour"              : optuna.visualization.matplotlib.plot_contour,
+            "slice"                : optuna.visualization.matplotlib.plot_slice,
+            "edf"                  : optuna.visualization.matplotlib.plot_edf,
+        }
+        
+        saved = []
+        for name, fn in plots.items():
+            try:
+                ax = fn(study)
+                if ax is None:
+                    continue
+                fig = ax.figure
+                fig.tight_layout()
+                path = os.path.join(out_dir, f"{name}.png")
+                fig.savefig(path, dpi=dpi)
+                plt.close(fig)
+                saved.append(path)
+            except Exception as exc:
+                print(f"[warn] Failed to generate '{name}': {exc}")
+        
+        return saved
+    
+    def plot_optimization_history(self, study):
+        return optuna.visualization.plot_optimization_history(study)
+    
+    def plot_intermediate_values(self, study):
+        return optuna.visualization.plot_intermediate_values(study)
+    
+    def plot_param_importances(self, study):
+        return optuna.visualization.plot_param_importances(study)
+    
+    def plot_parallel_coordinate(self, study):
+        return optuna.visualization.plot_parallel_coordinate(study)
+    
+    def plot_contour(self, study):
+        return optuna.visualization.plot_contour(study)
+    
+    def plot_slice(self, study):
+        return optuna.visualization.plot_slice(study)
+    
+    def plot_edf(self, study):
+        return optuna.visualization.plot_edf(study)
+    
+    def plot_rank(self, study):
+        return optuna.visualization.plot_rank(study)
+    
+    def plot_timeline(self, study):
+        return optuna.visualization.plot_timeline(study)

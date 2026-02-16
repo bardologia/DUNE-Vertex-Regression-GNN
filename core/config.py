@@ -7,18 +7,19 @@ import torch
 
 @dataclass
 class IOConfig:
-    logdir: str = f"runs/run_{datetime.now():%Y%m%d-%H%M%S}"
+    logdir   : str = f"runs/run_{datetime.now():%Y%m%d-%H%M%S}"
+    tunerdir : str = f"tuning/tune_{datetime.now():%Y%m%d-%H%M%S}"
     writer = None
 
     def __post_init__(self):
-        self.writer = SummaryWriter(log_dir=self.logdir)
+        self.writer = SummaryWriter(log_dir=Path(self.logdir) / "tensorboard")
         self.writer.flush()
 
 
 @dataclass
 class DataConfig:
     input_dir             : Path = field(default_factory=lambda: Path("./data"))
-    max_files             : int = 10000000
+    max_files             : int = 1000
     coordinate_columns    : tuple = ("event_x", "event_y", "event_z")
     feature_columns       : tuple = ("x", "y", "z", "light_amount")
     position_columns      : tuple = ("x", "y", "z")
@@ -31,28 +32,28 @@ class DataConfig:
 class GraphConfig:
     k_neighbors   : int = 4
     knn_algorithm : str = "kd_tree"
-    bidirectional : bool = True
+    bidirectional : bool = False
 
 
 @dataclass
 class ModelConfig:
     input_dim       : int = 4
     output_dim      : int = 3
-    gcn_hidden_dims : tuple = (192, 384, 256)
+    gcn_hidden_dims : tuple = (64, 128)
     
-    regression_hidden_dims : tuple = (512, 256, 128)
+    regression_hidden_dims : tuple = (128, 64)
     regression_output_dim  : int = 3
     regression_dropout     : float = 0.1
     
-    gat_heads          : int = 6
+    gat_heads          : int = 2
     gat_use_batch_norm : bool = True
     gat_dropout        : float = 0.1
     
     use_batch_norm     : bool = True
-    attention_heads    : int = 6
+    attention_heads    : int = 2
     edge_dim           : int = 1
     sag_ratio          : float = 0.5
-    sag_layers         : int = 2
+    sag_layers         : int = 1
 
 
 @dataclass
@@ -72,19 +73,17 @@ class WarmupConfig:
 class TrainingConfig:
     lr                          : float = 0.001
     weight_decay                : float = 1e-5
-    batch_size                  : int = 4
-    epochs                      : int = 250
-    device                      : str = "cuda" if torch.cuda.is_available() else "cpu"
-    log_dir                     : str = f"./runs/{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    writer                      : any = None
-    deep_log                    : bool = False
-    use_amp                     : bool = True
-    gradient_accumulation_steps : int = 4 
-    pin_memory                  : bool = False 
-    num_workers                 : int = 0
-    validation_frequency        : int = 5
+    batch_size                  : int   = 4
+    epochs                      : int   = 10
+    device                      : str   = "cuda" if torch.cuda.is_available() else "cpu"
+    use_amp                     : bool  = True
+    gradient_accumulation_steps : int   = 1
+    pin_memory                  : bool  = False 
+    num_workers                 : int   = 0
+    validation_frequency        : int   = 5
     max_grad_norm               : float = 1.0
-    verbose                     : bool = True
+    verbose                     : bool  = True
+    profile                     : bool  = True
 
 
 @dataclass
@@ -96,11 +95,11 @@ class EarlyStoppingConfig:
 
 @dataclass
 class SchedulerConfig:
-    epochs   : int = 250
+    epochs   : int   = 250
     eta_min  : float = 1e-6
     factor   : float = 0.5
-    patience : int = 8
-    mode     : str = "min"
+    patience : int   = 8
+    mode     : str   = "min"
 
 
 @dataclass
@@ -112,9 +111,9 @@ class SplitConfig:
 
 @dataclass
 class OptimizerConfig:
-    lr_regression_head : float = 0.001
-    lr_pool            : float = 0.0005
-    lr_gcn             : float = 0.0003
+    lr_regression_head : float = 0.01
+    lr_pool            : float = 0.001
+    lr_gcn             : float = 0.001
     
     weight_decay_regression_head : float = 1e-5
     weight_decay_pool            : float = 1e-5
@@ -130,17 +129,20 @@ class PreprocessingConfig:
     radius               : float = 1.0
     scale_factor         : float = 0.1
     detection_efficiency : float = 0.02
-    efficiency_seed      : int = 42
+    efficiency_seed      : int   = 42
 
 
 @dataclass
 class OverfitConfig:
-    enabled: bool = False
+    enabled: bool = True
 
 
 @dataclass
 class TuningConfig:
-    epochs: int = 50
+    epochs        : int = 1
+    n_trials      : int = 5
+    warmup_trials : int = 1
+    warmup_steps  : int = 1
 
 
 @dataclass

@@ -1,6 +1,5 @@
 torch
 torch-geometric
-torch-scatter
 scikit-learn
 numpy
 pandas

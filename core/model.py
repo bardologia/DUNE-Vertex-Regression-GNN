@@ -1,7 +1,9 @@
+import warnings
+warnings.filterwarnings('ignore', message='.*torch-scatter.*')
+
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from torch_scatter import scatter_mean, scatter_max # type: ignore
+from torch_geometric.utils import scatter
 from torch_geometric.nn import GATv2Conv, SAGPooling as PyGSAGPooling
 
 
@@ -66,6 +68,18 @@ class GATBlock(nn.Module):
         return x
 
 
+class MeanPooling(nn.Module):
+    def forward(self, x: torch.Tensor, batch: torch.Tensor) -> torch.Tensor:
+        mean = scatter(x, batch, dim=0, reduce='mean')
+        return mean
+
+
+class MaxPooling(nn.Module):
+    def forward(self, x: torch.Tensor, batch: torch.Tensor) -> torch.Tensor:
+        max_val = scatter(x, batch, dim=0, reduce='max')
+        return max_val
+
+
 class SAGPooling(nn.Module):
     def __init__(self, hidden_dim: int, ratio: float = 0.5, num_layers: int = 2):
         super().__init__()
@@ -73,6 +87,9 @@ class SAGPooling(nn.Module):
         self.num_layers = num_layers
         
         self.sag_pools = nn.ModuleList([PyGSAGPooling(hidden_dim, ratio=ratio, GNN=GATv2Conv) for _ in range(num_layers)])
+        
+        self.mean_pool = MeanPooling()
+        self.max_pool  = MaxPooling()
         
         self.out_dim = hidden_dim * 2
         
@@ -85,8 +102,8 @@ class SAGPooling(nn.Module):
         
         x_final = xs[-1]
         
-        mean_pool = scatter_mean(x_final, batch, dim=0)
-        max_pool = scatter_max(x_final, batch, dim=0)[0]
+        mean_pool = self.mean_pool(x_final, batch)
+        max_pool = self.max_pool(x_final, batch)
         
         return torch.cat([mean_pool, max_pool], dim=-1)
 
@@ -201,8 +218,12 @@ class Model(nn.Module):
 
 __all__ = [
     "GATBlock",
+    "MeanPooling",
+    "MaxPooling",
     "SAGPooling",
     "GraphBackbone",
     "RegressionHead",
     "Model",
+    "MeanPooling",
+    "MaxPooling",
 ]
