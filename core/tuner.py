@@ -21,16 +21,27 @@ class Tuner:
         self.warmup_steps   = self.config.tuning.warmup_steps
 
     def _suggest_hyperparameters(self, trial):
-        gcn_layers      = 3
-        gcn_hidden_dims = tuple(trial.suggest_categorical(f"gcn_hidden_{i}", [128, 192, 256, 384]) for i in range(gcn_layers))
+        # GPS backbone
+        gps_hidden_dim = trial.suggest_categorical("gps_hidden_dim", [64, 128, 192, 256])
+        gps_num_layers = trial.suggest_int("gps_num_layers", 2, 6)
+        gps_heads      = trial.suggest_categorical("gps_heads", [2, 4, 8])
+        gps_dropout    = trial.suggest_float("gps_dropout", 0.0, 0.2, step=0.05)
+        gps_attn_dropout = trial.suggest_float("gps_attn_dropout", 0.0, 0.2, step=0.05)
+        drop_path_rate = trial.suggest_float("drop_path_rate", 0.0, 0.2, step=0.05)
         
-        regression_layers      = 3
-        regression_hidden_dims = tuple(trial.suggest_categorical(f"regression_hidden_{i}", [128, 256, 512]) for i in range(regression_layers))
+        # Multi-scale pooling
+        pool_num_levels = trial.suggest_int("pool_num_levels", 2, 4)
+        sag_ratio       = trial.suggest_float("sag_ratio", 0.3, 0.7, step=0.1)
+
+        # Hierarchical regression head
+        hierarchical_feature_dim = trial.suggest_categorical("hierarchical_feature_dim", [128, 256, 384])
+        coord_embed_dim = trial.suggest_categorical("coord_embed_dim", [32, 64, 128])
         
-        gat_dropout        = trial.suggest_float("gat_dropout", 0.0, 0.2, step=0.05)
+        regression_layers      = trial.suggest_int("regression_layers", 2, 4)
+        regression_hidden_dims = tuple(trial.suggest_categorical(f"regression_hidden_{i}", [64, 128, 256]) for i in range(regression_layers))
         regression_dropout = trial.suggest_float("regression_dropout", 0.0, 0.2, step=0.05)
-        gat_heads          = trial.suggest_categorical("gat_heads", [4, 6, 8])
         
+        # Optimizer
         lr_regression_head = trial.suggest_float("lr_regression_head", 5e-5, 2e-3, log=True)
         lr_pool            = trial.suggest_float("lr_pool", 1e-5, 1e-3, log=True)
         lr_gcn             = trial.suggest_float("lr_gcn", 1e-5, 1e-3, log=True)
@@ -40,11 +51,18 @@ class Tuner:
         weight_decay_gcn             = trial.suggest_float("weight_decay_gcn", 1e-6, 5e-4, log=True)
         
         return {
-            'gcn_hidden_dims'              : gcn_hidden_dims,
+            'gps_hidden_dim'               : gps_hidden_dim,
+            'gps_num_layers'               : gps_num_layers,
+            'gps_heads'                    : gps_heads,
+            'gps_dropout'                  : gps_dropout,
+            'gps_attn_dropout'             : gps_attn_dropout,
+            'drop_path_rate'               : drop_path_rate,
+            'pool_num_levels'              : pool_num_levels,
+            'sag_ratio'                    : sag_ratio,
+            'hierarchical_feature_dim'     : hierarchical_feature_dim,
+            'coord_embed_dim'              : coord_embed_dim,
             'regression_hidden_dims'       : regression_hidden_dims,
-            'gat_dropout'                  : gat_dropout,
             'regression_dropout'           : regression_dropout,
-            'gat_heads'                    : gat_heads,
             'lr_regression_head'           : lr_regression_head,
             'lr_pool'                      : lr_pool,
             'lr_gcn'                       : lr_gcn,
@@ -56,11 +74,18 @@ class Tuner:
     def _objective(self, trial, train_dataset, val_dataset):
         params = self._suggest_hyperparameters(trial)
         
-        self.config.model.gcn_hidden_dims        = params['gcn_hidden_dims']
-        self.config.model.regression_hidden_dims = params['regression_hidden_dims']
-        self.config.model.gat_dropout            = params['gat_dropout']
-        self.config.model.regression_dropout     = params['regression_dropout']
-        self.config.model.gat_heads              = params['gat_heads']
+        self.config.model.gps_hidden_dim            = params['gps_hidden_dim']
+        self.config.model.gps_num_layers            = params['gps_num_layers']
+        self.config.model.gps_heads                 = params['gps_heads']
+        self.config.model.gps_dropout               = params['gps_dropout']
+        self.config.model.gps_attn_dropout          = params['gps_attn_dropout']
+        self.config.model.drop_path_rate            = params['drop_path_rate']
+        self.config.model.pool_num_levels           = params['pool_num_levels']
+        self.config.model.sag_ratio                 = params['sag_ratio']
+        self.config.model.hierarchical_feature_dim  = params['hierarchical_feature_dim']
+        self.config.model.coord_embed_dim           = params['coord_embed_dim']
+        self.config.model.regression_hidden_dims    = params['regression_hidden_dims']
+        self.config.model.regression_dropout        = params['regression_dropout']
         
         self.config.optimizer.lr_regression_head           = params['lr_regression_head']
         self.config.optimizer.lr_pool                      = params['lr_pool']

@@ -19,9 +19,9 @@ class IOConfig:
 @dataclass
 class DataConfig:
     input_dir             : Path = field(default_factory=lambda: Path("./data"))
-    max_files             : int = 1000
+    max_files             : int = 10000
     coordinate_columns    : tuple = ("event_x", "event_y", "event_z")
-    feature_columns       : tuple = ("x", "y", "z", "light_amount")
+    feature_columns       : tuple = ("x", "y", "z", "light_amount", "hit_flag", "light_fraction", "dist_to_centroid", "local_light_density")
     position_columns      : tuple = ("x", "y", "z")
     light_column          : str = "light_amount"
     header_rows_to_skip   : int = 0
@@ -37,23 +37,27 @@ class GraphConfig:
 
 @dataclass
 class ModelConfig:
-    input_dim       : int = 4
+    input_dim       : int = 8   # x, y, z, light, hit_flag, light_fraction, dist_to_centroid, local_light_density
     output_dim      : int = 3
-    gcn_hidden_dims : tuple = (64, 128)
     
-    regression_hidden_dims : tuple = (128, 64)
-    regression_output_dim  : int = 3
-    regression_dropout     : float = 0.1
+    gps_hidden_dim  : int   = 128
+    gps_num_layers  : int   = 4
+    gps_heads       : int   = 4
+    gps_dropout     : float = 0.1
+    gps_attn_dropout: float = 0.1
+    gps_ffn_ratio   : float = 4.0
+    drop_path_rate  : float = 0.1
     
-    gat_heads          : int = 2
-    gat_use_batch_norm : bool = True
-    gat_dropout        : float = 0.1
+    edge_dim        : int = 7   # dist, dx, dy, dz, inv_sq_dist, light_gradient, light_similarity
     
-    use_batch_norm     : bool = True
-    attention_heads    : int = 2
-    edge_dim           : int = 1
-    sag_ratio          : float = 0.5
-    sag_layers         : int = 1
+    pool_num_levels : int   = 3
+    sag_ratio       : float = 0.5
+    
+    hierarchical_feature_dim : int   = 256
+    coord_embed_dim          : int   = 64
+    regression_hidden_dims   : tuple = (128, 64)
+    regression_output_dim    : int   = 3
+    regression_dropout       : float = 0.1
 
 
 @dataclass

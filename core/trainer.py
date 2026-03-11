@@ -1,5 +1,4 @@
 import os
-import itertools
 import numpy as np
 import torch
 import torch.nn as nn
@@ -57,7 +56,6 @@ class EarlyStopping:
     def _save_state(self, model):
         if self.restore_best:
             self.best_model_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
-
 
     def restore_model(self, model):
         if self.best_model_state is not None:
@@ -551,7 +549,10 @@ class Trainer:
 
         rh_params   = list(self.model.regression_head.parameters())
         pool_params = list(self.model.backbone.pool.parameters())
-        gcn_params  = list(self.model.backbone.gcn_layers.parameters())
+        
+        pool_ids   = set(id(p) for p in pool_params)
+        gps_params = [p for p in self.model.backbone.parameters() if id(p) not in pool_ids]
+        gps_params += list(self.model.norm.parameters())
 
         param_groups.append({
             'params'       : rh_params,
@@ -568,7 +569,7 @@ class Trainer:
         })
 
         param_groups.append({
-            'params'       : gcn_params,
+            'params'       : gps_params,
             'lr'           : self.config.optimizer.lr_gcn,
             'weight_decay' : self.config.optimizer.weight_decay_gcn,
             'name'         : 'gcn'

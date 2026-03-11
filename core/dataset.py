@@ -32,15 +32,40 @@ class Graph:
         positions       = event_dataframe[position_cols].values.astype(np.float32)
         light_intensity = event_dataframe[light_col].fillna(0.0).values.astype(np.float32)
         light_intensity = np.maximum(light_intensity, 0.0)
-        
-        node_features = np.concatenate([positions, light_intensity.reshape(-1, 1)], axis=1)
-        
+
+        hit_flag = (light_intensity > 0.0).astype(np.float32)
+
+        total_light    = light_intensity.sum() + 1e-8
+        light_fraction = (light_intensity / total_light).astype(np.float32)
+
+        centroid = (light_intensity[:, None] * positions).sum(axis=0) / total_light
+        displacement_to_centroid = positions - centroid[None, :]
+        dist_to_centroid = np.linalg.norm(displacement_to_centroid, axis=1).astype(np.float32)
+
+        effective_k = max(1, min(int(self.k_neighbors), positions.shape[0] - 1))
+        knn_local   = NearestNeighbors(n_neighbors=effective_k + 1, algorithm=self.knn_algorithm)
+        knn_local.fit(positions)
+        _, neighbor_idx = knn_local.kneighbors(positions)
+        local_light_density = light_intensity[neighbor_idx[:, 1:]].sum(axis=1).astype(np.float32)
+
+        node_features = np.column_stack([
+            positions,
+            light_intensity.reshape(-1, 1),
+            hit_flag.reshape(-1, 1),
+            light_fraction.reshape(-1, 1),
+            dist_to_centroid.reshape(-1, 1),
+            local_light_density.reshape(-1, 1),
+        ])
+
         x = torch.tensor(node_features, dtype=torch.float32)
         return x, event_dataframe
 
     def _create_edges(self, node_dataframe):
         position_columns = list(self.position_columns)
+        light_col        = self.light_column
         positions_array  = node_dataframe[position_columns].values.astype(np.float32)
+        light_array      = node_dataframe[light_col].fillna(0.0).values.astype(np.float32)
+        light_array      = np.maximum(light_array, 0.0)
 
         number_of_nodes = int(positions_array.shape[0])
         effective_k     = max(1, min(int(self.k_neighbors), number_of_nodes - 1))
@@ -51,27 +76,48 @@ class Graph:
 
         source_node_indices      = []
         destination_node_indices = []
-        euclidean_distances_list = []
+        edge_features_list       = []  
 
         for source_index in range(number_of_nodes):
             neighbor_indices_row   = neighbor_indices_array[source_index][1:]
             neighbor_distances_row = neighbor_distances_array[source_index][1:]
 
+            src_pos   = positions_array[source_index]
+            src_light = float(light_array[source_index])
+
             for local_index, neighbor_index in enumerate(neighbor_indices_row):
                 neighbor_index = int(neighbor_index)
                 distance_value = float(neighbor_distances_row[local_index])
+                dst_pos        = positions_array[neighbor_index]
+                dst_light      = float(light_array[neighbor_index])
+
+                dist = distance_value
+
+                delta    = dst_pos - src_pos
+                norm_val = max(distance_value, 1e-8)
+                dx, dy, dz = float(delta[0] / norm_val), float(delta[1] / norm_val), float(delta[2] / norm_val)
+
+                inv_sq_dist = 1.0 / (distance_value ** 2 + 1e-8)
+
+                light_grad = dst_light - src_light
+
+                light_sum = src_light + dst_light + 1e-8
+                light_sim = 2.0 * min(src_light, dst_light) / light_sum
+
+                features = [dist, dx, dy, dz, inv_sq_dist, light_grad, light_sim]
 
                 source_node_indices.append(source_index)
                 destination_node_indices.append(neighbor_index)
-                euclidean_distances_list.append(distance_value)
+                edge_features_list.append(features)
 
                 if self.bidirectional:
+                    rev_features = [dist, -dx, -dy, -dz, inv_sq_dist, -light_grad, light_sim]
                     source_node_indices.append(neighbor_index)
                     destination_node_indices.append(source_index)
-                    euclidean_distances_list.append(distance_value)
+                    edge_features_list.append(rev_features)
 
         edge_index = torch.tensor([source_node_indices, destination_node_indices], dtype=torch.long)
-        edge_attr = torch.tensor(euclidean_distances_list, dtype=torch.float32).unsqueeze(1)
+        edge_attr  = torch.tensor(edge_features_list, dtype=torch.float32)
         
         return edge_index, edge_attr
 
