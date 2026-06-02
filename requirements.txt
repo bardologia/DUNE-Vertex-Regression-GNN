@@ -3,9 +3,9 @@ torch-geometric
 scikit-learn
 numpy
 pandas
+scipy
 matplotlib
-tqdm
+rich
 tensorboard
 optuna
-ray[tune]
-ray[data]
+ray

@@ -4,59 +4,62 @@ import sys
 from pathlib import Path
 import os
 import warnings
+import traceback
+import ray
 
-os.environ['RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO'] = '0'
 os.environ['LOKY_MAX_CPU_COUNT'] = '8'
-os.environ['RAY_ENABLE_METRICS'] = '0'
 
 warnings.filterwarnings('ignore', category=UserWarning, module='joblib')
 
-sys.path.insert(0, str(Path.cwd()))
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from core.dataset import DatasetBuilder, DatasetLoader
 from core.config import config
 from core.logger import Logger
-import ray 
+from core.runtime import RuntimeGuard
 
 def main(config):
     dataset_dir = (f"./datasets/"f"E_{config.preprocessing.scale_factor * 100}MeV_K_{config.graph.k_neighbors}/")
     logger = Logger(log_dir=dataset_dir, config=config, name="dataset_creation")
     logger.section("[Dataset Creation]")
+    RuntimeGuard.cleanup_stale_ray_processes(logger)
 
     logger.section("[Profiler]")
     logger.info("Profiling enabled")
     profiler = cProfile.Profile()
     profiler.enable()
 
-    if ray.is_initialized():
-        ray.shutdown()
+    exit_code = 0
+    try:
+        builder = DatasetBuilder(dataset_dir, logger, config=config)
+        builder.run()
 
-    ray.init(
-        ignore_reinit_error=True,
-        include_dashboard=False,
-        log_to_driver=False,
-        num_cpus=4,
-        _metrics_export_port=None,
-        object_store_memory=8*1024**3,
-    )
-    
-    builder = DatasetBuilder(dataset_dir, logger)
-    builder.run()
-    
-    logger.section("[Dataset Test Loading]")
-    loader = DatasetLoader(dataset_dir, logger)
-    norm_split, norm_metrics, saved_config = loader.run()
+        logger.section("[Dataset Test Loading]")
+        loader = DatasetLoader(dataset_dir, logger, config=config)
+        loader.run()
 
-    logger.info("End of dataset creation.")
-    if ray.is_initialized():
-        ray.shutdown()
-    
-    profiler.disable()
-    stats = pstats.Stats(profiler)
-    stats.sort_stats('cumulative')
-    stats.print_stats(20)
-    logger.save_profiler_results(stats, output=f"{dataset_dir}/profiler_results.md")
-    logger.info(f"Profiler results saved to {dataset_dir}/profiler_results.md")
+        logger.info("End of dataset creation.")
+    except KeyboardInterrupt:
+        exit_code = 130
+        logger.warning("Dataset creation interrupted by user (KeyboardInterrupt).")
+    except Exception as exception:
+        exit_code = 1
+        logger.error(f"Dataset creation failed: {exception}")
+        logger.error(traceback.format_exc())
+    finally:
+        profiler.disable()
+        stats = pstats.Stats(profiler)
+        stats.sort_stats('cumulative')
+        stats.print_stats(20)
+        logger.save_profiler_results(stats, output=f"{dataset_dir}/profiler_results.md")
+        logger.info(f"Profiler results saved to {dataset_dir}/profiler_results.md")
+
+        if ray.is_initialized():
+            ray.shutdown()
+
+        if exit_code != 0:
+            raise SystemExit(exit_code)
 
 if __name__ == "__main__":
     main(config)

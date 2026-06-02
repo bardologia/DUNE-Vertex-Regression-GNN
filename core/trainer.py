@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from core.logger import ShapeLogger, ModelSummary, Tracker
-from tqdm import tqdm
+
 import gc
 from pathlib import Path
 
@@ -409,7 +409,7 @@ class Metrics:
         abs_diff = torch.abs(diff)
 
         euclidian_mean   = torch.sqrt((diff ** 2).sum(dim=1)).mean().item()
-        euclidian_std    = torch.sqrt((diff ** 2).sum(dim=1)).std().item()
+        euclidian_std    = torch.sqrt((diff ** 2).sum(dim=1)).std(correction=0).item()
         euclidian_median = torch.sqrt((diff ** 2).sum(dim=1)).median().item()
         euclidian_max    = torch.sqrt((diff ** 2).sum(dim=1)).max().item()
         euclidian_min    = torch.sqrt((diff ** 2).sum(dim=1)).min().item()
@@ -425,7 +425,7 @@ class Metrics:
         mae_per    = abs_diff.mean(dim=0)
         rmse_per   = torch.sqrt((diff ** 2).mean(dim=0))
         median_per = abs_diff.median(dim=0).values
-        std_per    = abs_diff.std(dim=0)
+        std_per    = abs_diff.std(dim=0, correction=0)
 
         r2_per = []
         for i in range(preds.shape[1]):
@@ -433,12 +433,6 @@ class Metrics:
             ss_tot_i = torch.sum((targets[:, i] - targets[:, i].mean()) ** 2).item()
             r2_i     = 1 - (ss_res_i / ss_tot_i) if ss_tot_i > 0 else 0
             r2_per.append(r2_i)
-
-        if self.verbose:
-            self.logger.section(f"[Epoch {epoch}] Evaluation Metrics - {stage.capitalize()}")
-            self.logger.subsection(f"x : MAE={mae_per[0]:.4f}, RMSE={rmse_per[0]:.4f}, R2={r2_per[0]:.4f}, Median Error={median_per[0]:.4f}, Std Error={std_per[0]:.4f}")
-            self.logger.subsection(f"y : MAE={mae_per[1]:.4f}, RMSE={rmse_per[1]:.4f}, R2={r2_per[1]:.4f}, Median Error={median_per[1]:.4f}, Std Error={std_per[1]:.4f}")
-            self.logger.subsection(f"z : MAE={mae_per[2]:.4f}, RMSE={rmse_per[2]:.4f}, R2={r2_per[2]:.4f}, Median Error={median_per[2]:.4f}, Std Error={std_per[2]:.4f} \n")
 
         results = {
             "mae"          : mae,
@@ -485,6 +479,8 @@ class Metrics:
         }
 
         self.track_results(results, epoch, stage)
+        if self.verbose:
+            self.logger.print_metrics_table(epoch, stage, results)
         return results
 
 
@@ -493,12 +489,15 @@ class Trainer:
         self.logger          = logger
         self.config          = config
         self.dataset_config  = dataset_config
-        
-        self.logger.section("[Training Start]")
-        self.logger.subsection(f"Device Name   : {torch.cuda.get_device_name(0)}")
-        self.logger.subsection(f"Total Memory  : {torch.cuda.get_device_properties(0).total_memory / 1024**3:.2f} GB")
-        self.logger.subsection(f"CUDA Version  : {torch.version.cuda}")
-        self.logger.subsection(f"Log Directory : {self.config.io.logdir} \n")
+        self.tuning_mode     = self.config.tuning.tuning_mode
+
+        if not self.tuning_mode:
+            self.logger.print_panel("Training Start", {
+                "Device Name"   : torch.cuda.get_device_name(0),
+                "Total Memory"  : f"{torch.cuda.get_device_properties(0).total_memory / 1024**3:.2f} GB",
+                "CUDA Version"  : torch.version.cuda,
+                "Log Directory" : self.config.io.logdir,
+            })
         
         self.checkpoint_path = Path(run_dir) / "best_model.pt"
         self.tracker         = Tracker(writer=self.config.io.writer)
@@ -527,10 +526,13 @@ class Trainer:
         self.criterion      = Loss(self.logger, self.tracker)
         self.metrics        = Metrics(self.config.training.verbose, self.tracker, logger=self.logger)
         self.checkpoint     = Checkpoint(self.logger, self.tracker)
-        self.shape_logger   = ShapeLogger(model = self.model, logger = self.logger).attach()
+        self.shape_logger   = ShapeLogger(model = self.model, logger = self.logger)
         self.summary        = ModelSummary(logger = self.logger, model = self.model)
-        self.summary.run()
-        self.summary.save_markdown(os.path.join(self.config.io.logdir, "model_summary.md"), title="PPO Model Summary")
+
+        if not self.tuning_mode:
+            self.shape_logger.attach()
+            self.summary.run()
+            self.summary.save_markdown(os.path.join(self.config.io.logdir, "model_summary.md"), title="PPO Model Summary")
         
         self.best_val_loss = float("inf")
         self.best_epoch    = -1
@@ -599,18 +601,37 @@ class Trainer:
         
         return pred, loss_dict
     
+    def check_nan_grads(self, check_inf=True):
+        nan_params = []
+        inf_params = []
+        for name, p in self.model.named_parameters():
+            if p.grad is not None:
+                if torch.isnan(p.grad).any():
+                    nan_params.append(name)
+                if check_inf and torch.isinf(p.grad).any():
+                    inf_params.append(name)
+        if nan_params or inf_params:
+            msg = []
+            if nan_params:
+                msg.append(f"NaN gradients in {len(nan_params)} params: {nan_params[:5]}")
+            if inf_params:
+                msg.append(f"Inf gradients in {len(inf_params)} params: {inf_params[:5]}")
+            raise RuntimeError(" | ".join(msg))
+
     def backward(self, loss, step: bool):
         if self.scaler:
             self.scaler.scale(loss).backward()
             if step:
                 self.scaler.unscale_(self.optimizer)
                 
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.training.max_grad_norm)
+                self.check_nan_grads(check_inf=False)
                 
-                if self.global_step % 100 == 0:
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.training.max_grad_norm)
+
+                if not self.tuning_mode and self.global_step % 100 == 0:
                     self.tracker.log_gradients(self.model, self.global_step, max_grad_norm=self.config.training.max_grad_norm)
                     self.tracker.log_optimizer(self.optimizer, self.global_step)
-                
+
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
                 self.optimizer.zero_grad()
@@ -620,12 +641,14 @@ class Trainer:
         else:
             loss.backward()
             if step:
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.training.max_grad_norm)
+                self.check_nan_grads()
                 
-                if self.global_step % 100 == 0:
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.training.max_grad_norm)
+
+                if not self.tuning_mode and self.global_step % 100 == 0:
                     self.tracker.log_gradients(self.model, self.global_step, max_grad_norm=self.config.training.max_grad_norm)
                     self.tracker.log_optimizer(self.optimizer, self.global_step)
-                
+
                 self.optimizer.step()
                 self.optimizer.zero_grad(set_to_none=True)
                 self.warmup.step()
@@ -639,48 +662,61 @@ class Trainer:
         batch_losses = []
                 
         activation_hooks = []
-        if epoch > 0 and epoch % 10 == 0:
+        if not self.tuning_mode and epoch > 0 and epoch % 10 == 0:
             activation_hooks = self.tracker.log_activations(self.model, epoch)
     
+        self.logger.update_batch_task(f"Epoch {epoch+1}/{self.epochs} — Train", len(train_loader))
         try:
-            for batch_idx, data in tqdm(enumerate(train_loader), desc=f"Epoch {epoch+1}/{self.epochs}", leave=False, total=len(train_loader)):
+            for batch_idx, data in enumerate(train_loader):
                 data = data.to(self.device, non_blocking=True)
 
                 pred, loss_dict = self.forward(data, epoch)
                 loss = loss_dict["total_loss"] / self.accumulation_steps
 
+                if torch.isnan(loss):
+                    raise RuntimeError(
+                        f"NaN loss at batch {batch_idx}, step {self.global_step}. "
+                        f"Loss components: { {k: v.item() if torch.is_tensor(v) else v for k, v in loss_dict.items()} }. "
+                        f"Pred has NaN: {torch.isnan(pred).any().item()}, "
+                        f"Target has NaN: {torch.isnan(data.y).any().item()}"
+                    )
+
                 should_step = (batch_idx + 1) % self.accumulation_steps == 0 or (batch_idx + 1) >= len(train_loader)
                 self.backward(loss, step=should_step)
-                
+
                 loss_value        = loss.item()
                 total_loss       += loss_value * self.accumulation_steps
                 num_batches      += 1
                 batch_losses.append(loss_value * self.accumulation_steps)
+                self.logger.advance_batch()
         finally:
             for hook in activation_hooks:
                 hook.remove()
+            self.logger.finish_batch_task()
 
-        if epoch > 0 and epoch % 10 == 0:
+        if not self.tuning_mode and epoch > 0 and epoch % 10 == 0:
             self.tracker.log_weights(self.model, epoch)
                 
     def evaluate(self, loader, epoch, stage="validation"):
         self.model.eval()
         self.ema.apply_to(self.model)
+        self.logger.update_batch_task(f"Evaluating {stage} — Epoch {epoch+1}/{self.epochs}", len(loader))
 
         try:
             total_loss  = 0
             all_preds   = []
             all_targets = []
             num_batches = 0
-                        
+
             with torch.no_grad():
-                for data in tqdm(loader, desc=f"Evaluating {stage} Epoch {epoch+1}/{self.epochs}", leave=False, total=len(loader)):
+                for data in loader:
                     data = data.to(self.device, non_blocking=True)
                     pred, loss_dict = self.forward(data, epoch)
                     total_loss += loss_dict["total_loss"].item()
                     all_preds.append(pred.cpu())
                     all_targets.append(data.y.cpu())
                     num_batches += 1
+                    self.logger.advance_batch()
                     
             avg_loss = total_loss / max(1, num_batches)
 
@@ -695,6 +731,7 @@ class Trainer:
             self.tracker.log_outlier_detection(preds_den.to(self.device), targets_den.to(self.device), epoch, stage=stage)
         finally:
             self.ema.restore(self.model)
+            self.logger.finish_batch_task()
 
         results = {
             "avg_loss"    : avg_loss,
@@ -717,7 +754,7 @@ class Trainer:
         train_loader_len = len(train_loader)
         if self.config.overfit.enabled:
             single_batch      = next(iter(train_loader))
-            data_loader       = [single_batch] * train_loader_len
+            data_loader       = [single_batch] * 2
             eval_train_loader = [single_batch]
             self.logger.warning(f"Overfitting mode enabled: training on a single batch repeated {train_loader_len} times.")
         else:
@@ -725,39 +762,59 @@ class Trainer:
             eval_train_loader = train_loader
         
         epochs = self.epochs
-        for epoch in tqdm(range(epochs), desc="Training"):
-            epoch_num = epoch + 1
-            
-            self.train_epoch(data_loader, epoch, train_loader_len)
-     
-            val_results   = self.evaluate(val_loader, epoch, stage="validation")
-            self.logger.info(f"Epoch {epoch} - Validation Loss: {val_results['avg_loss']:.4f}")
-            self.train_losses.append(val_results["avg_loss"])
-            
-            train_results = self.evaluate(eval_train_loader, epoch, stage="train")
-            self.logger.info(f"Epoch {epoch} - Train Loss: {train_results['avg_loss']:.4f}")
-            self.val_losses.append(val_results["avg_loss"])
+        self.logger.start_training_display(epochs)
+        train_results = None
+        try:
+            for epoch in range(epochs):
+                epoch_num = epoch + 1
 
-            self._clear_memory()
+                self.train_epoch(data_loader, epoch, train_loader_len)
 
-            loss_comparison = {
-                "train_loss": train_results['avg_loss'],
-                "val_loss"  : val_results["avg_loss"],
-            }
-            
-            self.tracker.log_dict("loss_comparison", loss_comparison, epoch)
+                val_results = self.evaluate(val_loader, epoch, stage="validation")
+                self.logger.info(f"Epoch {epoch} - Validation Loss: {val_results['avg_loss']:.4f}")
 
-            if val_results["avg_loss"] < self.best_val_loss:
-                self.best_val_loss = float(val_results["avg_loss"])
-                self.best_epoch    = int(epoch_num)
-                self.best_metrics  = dict(val_results["metrics"])
-                self.checkpoint.save(self, self.checkpoint_path, epoch_num)
-                self.logger.subsection(f"New best model found at epoch {epoch_num} with validation loss {self.best_val_loss:.4f}")
-        
-            self.lr_scheduler.step(epoch)
-            if self.early_stopping(val_results["avg_loss"], self.model, epoch):
-                self.logger.warning(f"Early stopping triggered at epoch {epoch_num}. Best model from epoch {self.best_epoch} restored.")
-                break
+                evaluate_train_split = (epoch % self.validation_frequency == 0) or (epoch_num == epochs)
+                if evaluate_train_split or train_results is None:
+                    train_results = self.evaluate(eval_train_loader, epoch, stage="train")
+                    self.logger.info(f"Epoch {epoch} - Train Loss: {train_results['avg_loss']:.4f}")
+
+                self.train_losses.append(train_results["avg_loss"])
+                self.val_losses.append(val_results["avg_loss"])
+
+                self.logger.epoch_separator(epoch_num)
+                self._clear_memory()
+
+                loss_comparison = {
+                    "train_loss": train_results['avg_loss'],
+                    "val_loss"  : val_results["avg_loss"],
+                }
+
+                self.tracker.log_dict("loss_comparison", loss_comparison, epoch)
+
+                if val_results["avg_loss"] < self.best_val_loss:
+                    self.best_val_loss = float(val_results["avg_loss"])
+                    self.best_epoch    = int(epoch_num)
+                    self.best_metrics  = dict(val_results["metrics"])
+                    self.checkpoint.save(self, self.checkpoint_path, epoch_num)
+                    self.logger.subsection(f"New best model found at epoch {epoch_num} with validation loss {self.best_val_loss:.4f}")
+
+                current_lr = self.optimizer.param_groups[0]["lr"]
+                self.lr_scheduler.step(epoch)
+                self.logger.update_live_stats(
+                    epoch         = epoch_num,
+                    train_loss    = train_results['avg_loss'],
+                    val_loss      = val_results['avg_loss'],
+                    lr            = current_lr,
+                    best_epoch    = self.best_epoch,
+                    best_val_loss = self.best_val_loss,
+                )
+                self.logger.advance_epoch()
+
+                if self.early_stopping(val_results["avg_loss"], self.model, epoch):
+                    self.logger.warning(f"Early stopping triggered at epoch {epoch_num}. Best model from epoch {self.best_epoch} restored.")
+                    break
+        finally:
+            self.logger.stop_training_display()
 
         self.shape_logger.save_markdown(path=Path(self.config.io.logdir) / "tensor_shape.md", sort_by_layer=True)
         checkpoint = torch.load(self.checkpoint_path, map_location=self.device, weights_only=False)

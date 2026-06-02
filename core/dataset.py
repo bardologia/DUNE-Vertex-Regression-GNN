@@ -1,16 +1,21 @@
 import sys
 from pathlib import Path
-from tqdm import tqdm
+from collections import deque
+import os
+from types import SimpleNamespace
 import numpy as np
 import torch
+import ray
 from sklearn.neighbors import NearestNeighbors
 from torch_geometric.data import Data  
 import pickle
 import math
 from sklearn.model_selection import StratifiedShuffleSplit
-import ray 
 
-sys.path.insert(0, str(Path.cwd()))
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+os.environ.setdefault("RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO", "0")
+os.environ.setdefault("RAY_DEDUP_LOGS", "0")
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from core.data import DataLoader, DataProcessor
 from core.logger import Logger
@@ -74,51 +79,64 @@ class Graph:
         knn.fit(positions_array)
         neighbor_distances_array, neighbor_indices_array = knn.kneighbors(positions_array)
 
-        source_node_indices      = []
-        destination_node_indices = []
-        edge_features_list       = []  
+        neighbor_indices_without_self   = neighbor_indices_array[:, 1:]
+        neighbor_distances_without_self = neighbor_distances_array[:, 1:]
 
-        for source_index in range(number_of_nodes):
-            neighbor_indices_row   = neighbor_indices_array[source_index][1:]
-            neighbor_distances_row = neighbor_distances_array[source_index][1:]
+        source_node_indices      = np.repeat(np.arange(number_of_nodes), neighbor_indices_without_self.shape[1])
+        destination_node_indices = neighbor_indices_without_self.reshape(-1).astype(np.int64)
+        distance                 = neighbor_distances_without_self.reshape(-1).astype(np.float64)
 
-            src_pos   = positions_array[source_index]
-            src_light = float(light_array[source_index])
+        source_positions      = positions_array[source_node_indices]
+        destination_positions = positions_array[destination_node_indices]
+        source_light          = light_array[source_node_indices].astype(np.float64)
+        destination_light     = light_array[destination_node_indices].astype(np.float64)
 
-            for local_index, neighbor_index in enumerate(neighbor_indices_row):
-                neighbor_index = int(neighbor_index)
-                distance_value = float(neighbor_distances_row[local_index])
-                dst_pos        = positions_array[neighbor_index]
-                dst_light      = float(light_array[neighbor_index])
+        position_difference     = destination_positions - source_positions
+        normalization           = np.maximum(distance, 1e-8)
+        displacement            = position_difference / normalization[:, None]
+        inverse_square_distance = 1.0 / (distance ** 2 + 1e-8)
+        light_gradient          = destination_light - source_light
+        light_similarity        = 2.0 * np.minimum(source_light, destination_light) / (source_light + destination_light + 1e-8)
 
-                dist = distance_value
+        forward_features = np.column_stack([
+            distance,
+            displacement[:, 0],
+            displacement[:, 1],
+            displacement[:, 2],
+            inverse_square_distance,
+            light_gradient,
+            light_similarity,
+        ]).astype(np.float32)
 
-                delta    = dst_pos - src_pos
-                norm_val = max(distance_value, 1e-8)
-                dx, dy, dz = float(delta[0] / norm_val), float(delta[1] / norm_val), float(delta[2] / norm_val)
+        if self.bidirectional:
+            reverse_features = np.column_stack([
+                distance,
+                -displacement[:, 0],
+                -displacement[:, 1],
+                -displacement[:, 2],
+                inverse_square_distance,
+                -light_gradient,
+                light_similarity,
+            ]).astype(np.float32)
 
-                inv_sq_dist = 1.0 / (distance_value ** 2 + 1e-8)
+            interleaved_source_node_indices      = np.empty(source_node_indices.shape[0] * 2, dtype=np.int64)
+            interleaved_destination_node_indices = np.empty(destination_node_indices.shape[0] * 2, dtype=np.int64)
+            interleaved_source_node_indices[0::2]      = source_node_indices
+            interleaved_source_node_indices[1::2]      = destination_node_indices
+            interleaved_destination_node_indices[0::2] = destination_node_indices
+            interleaved_destination_node_indices[1::2] = source_node_indices
 
-                light_grad = dst_light - src_light
+            interleaved_features = np.empty((forward_features.shape[0] * 2, forward_features.shape[1]), dtype=np.float32)
+            interleaved_features[0::2] = forward_features
+            interleaved_features[1::2] = reverse_features
 
-                light_sum = src_light + dst_light + 1e-8
-                light_sim = 2.0 * min(src_light, dst_light) / light_sum
+            edge_index = torch.tensor(np.vstack([interleaved_source_node_indices, interleaved_destination_node_indices]), dtype=torch.long)
+            edge_attr  = torch.tensor(interleaved_features, dtype=torch.float32)
+            return edge_index, edge_attr
 
-                features = [dist, dx, dy, dz, inv_sq_dist, light_grad, light_sim]
+        edge_index = torch.tensor(np.vstack([source_node_indices.astype(np.int64), destination_node_indices]), dtype=torch.long)
+        edge_attr  = torch.tensor(forward_features, dtype=torch.float32)
 
-                source_node_indices.append(source_index)
-                destination_node_indices.append(neighbor_index)
-                edge_features_list.append(features)
-
-                if self.bidirectional:
-                    rev_features = [dist, -dx, -dy, -dz, inv_sq_dist, -light_grad, light_sim]
-                    source_node_indices.append(neighbor_index)
-                    destination_node_indices.append(source_index)
-                    edge_features_list.append(rev_features)
-
-        edge_index = torch.tensor([source_node_indices, destination_node_indices], dtype=torch.long)
-        edge_attr  = torch.tensor(edge_features_list, dtype=torch.float32)
-        
         return edge_index, edge_attr
 
     def build_graph(self, event_dataframe):
@@ -144,6 +162,91 @@ class DatasetBuilder:
         self.logger.subsection(f"Graph bidirectional : {config.graph.bidirectional}")
         self.logger.subsection(f"Graph k_neighbors   : {config.graph.k_neighbors}")
         self.logger.subsection(f"Graph knn_algorithm : {config.graph.knn_algorithm}")
+
+    def _ensure_ray_initialized(self):
+        if ray.is_initialized():
+            return
+
+        num_cpus = None
+        if self.config is not None and hasattr(self.config, "ray"):
+            num_cpus = self.config.ray.num_cpus
+
+        ray.init(
+            ignore_reinit_error=True,
+            include_dashboard=False,
+            log_to_driver=False,
+            logging_level="ERROR",
+            num_cpus=num_cpus,
+            runtime_env={"working_dir": str(PROJECT_ROOT)},
+        )
+
+    @staticmethod
+    def _shutdown_ray():
+        if ray.is_initialized():
+            ray.shutdown()
+
+    def _get_ray_batch_size(self, total_items: int) -> int:
+        configured_cpus = self._get_ray_cpu_count()
+        target_tasks_per_cpu = 8
+        max_batch_size = None
+        if self.config is not None and hasattr(self.config, "ray"):
+            target_tasks_per_cpu = self.config.ray.batch_tasks_per_cpu
+            max_batch_size = self.config.ray.max_batch_size
+
+        target_tasks = max(1, int(configured_cpus) * int(target_tasks_per_cpu))
+        batch_size = max(1, int(np.ceil(total_items / target_tasks)))
+        if max_batch_size is not None:
+            batch_size = min(batch_size, max(1, int(max_batch_size)))
+        return batch_size
+
+    def _get_ray_cpu_count(self) -> int:
+        configured_cpus = None
+        if self.config is not None and hasattr(self.config, "ray"):
+            configured_cpus = self.config.ray.num_cpus
+
+        if configured_cpus is None:
+            if ray.is_initialized():
+                configured_cpus = max(1, int(ray.available_resources().get("CPU", 1)))
+            else:
+                configured_cpus = max(1, os.cpu_count() or 1)
+
+        return max(1, int(configured_cpus))
+
+    def _get_max_inflight_tasks(self, total_batches: int) -> int:
+        inflight_per_cpu = 2
+        if self.config is not None and hasattr(self.config, "ray"):
+            inflight_per_cpu = self.config.ray.max_inflight_tasks_per_cpu
+
+        max_inflight = self._get_ray_cpu_count() * int(inflight_per_cpu)
+        return max(1, min(total_batches, max_inflight))
+
+    def _run_ray_batches(self, remote_function, batch_arguments, progress_description: str):
+        total_batches = len(batch_arguments)
+        if total_batches == 0:
+            return []
+
+        pending_arguments = deque(enumerate(batch_arguments))
+        in_flight = {}
+        completed_results = {}
+        max_inflight = self._get_max_inflight_tasks(total_batches)
+
+        while pending_arguments and len(in_flight) < max_inflight:
+            batch_index, batch_args = pending_arguments.popleft()
+            in_flight[remote_function.remote(*batch_args)] = batch_index
+
+        with self.logger.progress_task(progress_description, total_batches) as (progress, task_id):
+            while in_flight:
+                ready_refs, _ = ray.wait(list(in_flight.keys()), num_returns=1)
+                ready_ref = ready_refs[0]
+                batch_index = in_flight.pop(ready_ref)
+                completed_results[batch_index] = ray.get(ready_ref)
+                progress.advance(task_id)
+
+                if pending_arguments:
+                    next_index, next_args = pending_arguments.popleft()
+                    in_flight[remote_function.remote(*next_args)] = next_index
+
+        return [completed_results[index] for index in range(total_batches)]
 
     def _load_data(self):
         self.logger.subsection("Loading data")
@@ -182,45 +285,69 @@ class DatasetBuilder:
 
     def _build_graphs(self, dataframes):
         self.logger.subsection("Building graphs")
-        
-        @ray.remote
-        def build_graph_remote(event_df):
-            graph_builder = Graph(config=self.config)
-            graph = graph_builder.build_graph(event_df)
-            return graph
-        
-        self.logger.subsection(f"Building {len(dataframes)} graphs in parallel with Ray")
-        futures = [build_graph_remote.remote(df) for idx, df in enumerate(dataframes)]
+        self.logger.subsection(f"Building {len(dataframes)} graphs")
+
+        if len(dataframes) == 0:
+            self.logger.subsection("No events to build graphs from.\n")
+            return []
+
+        self._ensure_ray_initialized()
+
+        runtime_config = SimpleNamespace(
+            graph=SimpleNamespace(
+                bidirectional = self.config.graph.bidirectional,
+                k_neighbors   = self.config.graph.k_neighbors,
+                knn_algorithm = self.config.graph.knn_algorithm,
+            ),
+            data=SimpleNamespace(
+                light_column     = self.config.data.light_column,
+                position_columns = self.config.data.position_columns,
+            ),
+        )
+
+        def build_graph_batch_remote(event_batch, graph_config):
+            graph_builder = Graph(config=graph_config)
+            return [graph_builder.build_graph(event_dataframe) for event_dataframe in event_batch]
+
+        batch_size = self._get_ray_batch_size(len(dataframes))
+        self.logger.subsection(f"Ray batch size for graph building: {batch_size}")
+        build_graph_batch_remote_ray = ray.remote(build_graph_batch_remote)
+        dataframe_batches = [dataframes[i:i + batch_size] for i in range(0, len(dataframes), batch_size)]
+        self.logger.subsection(f"Ray max in-flight graph batches: {self._get_max_inflight_tasks(len(dataframe_batches))}")
+
+        batch_results = self._run_ray_batches(
+            build_graph_batch_remote_ray,
+            [(batch, runtime_config) for batch in dataframe_batches],
+            "Building graphs (Ray batches)",
+        )
 
         graphs = []
-        batch_size = min(50, max(10, len(futures) // 20))
-        self.logger.subsection(f"Processing graph building with batch size {batch_size}")
-        with tqdm(total=len(futures), desc="Building graphs") as pbar:
-            while futures:
-                ready, futures = ray.wait(futures, num_returns=min(batch_size, len(futures)))
-                graphs.extend(ray.get(ready))
-                pbar.update(len(ready))
+        for graph_batch in batch_results:
+            graphs.extend(graph_batch)
 
         num_nodes = [graph.x.shape[0] for graph in graphs]
         num_edges = [graph.edge_index.shape[1] for graph in graphs]
         
-        self.logger.subsection(f"Graphs: {len(graphs)}")
-        self.logger.subsection(f"Nodes: {np.mean(num_nodes):.0f}±{np.std(num_nodes):.0f}")
-        self.logger.subsection(f"Edges: {np.mean(num_edges):.0f}±{np.std(num_edges):.0f} \n")
+        self.logger.subsection(f"Graphs : {len(graphs)}")
+        self.logger.subsection(f"Nodes  : {np.mean(num_nodes):.0f}±{np.std(num_nodes):.0f}")
+        self.logger.subsection(f"Edges  : {np.mean(num_edges):.0f}±{np.std(num_edges):.0f} \n")
         return graphs
 
     def _build_dataset(self, graphs, target_df):
         self.logger.subsection("Building dataset")
-        dataset    = []
-        coord_cols = list(self.coordinate_columns)
-        
-        for idx, graph in tqdm(enumerate(graphs), desc="Building dataset", total=len(graphs)):
-            label   = torch.tensor(target_df.iloc[idx][coord_cols].values, dtype=torch.float32)
-            graph.y = label.unsqueeze(0)
-            dataset.append(graph)
 
-        self.logger.subsection(f"Dataset built with {len(dataset)} graphs \n")
-        return dataset
+        if len(graphs) == 0:
+            self.logger.subsection("No graphs available for target attachment.\n")
+            return []
+
+        coord_cols = list(self.coordinate_columns)
+        target_values = target_df[coord_cols].values.astype(np.float32)
+
+        for i, graph_object in enumerate(self.logger.track(graphs, "Attaching targets")):
+            graph_object.y = torch.tensor(target_values[i], dtype=torch.float32).unsqueeze(0)
+
+        self.logger.subsection(f"Dataset built with {len(graphs)} graphs \n")
+        return graphs
 
     def _save_artifacts(self, dataset, target_df):
         self.logger.subsection("Saving artifacts")
@@ -235,7 +362,7 @@ class DatasetBuilder:
         chunks_dir = self.output_dir / "chunks"
         chunks_dir.mkdir(parents=True, exist_ok=True)
         
-        for chunk_idx in tqdm(range(num_chunks), desc="Saving chunks"):
+        for chunk_idx in self.logger.track(range(num_chunks), "Saving chunks"):
             start_idx = chunk_idx * chunk_size
             end_idx = min((chunk_idx + 1) * chunk_size, len(dataset))
             chunk = dataset[start_idx:end_idx]
@@ -273,12 +400,21 @@ class DatasetBuilder:
     def run(self):
         self.logger.section("[Dataset Builder]")
         self.logger.subsection(f"Output directory: {self.output_dir}")
-        dataframes, target_df = self._load_data()
-        dataframes            = self._process_data(dataframes)
-        graphs                = self._build_graphs(dataframes)
-        dataset               = self._build_dataset(graphs, target_df)
-        self.logger.subsection(f"Dataset built: {len(dataset)} graphs \n")
-        self._save_artifacts(dataset, target_df)
+
+        self._ensure_ray_initialized()
+        self.logger.subsection("Ray initialized for the full dataset build")
+
+        try:
+            dataframes, target_df = self._load_data()
+            dataframes            = self._process_data(dataframes)
+            graphs                = self._build_graphs(dataframes)
+            del dataframes
+            dataset               = self._build_dataset(graphs, target_df)
+            self.logger.subsection(f"Dataset built: {len(dataset)} graphs \n")
+            self._save_artifacts(dataset, target_df)
+        finally:
+            self._shutdown_ray()
+
         self.logger.subsection("Dataset building process completed successfully \n")
 
 
@@ -302,43 +438,81 @@ class DatasetNormalizer:
 
     def _compute_node_statistics(self, source_graphs):
         self.logger.section("[Node statistics]")
-        all_features = []
+        running_sum   = None
+        running_count = 0
+
         for graph in source_graphs:
             if graph.x.numel() > 0:
-                features = graph.x.numpy().astype(np.float32)
-                all_features.append(features)
+                features = graph.x.numpy().astype(np.float64)
+                if running_sum is None:
+                    running_sum = np.zeros(features.shape[1], dtype=np.float64)
+                running_sum   += features.sum(axis=0)
+                running_count += features.shape[0]
 
-        all_features   = np.vstack(all_features)
-        self.node_mean = all_features.mean(axis=0)
-        self.node_std  = all_features.std(axis=0) + 1e-8
-        
-        self.logger.subsection(f"Before - Node mean: {self.node_mean}, std: {self.node_std} \n")
+        self.node_mean = (running_sum / running_count).astype(np.float32)
+
+        running_sq = np.zeros_like(running_sum)
+        for graph in source_graphs:
+            if graph.x.numel() > 0:
+                diff = graph.x.numpy().astype(np.float64) - self.node_mean
+                running_sq += (diff ** 2).sum(axis=0)
+
+        self.node_std = np.sqrt(running_sq / running_count).astype(np.float32) + 1e-8
+
+        labels = [f"F{i}" for i in range(len(self.node_mean))]
+        self.logger.print_stats_table("Node Statistics", labels, self.node_mean, self.node_std)
 
     def _compute_edge_statistics(self, source_graphs):
         self.logger.section("[Edge statistics]")
-        all_edge_attrs = []
+        running_sum   = None
+        running_count = 0
+
         for graph in source_graphs:
             if graph.edge_attr.numel() > 0:
-                edge_attr_np = graph.edge_attr.numpy().astype(np.float32)
-                all_edge_attrs.append(edge_attr_np)
+                attrs = graph.edge_attr.numpy().astype(np.float64)
+                if running_sum is None:
+                    running_sum = np.zeros(attrs.shape[1], dtype=np.float64)
+                running_sum   += attrs.sum(axis=0)
+                running_count += attrs.shape[0]
 
-        all_edge_attrs = np.vstack(all_edge_attrs)
-        self.edge_mean = all_edge_attrs.mean(axis=0)
-        self.edge_std  = all_edge_attrs.std(axis=0) + 1e-8
-        self.logger.subsection(f"Before - Edge mean: {self.edge_mean}, std: {self.edge_std} \n")
+        self.edge_mean = (running_sum / running_count).astype(np.float32)
+
+        running_sq = np.zeros_like(running_sum)
+        for graph in source_graphs:
+            if graph.edge_attr.numel() > 0:
+                diff = graph.edge_attr.numpy().astype(np.float64) - self.edge_mean
+                running_sq += (diff ** 2).sum(axis=0)
+
+        self.edge_std = np.sqrt(running_sq / running_count).astype(np.float32) + 1e-8
+
+        labels = [f"F{i}" for i in range(len(self.edge_mean))]
+        self.logger.print_stats_table("Edge Statistics", labels, self.edge_mean, self.edge_std)
         
     def _compute_target_statistics(self, source_graphs):
         self.logger.section("[Target statistics]")
-        all_targets = []
+        running_sum   = None
+        running_count = 0
+
         for graph in source_graphs:
             if hasattr(graph, 'y') and graph.y is not None and graph.y.numel() > 0:
-                tgt = graph.y.detach().cpu().numpy().astype(np.float32).reshape(-1)
-                all_targets.append(tgt)
+                tgt = graph.y.detach().cpu().numpy().astype(np.float64).reshape(1, -1)
+                if running_sum is None:
+                    running_sum = np.zeros(tgt.shape[1], dtype=np.float64)
+                running_sum   += tgt.sum(axis=0)
+                running_count += tgt.shape[0]
 
-        all_targets      = np.vstack(all_targets)
-        self.target_mean = all_targets.mean(axis=0)
-        self.target_std  = all_targets.std(axis=0) + 1e-8
-        self.logger.subsection(f"Before - Target mean: {self.target_mean}, std: {self.target_std} \n")
+        self.target_mean = (running_sum / running_count).astype(np.float32)
+
+        running_sq = np.zeros_like(running_sum)
+        for graph in source_graphs:
+            if hasattr(graph, 'y') and graph.y is not None and graph.y.numel() > 0:
+                tgt  = graph.y.detach().cpu().numpy().astype(np.float64).reshape(1, -1)
+                diff = tgt - self.target_mean
+                running_sq += (diff ** 2).sum(axis=0)
+
+        self.target_std = np.sqrt(running_sq / running_count).astype(np.float32) + 1e-8
+
+        self.logger.print_stats_table("Target Statistics", ["x", "y", "z"], self.target_mean, self.target_std)
         
     def normalize(self, splits):
         self.logger.section("[Normalizing splits]")
@@ -352,14 +526,48 @@ class DatasetNormalizer:
                 graph.y = (graph.y - mean_t) / std_t
 
         train_graphs = splits[self.source_split]
-        node_after   = np.vstack([g.x.numpy() for g in train_graphs]).mean(axis=0), np.vstack([g.x.numpy() for g in train_graphs]).std(axis=0)
-        edge_after   = np.vstack([g.edge_attr.numpy() for g in train_graphs]).mean(axis=0), np.vstack([g.edge_attr.numpy() for g in train_graphs]).std(axis=0)
-        target_after = np.vstack([g.y.numpy() for g in train_graphs]).mean(axis=0), np.vstack([g.y.numpy() for g in train_graphs]).std(axis=0)
+
+        def _streaming_mean_std(graphs, attr):
+            running_sum   = None
+            running_count = 0
+            for g in graphs:
+                arr = getattr(g, attr).numpy().astype(np.float64)
+                if arr.ndim == 1:
+                    arr = arr.reshape(1, -1)
+                if running_sum is None:
+                    running_sum = np.zeros(arr.shape[1], dtype=np.float64)
+                running_sum   += arr.sum(axis=0)
+                running_count += arr.shape[0]
+            mean = running_sum / running_count
+            running_sq = np.zeros_like(running_sum)
+            for g in graphs:
+                arr = getattr(g, attr).numpy().astype(np.float64)
+                if arr.ndim == 1:
+                    arr = arr.reshape(1, -1)
+                running_sq += ((arr - mean) ** 2).sum(axis=0)
+            std = np.sqrt(running_sq / running_count)
+            return mean.astype(np.float32), std.astype(np.float32)
+
+        node_after   = _streaming_mean_std(train_graphs, 'x')
+        edge_after   = _streaming_mean_std(train_graphs, 'edge_attr')
+        target_after = _streaming_mean_std(train_graphs, 'y')
         
-        self.logger.subsection(f"After - Node mean   : {node_after[0]},   std : {node_after[1]}")
-        self.logger.subsection(f"After - Edge mean   : {edge_after[0]},   std : {edge_after[1]}")
-        self.logger.subsection(f"After - Target mean : {target_after[0]}, std : {target_after[1]} \n")
-        
+        node_labels   = [f"F{i}" for i in range(len(self.node_mean))]
+        edge_labels   = [f"F{i}" for i in range(len(self.edge_mean))]
+
+        self.logger.print_normalization_table(
+            "Node Normalization",
+            node_labels, self.node_mean, self.node_std, node_after[0], node_after[1],
+        )
+        self.logger.print_normalization_table(
+            "Edge Normalization",
+            edge_labels, self.edge_mean, self.edge_std, edge_after[0], edge_after[1],
+        )
+        self.logger.print_normalization_table(
+            "Target Normalization",
+            ["x", "y", "z"], self.target_mean, self.target_std, target_after[0], target_after[1],
+        )
+
         return splits
 
 
@@ -370,64 +578,135 @@ class DatasetLoader:
         self.coordinate_columns   = config.data.coordinate_columns
         self.preprocessed_dir     = Path(preprocessed_dir)
 
+    @staticmethod
+    def _resolve_split_size(total_size, split_size):
+        if isinstance(split_size, float):
+            return int(np.ceil(total_size * split_size))
+
+        return int(split_size)
+
+    def _build_stratification_labels(self, Y, n_bins):
+        if n_bins <= 1:
+            return np.zeros(len(Y), dtype=np.int64)
+
+        binned_coords = []
+        for dim in range(Y.shape[1]):
+            percentiles = np.linspace(0, 100, n_bins + 1)
+            bins        = np.percentile(Y[:, dim], percentiles)
+            bins        = np.unique(bins)
+
+            if len(bins) <= 1:
+                binned = np.zeros(len(Y), dtype=np.int64)
+            else:
+                binned = np.digitize(Y[:, dim], bins[:-1]) - 1
+                binned = np.clip(binned, 0, len(bins) - 2)
+
+            binned_coords.append(binned)
+
+        binned_coords = np.array(binned_coords).T
+        n_bins_actual = max(len(np.unique(bc)) for bc in binned_coords.T)
+        strat_labels  = (binned_coords[:, 0] * n_bins_actual**2 + binned_coords[:, 1] * n_bins_actual + binned_coords[:, 2])
+        return strat_labels.astype(np.int64)
+
+    def _find_valid_stratification(self, Y, split_config):
+        N = len(Y)
+        max_bins = max(1, min(10, N // 10))
+        test_size_count = self._resolve_split_size(N, split_config.test_size)
+        val_size_count  = self._resolve_split_size(N, split_config.val_ratio)
+
+        for n_bins in range(max_bins, 0, -1):
+            strat_labels = self._build_stratification_labels(Y, n_bins)
+            unique_labels, label_counts = np.unique(strat_labels, return_counts=True)
+
+            if len(unique_labels) > test_size_count or len(unique_labels) > val_size_count:
+                continue
+
+            if label_counts.min() < 2:
+                continue
+
+            sss_test = StratifiedShuffleSplit(
+                n_splits=1,
+                test_size=split_config.test_size,
+                random_state=split_config.random_state,
+            )
+
+            try:
+                train_val_idx, test_idx = next(sss_test.split(np.arange(N), strat_labels))
+            except ValueError:
+                continue
+
+            val_ratio_adjusted = split_config.val_ratio / (1 - split_config.test_size)
+            sss_val = StratifiedShuffleSplit(
+                n_splits=1,
+                test_size=val_ratio_adjusted,
+                random_state=split_config.random_state,
+            )
+
+            try:
+                train_idx, val_idx = next(sss_val.split(train_val_idx, strat_labels[train_val_idx]))
+            except ValueError:
+                continue
+
+            return n_bins, strat_labels, train_val_idx, test_idx, train_idx, val_idx
+
+        raise ValueError("Unable to construct a valid stratified split for the current dataset and split configuration.")
+
     def _balance_targets(self, target_df):   
         self.logger.section("[Balancing targets]")
         
         Y = target_df[list(self.coordinate_columns)].to_numpy(dtype=np.float32)
         N = len(Y)
 
-        self.logger.subsection("Target distribution (before balancing)")
-        self.logger.subsection(f"Full dataset (N={N}):")
-        for dim_idx, col in enumerate(self.coordinate_columns):
-            self.logger.subsection(f"  {col:10s}: mean={Y[:, dim_idx].mean():7.4f}, std={Y[:, dim_idx].std():7.4f}, "
-                           f"min={Y[:, dim_idx].min():7.4f}, max={Y[:, dim_idx].max():7.4f}")
+        coord_names = list(self.coordinate_columns)
 
-        n_bins = min(10, N // 10)  
+        before_data = {
+            f"Full (N={N})": {
+                col: (
+                    float(Y[:, i].mean()),
+                    float(Y[:, i].std()),
+                    float(Y[:, i].min()),
+                    float(Y[:, i].max()),
+                )
+                for i, col in enumerate(coord_names)
+            }
+        }
+        self.logger.print_distribution_table("Target Distribution \u2014 Before Balancing", coord_names, before_data)
+
         self.logger.subsection("Performing stratified split")
-        self.logger.subsection(f"Binning coordinates into {n_bins} bins per dimension")
-        
-        binned_coords = []
-        for dim in range(Y.shape[1]):
-            percentiles = np.linspace(0, 100, n_bins + 1)
-            bins        = np.percentile(Y[:, dim], percentiles)
-            bins        = np.unique(bins)  
-            binned      = np.digitize(Y[:, dim], bins[:-1]) - 1
-            binned      = np.clip(binned, 0, len(bins) - 2)
-            binned_coords.append(binned)
-        
-        binned_coords = np.array(binned_coords).T
-        n_bins_actual = max(len(np.unique(bc)) for bc in binned_coords.T)
-        strat_labels  = (binned_coords[:, 0] * n_bins_actual**2 + binned_coords[:, 1] * n_bins_actual + binned_coords[:, 2])
-        
-        self.logger.subsection(f"Created {len(np.unique(strat_labels))} unique stratification groups")
         split_config = self.config.split
-       
-        sss_test                = StratifiedShuffleSplit(n_splits=1, test_size=split_config.test_size, random_state=split_config.random_state)
-        train_val_idx, test_idx = next(sss_test.split(np.arange(N), strat_labels))
-        
-        val_ratio_adjusted = split_config.val_ratio / (1 - split_config.test_size)
-        sss_val            = StratifiedShuffleSplit(n_splits=1, test_size=val_ratio_adjusted, random_state=split_config.random_state)
-        train_idx, val_idx = next(sss_val.split(train_val_idx, strat_labels[train_val_idx]))
-        
+
+        n_bins, strat_labels, train_val_idx, test_idx, train_idx, val_idx = self._find_valid_stratification(Y, split_config)
+
+        self.logger.subsection(f"Binning into {n_bins} bins per dimension | {len(np.unique(strat_labels))} unique stratification groups")
+
         train_idx = train_val_idx[train_idx]
         val_idx   = train_val_idx[val_idx]
 
         self.logger.subsection(f"Split sizes: train={len(train_idx)} | val={len(val_idx)} | test={len(test_idx)}")
-        
-        self.logger.subsection("Target distribution (after balancing)")
-        for split_name, indices in [("Train", train_idx), ("Val", val_idx), ("Test", test_idx)]:
-            self.logger.subsection(f"{split_name} split (N={len(indices)}):")
-            for dim_idx, col in enumerate(self.coordinate_columns):
-                split_data = Y[indices, dim_idx]
-                self.logger.subsection(f"  {col:10s}: mean={split_data.mean():7.4f}, std={split_data.std():7.4f}, "
-                               f"min={split_data.min():7.4f}, max={split_data.max():7.4f}")
-        
-        self.logger.subsection("Stratification group distribution")
-        for split_name, indices in [("Train", train_idx), ("Val", val_idx), ("Test", test_idx)]:
-            unique_groups = np.unique(strat_labels[indices])
-            self.logger.subsection(f"{split_name}: {len(unique_groups)} unique groups represented")
-        
-        self.logger.subsection("")
+
+        after_data = {}
+        for split_name, indices in [
+            (f"Train (N={len(train_idx)})", train_idx),
+            (f"Val   (N={len(val_idx)})",   val_idx),
+            (f"Test  (N={len(test_idx)})",  test_idx),
+        ]:
+            after_data[split_name] = {
+                col: (
+                    float(Y[indices, i].mean()),
+                    float(Y[indices, i].std()),
+                    float(Y[indices, i].min()),
+                    float(Y[indices, i].max()),
+                )
+                for i, col in enumerate(coord_names)
+            }
+        self.logger.print_distribution_table("Target Distribution \u2014 After Balancing", coord_names, after_data)
+
+        group_counts = " | ".join(
+            f"{name}: {len(np.unique(strat_labels[idx]))}"
+            for name, idx in [("Train", train_idx), ("Val", val_idx), ("Test", test_idx)]
+        )
+        self.logger.subsection(f"Stratification groups \u2014 {group_counts}")
+
         return train_idx, val_idx, test_idx, Y, N
 
     def _attach_targets(self, graph_splits, idx_splits, Y: np.ndarray):
@@ -480,7 +759,7 @@ class DatasetLoader:
         graphs = []
         
         self.logger.subsection(f"Loading dataset from {num_chunks} chunks")
-        for chunk_idx in tqdm(range(num_chunks), desc="Loading chunks"):
+        for chunk_idx in self.logger.track(range(num_chunks), "Loading chunks"):
             chunk_path = self.preprocessed_dir / "chunks" / f"dataset_chunk_{chunk_idx}.pt"
             chunk = torch.load(chunk_path, weights_only=False)
             graphs.extend(chunk)
@@ -488,6 +767,15 @@ class DatasetLoader:
         with open(tp, "rb") as f: target_df = pickle.load(f)
         with open(cp, "rb") as f: config    = pickle.load(f)
         
+        subset_fraction = getattr(self.config.data, 'subset_fraction', 1.0)
+        if 0.0 < subset_fraction < 1.0:
+            n = max(1, int(len(graphs) * subset_fraction))
+            rng = np.random.RandomState(self.config.split.random_state)
+            indices = np.sort(rng.choice(len(graphs), size=n, replace=False))
+            graphs    = [graphs[i] for i in indices]
+            target_df = target_df.iloc[indices].reset_index(drop=True)
+            self.logger.subsection(f"Subset fraction {subset_fraction}: using {n} graphs")
+
         self.logger.subsection(f"Loaded artifacts from: {self.preprocessed_dir} \n")
         return graphs, target_df, config
 

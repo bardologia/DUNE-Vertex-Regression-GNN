@@ -3,6 +3,7 @@ warnings.filterwarnings('ignore', message='.*torch-scatter.*')
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch_geometric.utils import scatter, to_dense_batch
 from torch_geometric.nn import GATv2Conv, SAGPooling as PyGSAGPooling
 
@@ -122,9 +123,28 @@ class GPSLayer(nn.Module):
         local_representation = self.local_conv(self.norm_local(node_features), edge_index, edge_attr=edge_attr)
 
         normed_features                  = self.norm_global(node_features)
-        dense_batch_features, valid_mask = to_dense_batch(normed_features, batch)     
-        attn_output, _                   = self.global_attn(dense_batch_features, dense_batch_features, dense_batch_features, key_padding_mask=~valid_mask)
-        global_representation            = attn_output[valid_mask]                                
+        dense_batch_features, valid_mask = to_dense_batch(normed_features, batch)
+
+        B, N, D   = dense_batch_features.shape
+        num_heads = self.global_attn.num_heads
+        head_dim  = D // num_heads
+
+        qkv    = F.linear(dense_batch_features, self.global_attn.in_proj_weight, self.global_attn.in_proj_bias)
+        q, k, v = qkv.chunk(3, dim=-1)
+        q = q.reshape(B, N, num_heads, head_dim).transpose(1, 2)
+        k = k.reshape(B, N, num_heads, head_dim).transpose(1, 2)
+        v = v.reshape(B, N, num_heads, head_dim).transpose(1, 2)
+
+        attn_mask = None
+        if not valid_mask.all():
+            attn_mask = valid_mask[:, None, None, :]
+
+        dropout_p   = self.global_attn.dropout if self.training else 0.0
+        attn_output = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=dropout_p)
+        attn_output = attn_output.transpose(1, 2).reshape(B, N, D)
+        attn_output = self.global_attn.out_proj(attn_output)
+
+        global_representation = attn_output[valid_mask]
 
         gate_values          = self.gate(torch.cat([local_representation, global_representation], dim=-1))
         fused_representation = gate_values * local_representation + (1.0 - gate_values) * global_representation
