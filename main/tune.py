@@ -1,15 +1,18 @@
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path.cwd()))
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from core.dataset import DatasetLoader
 from core.config import config
 from core.logger import Logger
+from core.runtime import RuntimeGuard
 from core.tuner import Tuner
 
 def main(dataset_path, config):
     logger = Logger(log_dir=config.io.logdir, config=config, name="tuning", level="INFO")
+    RuntimeGuard.cleanup_stale_ray_processes(logger)
     loader = DatasetLoader(preprocessed_dir=dataset_path, logger=logger, config=config)
 
     norm_split, norm_metrics, data_config = loader.run()

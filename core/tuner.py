@@ -19,6 +19,7 @@ class Tuner:
         self.warmup_trials  = self.config.tuning.warmup_trials
         self.random_state   = self.config.split.random_state
         self.warmup_steps   = self.config.tuning.warmup_steps
+        self.base_tuner_directory = Path(self.config.io.tunerdir)
 
     def _suggest_hyperparameters(self, trial):
         # GPS backbone
@@ -97,26 +98,29 @@ class Tuner:
         self.config.training.epochs     = self.config.tuning.epochs
         self.config.training.batch_size = 128
         self.config.training.verbose    = False
-        
-        trial_log_dir    = Path(self.config.io.tunerdir) / f"optuna_trial_{trial.number}"
+        self.config.tuning.tuning_mode  = True
+
+        trial_log_dir = self.base_tuner_directory / f"optuna_trial_{trial.number}"
         self.config.io.tunerdir = str(trial_log_dir)
-        
+
         model = Model(self.config)
-        
+
         train_loader = DataLoader(
             train_dataset,
             batch_size=self.config.training.batch_size,
             shuffle=True,
-            num_workers=0,
+            num_workers=self.config.training.num_workers,
+            pin_memory=self.config.training.pin_memory,
         )
 
         val_loader = DataLoader(
             val_dataset,
             batch_size=self.config.training.batch_size,
             shuffle=False,
-            num_workers=0,
+            num_workers=self.config.training.num_workers,
+            pin_memory=self.config.training.pin_memory,
         )
-        
+
         logger = Logger(log_dir=self.config.io.tunerdir, name=f"trial_{trial.number}", level="WARNING")
                 
         trainer = Trainer(
@@ -152,7 +156,6 @@ class Tuner:
                     break
         finally:
             logger.close()
-            self.config.io.writer.close()
 
         trial.set_user_attr("val_loss_curve", trainer.val_losses)
         return best_val
@@ -184,29 +187,38 @@ class Tuner:
 
     def build_best_configs(self, epochs=300):
         best_params = self.study.best_trial.params
-        
-        self.config.model.gcn_hidden_dims        = tuple(best_params[f"gcn_hidden_{i}"] for i in range(3))
-        self.config.model.regression_hidden_dims = tuple(best_params[f"regression_hidden_{i}"] for i in range(3))
-        self.config.model.gat_dropout            = best_params["gat_dropout"]
-        self.config.model.regression_dropout     = best_params["regression_dropout"]
-        self.config.model.gat_heads              = best_params["gat_heads"]
-        
+
+        self.config.model.gps_hidden_dim           = best_params["gps_hidden_dim"]
+        self.config.model.gps_num_layers           = best_params["gps_num_layers"]
+        self.config.model.gps_heads                = best_params["gps_heads"]
+        self.config.model.gps_dropout              = best_params["gps_dropout"]
+        self.config.model.gps_attn_dropout         = best_params["gps_attn_dropout"]
+        self.config.model.drop_path_rate           = best_params["drop_path_rate"]
+        self.config.model.pool_num_levels          = best_params["pool_num_levels"]
+        self.config.model.sag_ratio                = best_params["sag_ratio"]
+        self.config.model.hierarchical_feature_dim = best_params["hierarchical_feature_dim"]
+        self.config.model.coord_embed_dim          = best_params["coord_embed_dim"]
+        self.config.model.regression_hidden_dims   = tuple(
+            best_params[f"regression_hidden_{i}"] for i in range(best_params["regression_layers"])
+        )
+        self.config.model.regression_dropout       = best_params["regression_dropout"]
+
         self.config.optimizer.lr_regression_head           = best_params["lr_regression_head"]
         self.config.optimizer.lr_pool                      = best_params["lr_pool"]
         self.config.optimizer.lr_gcn                       = best_params["lr_gcn"]
         self.config.optimizer.weight_decay_regression_head = best_params["weight_decay_regression_head"]
         self.config.optimizer.weight_decay_pool            = best_params["weight_decay_pool"]
         self.config.optimizer.weight_decay_gcn             = best_params["weight_decay_gcn"]
-        
+
         self.config.training.epochs = epochs
-        self.config.training.batch_size = 128
-        
+
         self.logger.section("[Applied Best Hyperparameters to Global Config]")
         self.logger.subsection("Model Configuration:")
-        self.logger.subsection(f"  GCN hidden dims: {self.config.model.gcn_hidden_dims}")
+        self.logger.subsection(f"  GPS hidden dim: {self.config.model.gps_hidden_dim}")
+        self.logger.subsection(f"  GPS layers: {self.config.model.gps_num_layers}")
+        self.logger.subsection(f"  GPS heads: {self.config.model.gps_heads}")
+        self.logger.subsection(f"  GPS dropout: {self.config.model.gps_dropout}")
         self.logger.subsection(f"  Regression hidden dims: {self.config.model.regression_hidden_dims}")
-        self.logger.subsection(f"  GAT heads: {self.config.model.gat_heads}")
-        self.logger.subsection(f"  GAT dropout: {self.config.model.gat_dropout}")
         self.logger.subsection(f"  Regression dropout: {self.config.model.regression_dropout}")
         self.logger.subsection("Optimizer Configuration:")
         self.logger.subsection(f"  LR regression head: {self.config.optimizer.lr_regression_head}")
@@ -215,5 +227,5 @@ class Tuner:
         self.logger.subsection(f"  Weight decay regression head: {self.config.optimizer.weight_decay_regression_head}")
         self.logger.subsection(f"  Weight decay pool: {self.config.optimizer.weight_decay_pool}")
         self.logger.subsection(f"  Weight decay GCN: {self.config.optimizer.weight_decay_gcn}")
-        
+
         return self.config

@@ -1,102 +1,380 @@
 import logging
 import os
-import sys
+from contextlib import contextmanager
 from datetime import datetime
-from torch import nn
 from pathlib import Path
-from torch_geometric.nn import GATv2Conv, SAGPooling
-from core.model import MeanPooling, MaxPooling
+
 import matplotlib.pyplot as plt
 import numpy as np
-import torch
-from scipy import stats
-from mpl_toolkits.mplot3d import Axes3D
 import optuna
 import optuna.visualization
 import optuna.visualization.matplotlib
+import torch
+from mpl_toolkits.mplot3d import Axes3D
+from rich import box
+from rich.console import Console, Group
+from rich.live import Live
+from rich.panel import Panel
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    TaskProgressColumn,
+    TextColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+    track as rich_track,
+)
+from rich.rule import Rule
+from rich.table import Table
+from scipy import stats
+from torch import nn
+from torch_geometric.nn import GATv2Conv, SAGPooling
+
+from core.model import MeanPooling, MaxPooling
+
 plt.style.use('seaborn-v0_8-darkgrid')
 
 
-
 class Logger:
-    
+
     LOG_LEVELS = {
-        'DEBUG': logging.DEBUG,
-        'INFO': logging.INFO,
-        'WARNING': logging.WARNING,
-        'ERROR': logging.ERROR,
+        'DEBUG'   : logging.DEBUG,
+        'INFO'    : logging.INFO,
+        'WARNING' : logging.WARNING,
+        'ERROR'   : logging.ERROR,
         'CRITICAL': logging.CRITICAL
     }
-    
+
     def __init__(self, log_dir="logs", name="experiment", level="INFO", config=None):
-        self.log_dir = log_dir
-        self.name = name
+        self.log_dir    = log_dir
+        self.name       = name
         self.start_time = datetime.now()
-        self.config = config
+        self.config     = config
+
         if log_dir:
             os.makedirs(self.log_dir, exist_ok=True)
-        
+
+        self._console = Console(highlight=False)
+
         self.logger = logging.getLogger(name)
-        
         if self.logger.hasHandlers():
             self.logger.handlers.clear()
-            
+
         log_level = self.LOG_LEVELS.get(str(level).upper(), logging.INFO)
         self.logger.setLevel(log_level)
-        
+
         file_formatter = logging.Formatter(
             '[%(asctime)s] %(message)s',
             datefmt='%Y-%m-%d %H:%M:%S'
         )
-        console_formatter = logging.Formatter(
-            '[%(asctime)s] %(message)s',
-            datefmt='%H:%M:%S'
-        )
-        
+
         log_filename = f'{name}.log'
         if log_dir:
-            file_handler = logging.FileHandler(os.path.join(self.log_dir, log_filename), mode='w', encoding='utf-8')
+            file_handler = logging.FileHandler(
+                os.path.join(self.log_dir, log_filename), mode='w', encoding='utf-8'
+            )
             file_handler.setFormatter(file_formatter)
             file_handler.setLevel(log_level)
             self.logger.addHandler(file_handler)
-    
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setFormatter(console_formatter)
-        console_handler.setLevel(log_level)
-        self.logger.addHandler(console_handler)
-    
+
+        self._live              = None
+        self._progress          = None
+        self._epoch_task        = None
+        self._batch_task        = None
+        self._live_stats        = {}
+        self._standalone_progress = None
+
+    def _file_log(self, message: str, level: str = "info"):
+        getattr(self.logger, level)(message)
+
+    # ---- Structured output ----
+
     def section(self, title: str):
-        self.logger.info("")
-        self.logger.info(f">>> {str(title).upper()}")
-    
+        self._console.print()
+        self._console.print(Rule(str(title), style="bold cyan"))
+        self._file_log("")
+        self._file_log(f">>> {str(title).upper()}")
+
     def subsection(self, title: str):
-        self.logger.info(f"  > {title}")
-    
-    def progress(self, current: int, total: int, prefix: str = "", suffix: str = ""):
-        percentage = 100 * (current / float(total))
-        self.logger.info(f"{prefix} [{current}/{total}] ({percentage:.1f}%) {suffix}")
+        self._console.print(f"  [dim]>[/dim] {title}")
+        self._file_log(f"  > {title}")
+
+    def info(self, message: str):
+        ts = datetime.now().strftime("%H:%M:%S")
+        self._console.print(f"[dim]\\[{ts}][/dim] {message}")
+        self._file_log(message)
+
+    def warning(self, message: str):
+        ts = datetime.now().strftime("%H:%M:%S")
+        self._console.print(f"[dim]\\[{ts}][/dim] [bold yellow]WARNING[/bold yellow] {message}")
+        self._file_log(f"WARNING {message}", "warning")
+
+    def error(self, message: str):
+        ts = datetime.now().strftime("%H:%M:%S")
+        self._console.print(f"[dim]\\[{ts}][/dim] [bold red]ERROR[/bold red] {message}")
+        self._file_log(f"ERROR {message}", "error")
 
     def debug(self, message: str):
-        self.logger.debug(message)
-    
-    def info(self, message: str):
-        self.logger.info(message)
-    
-    def warning(self, message: str):
-        self.logger.warning(message)
-        
-    def error(self, message: str):
-        self.logger.error(message)
-    
+        ts = datetime.now().strftime("%H:%M:%S")
+        self._console.print(f"[dim]\\[{ts}][/dim] [dim]DEBUG {message}[/dim]")
+        self._file_log(f"DEBUG {message}", "debug")
+
     def critical(self, message: str):
-        self.logger.critical(message)
-            
+        ts = datetime.now().strftime("%H:%M:%S")
+        self._console.print(f"[dim]\\[{ts}][/dim] [bold red on white]CRITICAL {message}[/bold red on white]")
+        self._file_log(f"CRITICAL {message}", "critical")
+
+    def print_panel(self, title: str, content: dict):
+        grid = Table.grid(padding=(0, 2))
+        grid.add_column(style="bold cyan", justify="right")
+        grid.add_column()
+        for key, value in content.items():
+            grid.add_row(f"{key} :", str(value))
+        self._console.print(Panel(grid, title=f"[bold]{title}[/bold]", border_style="cyan"))
+        self._file_log(f">>> {title.upper()}")
+        for key, value in content.items():
+            self._file_log(f"  > {key} : {value}")
+
+    # ---- Progress helpers ----
+
+    def track(self, iterable, description: str, total=None):
+        return rich_track(iterable, description=description, total=total, console=self._console)
+
+    @contextmanager
+    def progress_task(self, description: str, total: int):
+        progress = Progress(
+            TextColumn("[bold]{task.description}"),
+            BarColumn(bar_width=40),
+            MofNCompleteColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+            console=self._console,
+        )
+        task_id = progress.add_task(description, total=total)
+        with progress:
+            yield progress, task_id
+
+    # ---- Training live display ----
+
+    def _make_stats_table(self, epoch=None, train_loss=None, val_loss=None,
+                          lr=None, best_epoch=None, best_val_loss=None):
+        table = Table(box=box.ROUNDED, show_header=True, header_style="bold cyan", expand=True)
+        table.add_column("Epoch",         justify="center")
+        table.add_column("LR",            justify="center")
+        table.add_column("Train Loss",    justify="center")
+        table.add_column("Val Loss",      justify="center")
+        table.add_column("Best Epoch",    justify="center")
+        table.add_column("Best Val Loss", justify="center", style="bold green")
+        table.add_row(
+            str(epoch)             if epoch         is not None else "-",
+            f"{lr:.2e}"            if lr            is not None else "-",
+            f"{train_loss:.4f}"    if train_loss    is not None else "-",
+            f"{val_loss:.4f}"      if val_loss      is not None else "-",
+            str(best_epoch)        if best_epoch    is not None else "-",
+            f"{best_val_loss:.4f}" if best_val_loss is not None else "-",
+        )
+        return table
+
+    def _build_live_renderable(self):
+        stats_table = self._make_stats_table(**self._live_stats)
+        return Group(self._progress, stats_table)
+
+    def start_training_display(self, total_epochs: int):
+        self._progress = Progress(
+            TextColumn("[bold]{task.description}"),
+            BarColumn(bar_width=40),
+            MofNCompleteColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+            console=self._console,
+        )
+        self._epoch_task = self._progress.add_task("[cyan]Training", total=total_epochs)
+        self._batch_task = None
+        self._live_stats = {}
+
+        self._live = Live(
+            self._build_live_renderable(),
+            console=self._console,
+            refresh_per_second=10,
+        )
+        self._live.start()
+
+    def _make_standalone_progress(self) -> Progress:
+        return Progress(
+            TextColumn("[bold]{task.description}"),
+            BarColumn(bar_width=40),
+            MofNCompleteColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+            console=self._console,
+        )
+
+    def update_batch_task(self, description: str, total: int):
+        if self._progress is not None:
+            if self._batch_task is not None:
+                self._progress.remove_task(self._batch_task)
+            self._batch_task = self._progress.add_task(f"[green]{description}", total=total)
+        else:
+            if self._standalone_progress is not None:
+                self._standalone_progress.stop()
+            self._standalone_progress = self._make_standalone_progress()
+            self._batch_task = self._standalone_progress.add_task(f"[green]{description}", total=total)
+            self._standalone_progress.start()
+
+    def advance_batch(self):
+        active = self._progress if self._progress is not None else self._standalone_progress
+        if active is not None and self._batch_task is not None:
+            active.advance(self._batch_task)
+
+    def finish_batch_task(self):
+        if self._progress is not None:
+            if self._batch_task is not None:
+                self._progress.remove_task(self._batch_task)
+                self._batch_task = None
+        elif self._standalone_progress is not None:
+            self._standalone_progress.stop()
+            self._standalone_progress = None
+            self._batch_task          = None
+
+    def advance_epoch(self):
+        self._progress.advance(self._epoch_task)
+
+    def update_live_stats(self, epoch, train_loss, val_loss, lr, best_epoch, best_val_loss):
+        self._live_stats = {
+            "epoch"         : epoch,
+            "train_loss"    : train_loss,
+            "val_loss"      : val_loss,
+            "lr"            : lr,
+            "best_epoch"    : best_epoch,
+            "best_val_loss" : best_val_loss,
+        }
+        self._live.update(self._build_live_renderable())
+
+    def stop_training_display(self):
+        if self._live is not None:
+            self._live.stop()
+            self._live     = None
+            self._progress = None
+
+    def print_metrics_table(self, epoch: int, stage: str, results: dict):
+        table = Table(
+            title=f"[Epoch {epoch}] {stage.capitalize()} Metrics",
+            box=box.ROUNDED,
+            show_header=True,
+            header_style="bold cyan",
+        )
+        table.add_column("Axis",         justify="center", style="bold")
+        table.add_column("MAE",          justify="right")
+        table.add_column("RMSE",         justify="right")
+        table.add_column("R\u00b2",      justify="right")
+        table.add_column("Median Error", justify="right")
+        table.add_column("Std Error",    justify="right")
+        table.add_column("Eucl. Mean",   justify="right")
+
+        axes = [
+            ("x",       "mae_x",  "rmse_x",  "r2_x",  "median_error_x", "std_error_x"),
+            ("y",       "mae_y",  "rmse_y",  "r2_y",  "median_error_y", "std_error_y"),
+            ("z",       "mae_z",  "rmse_z",  "r2_z",  "median_error_z", "std_error_z"),
+            ("overall", "mae",    "rmse",    "r2",    "median_error",   "std_error"),
+        ]
+
+        for axis_name, mae_k, rmse_k, r2_k, med_k, std_k in axes:
+            eucl = f"{results['euclidian_mean']:.4f}" if axis_name == "overall" else ""
+            table.add_row(
+                axis_name,
+                f"{results[mae_k]:.4f}",
+                f"{results[rmse_k]:.4f}",
+                f"{results[r2_k]:.4f}",
+                f"{results[med_k]:.4f}",
+                f"{results[std_k]:.4f}",
+                eucl,
+            )
+
+        self._console.print(table)
+        self._file_log(f"[Epoch {epoch}] {stage.capitalize()} Metrics")
+        for axis_name, mae_k, rmse_k, r2_k, med_k, std_k in axes:
+            self._file_log(
+                f"  {axis_name}: MAE={results[mae_k]:.4f}, RMSE={results[rmse_k]:.4f}, "
+                f"R2={results[r2_k]:.4f}, Median={results[med_k]:.4f}, Std={results[std_k]:.4f}"
+            )
+
+    def print_stats_table(self, title: str, labels: list, means, stds):
+        table = Table(title=title, box=box.ROUNDED, header_style="bold cyan")
+        table.add_column("Feature", justify="center", style="bold")
+        table.add_column("Mean",    justify="right")
+        table.add_column("Std",     justify="right")
+        for label, mean_val, std_val in zip(labels, means, stds):
+            table.add_row(str(label), f"{float(mean_val):.6f}", f"{float(std_val):.6f}")
+        self._console.print(table)
+        self._file_log(f">>> {title.upper()}")
+        for label, mean_val, std_val in zip(labels, means, stds):
+            self._file_log(f"  {label}: mean={float(mean_val):.6f}, std={float(std_val):.6f}")
+
+    def print_normalization_table(self, title: str, labels: list,
+                                  before_means, before_stds, after_means, after_stds):
+        table = Table(title=title, box=box.ROUNDED, header_style="bold cyan")
+        table.add_column("Feature",     justify="center", style="bold")
+        table.add_column("Before Mean", justify="right")
+        table.add_column("Before Std",  justify="right")
+        table.add_column("After Mean",  justify="right", style="green")
+        table.add_column("After Std",   justify="right", style="green")
+        for label, bm, bs, am, as_ in zip(labels, before_means, before_stds, after_means, after_stds):
+            table.add_row(
+                str(label),
+                f"{float(bm):.6f}", f"{float(bs):.6f}",
+                f"{float(am):.6f}", f"{float(as_):.6f}",
+            )
+        self._console.print(table)
+        self._file_log(f">>> {title.upper()}")
+        for label, bm, bs, am, as_ in zip(labels, before_means, before_stds, after_means, after_stds):
+            self._file_log(
+                f"  {label}: before mean={float(bm):.6f}, std={float(bs):.6f}"
+                f" | after mean={float(am):.6f}, std={float(as_):.6f}"
+            )
+
+    def print_distribution_table(self, title: str, coord_names: list, splits_data: dict):
+        """splits_data: {split_label: {coord: (mean, std, min, max)}}"""
+        table = Table(title=title, box=box.ROUNDED, header_style="bold cyan")
+        table.add_column("Split", justify="center", style="bold")
+        table.add_column("Coord", justify="center")
+        table.add_column("Mean",  justify="right")
+        table.add_column("Std",   justify="right")
+        table.add_column("Min",   justify="right")
+        table.add_column("Max",   justify="right")
+        for split_name, coord_stats in splits_data.items():
+            for i, coord in enumerate(coord_names):
+                mean, std, min_, max_ = coord_stats[coord]
+                split_label = split_name if i == 0 else ""
+                table.add_row(
+                    split_label, coord,
+                    f"{mean:.4f}", f"{std:.4f}", f"{min_:.4f}", f"{max_:.4f}",
+                )
+        self._console.print(table)
+        self._file_log(f">>> {title.upper()}")
+        for split_name, coord_stats in splits_data.items():
+            for coord in coord_names:
+                mean, std, min_, max_ = coord_stats[coord]
+                self._file_log(
+                    f"  {split_name} | {coord}: mean={mean:.4f}, std={std:.4f},"
+                    f" min={min_:.4f}, max={max_:.4f}"
+                )
+
+    def epoch_separator(self, epoch_num: int):
+        self._console.print(Rule(f"epoch {epoch_num}", style="dim"))
+        self._file_log(f"--- Epoch {epoch_num} ---")
+
     def close(self):
         elapsed = datetime.now() - self.start_time
         hours, remainder = divmod(int(elapsed.total_seconds()), 3600)
         minutes, seconds = divmod(remainder, 60)
-        
-        self.logger.info(f"[End] Duration: {hours:02d}:{minutes:02d}:{seconds:02d}")
+
+        self._file_log(f"[End] Duration: {hours:02d}:{minutes:02d}:{seconds:02d}")
+        self._console.print(f"\n[bold cyan]Duration: {hours:02d}:{minutes:02d}:{seconds:02d}[/bold cyan]")
+
         for handler in self.logger.handlers[:]:
             handler.close()
             self.logger.removeHandler(handler)
@@ -789,7 +1067,11 @@ class Tracker:
                 self.writer.add_scalar(f'gradients/layer_abs_mean/{name}',     grad_abs_mean, step)
                 self.writer.add_scalar(f'gradients/layer_zero_percent/{name}', zero_percent, step)
                 self.writer.add_scalar(f'gradients/grad_param_ratio/{name}',   grad_param_ratio, step)
-                self.writer.add_histogram(f'gradients/histogram/{name}',       grad_flat, step)
+                if grad_flat.numel() > 0:
+                    try:
+                        self.writer.add_histogram(f'gradients/histogram/{name}',   grad_flat, step)
+                    except ValueError:
+                        pass
         
         total_norm = total_norm ** 0.5
         

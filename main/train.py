@@ -9,16 +9,33 @@ import argparse
 import subprocess
 import webbrowser
 import atexit
+import ray
 
-sys.path.insert(0, str(Path.cwd()))
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from core.dataset import DatasetLoader
 from core.trainer import Trainer
-from core.config import config
-from core.model import Model
-from core.logger import Logger
+from core.config  import config
+from core.model   import Model
+from core.logger  import Logger
+from core.runtime import RuntimeGuard
 
 tensorboard_process = None
+
+
+def shutdown_dataloader_workers(data_loader):
+    if data_loader is None:
+        return
+
+    iterator = getattr(data_loader, "_iterator", None)
+    if iterator is not None:
+        shutdown_workers = getattr(iterator, "_shutdown_workers", None)
+        if callable(shutdown_workers):
+            shutdown_workers()
+
+    if hasattr(data_loader, "_iterator"):
+        data_loader._iterator = None
 
 def start_tensorboard(logdir, port=6006):
     global tensorboard_process
@@ -38,76 +55,89 @@ atexit.register(stop_tensorboard)
 
 def main(dataset_path, config):
     logger = Logger(log_dir=config.io.logdir, config=config, name="training")
+    RuntimeGuard.cleanup_stale_ray_processes(logger)
     loader = DatasetLoader(preprocessed_dir=dataset_path, logger=logger, config=config)
 
-    norm_split, norm_metrics, data_config = loader.run()
-    
-    train_dataset = norm_split["train"]
-    val_dataset   = norm_split["val"]
-    test_dataset  = norm_split["test"]
-    
-    model = Model(config)
-    batch_size = config.training.batch_size
-    
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        pin_memory=config.training.pin_memory,
-        num_workers=config.training.num_workers,
-        persistent_workers=True if config.training.num_workers > 0 else False,
-    )
-    
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        pin_memory=config.training.pin_memory,
-        num_workers=config.training.num_workers,
-        persistent_workers=True if config.training.num_workers > 0 else False,
-    )
-    
-    test_loader = DataLoader(
-        test_dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        pin_memory=config.training.pin_memory,
-        num_workers=config.training.num_workers,
-        persistent_workers=True if config.training.num_workers > 0 else False,
-    )
-    
-    logger.section("[Profiler]")
-    if config.training.profile:
-        logger.info("Profiling enabled")
-        profiler = cProfile.Profile()
-        profiler.enable()
-    else:
-        logger.info("Profiling disabled")
-    
-    trainer = Trainer(
-        model,
-        norm           = norm_metrics,
-        config         = config,
-        dataset_config = data_config,
-        run_dir        = config.io.logdir,
-        logger         = logger,
-    )
-    
-    train_results, validation_results, test_results = trainer.train(
-        train_loader,
-        val_loader,
-        test_loader=test_loader,
-    )
-    
-    if config.training.profile: 
-        profiler.disable()
-        stats = pstats.Stats(profiler)
-        stats.sort_stats('cumulative')
-        stats.print_stats(20)
-        logger.save_profiler_results(stats, output=f"{config.io.logdir}/profiler_results.md")
-        logger.info(f"Profiler results saved to {config.io.logdir}/profiler_results.md")
+    train_loader = None
+    val_loader = None
+    test_loader = None
+    profiler = None
 
-    return train_results, validation_results, test_results
+    try:
+        norm_split, norm_metrics, data_config = loader.run()
+
+        train_dataset = norm_split["train"]
+        val_dataset   = norm_split["val"]
+        test_dataset  = norm_split["test"]
+
+        model = Model(config)
+        batch_size = config.training.batch_size
+
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            pin_memory=config.training.pin_memory,
+            num_workers=config.training.num_workers,
+            persistent_workers=True if config.training.num_workers > 0 else False,
+        )
+
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            pin_memory=config.training.pin_memory,
+            num_workers=config.training.num_workers,
+            persistent_workers=True if config.training.num_workers > 0 else False,
+        )
+
+        test_loader = DataLoader(
+            test_dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            pin_memory=config.training.pin_memory,
+            num_workers=config.training.num_workers,
+            persistent_workers=True if config.training.num_workers > 0 else False,
+        )
+
+        logger.section("[Profiler]")
+        if config.training.profile:
+            logger.info("Profiling enabled")
+            profiler = cProfile.Profile()
+            profiler.enable()
+        else:
+            logger.info("Profiling disabled")
+
+        trainer = Trainer(
+            model,
+            norm           = norm_metrics,
+            config         = config,
+            dataset_config = data_config,
+            run_dir        = config.io.logdir,
+            logger         = logger,
+        )
+
+        train_results, validation_results, test_results = trainer.train(
+            train_loader,
+            val_loader,
+            test_loader=test_loader,
+        )
+
+        if config.training.profile and profiler is not None:
+            profiler.disable()
+            stats = pstats.Stats(profiler)
+            stats.sort_stats('cumulative')
+            stats.print_stats(20)
+            logger.save_profiler_results(stats, output=f"{config.io.logdir}/profiler_results.md")
+            logger.info(f"Profiler results saved to {config.io.logdir}/profiler_results.md")
+
+        return train_results, validation_results, test_results
+    finally:
+        shutdown_dataloader_workers(train_loader)
+        shutdown_dataloader_workers(val_loader)
+        shutdown_dataloader_workers(test_loader)
+        if ray.is_initialized():
+            ray.shutdown()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

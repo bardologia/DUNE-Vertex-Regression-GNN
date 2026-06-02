@@ -169,29 +169,29 @@ This rule exists to:
 
 Any Markdown file generated outside the designated directory constitutes a **contract violation** and results in an automatic **FAIL** gate.
 
-## 13. Progress Reporting for Long-Running Loops (tqdm Mandatory)
+## 13. Progress Reporting for Long-Running Loops (rich Mandatory)
 
-All long-running loops must provide deterministic, standardized progress reporting via `tqdm`.
+All long-running loops must provide deterministic, standardized progress reporting via `rich`.
 
 Mandatory rules:
 
-- Any loop expected to take more than a trivial duration must use `tqdm`, including but not limited to:
+- Any loop expected to take more than a trivial duration must use `rich`, including but not limited to:
   - dataset preprocessing over many files/samples
   - training epoch loops
   - evaluation loops
   - inference loops over batches
   - cross-validation or multi-seed experiment loops
 
-- `tqdm` usage must be:
+- `rich` usage must be:
   - minimal and non-intrusive
   - compatible with deterministic execution (no side effects on RNG state)
   - configured to avoid excessive console noise (stable update frequency)
 
 - Progress reporting must not replace structured logging.
-  - `tqdm` is for operator visibility.
+  - `rich` is for operator visibility.
   - the shared logger remains mandatory for audit-grade event recording.
 
-Any long-running loop lacking `tqdm` progress reporting constitutes a contract violation and results in an automatic **FAIL** gate.
+Any long-running loop lacking `rich` progress reporting constitutes a contract violation and results in an automatic **FAIL** gate.
 
 
 ## 14. Variable Naming Discipline (Mandatory)
