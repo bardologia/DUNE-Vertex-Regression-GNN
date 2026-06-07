@@ -73,3 +73,4 @@ These are hard rules for this project — violations constitute a contract breac
 - **All logging through `core/logger.py`.** Never instantiate ad-hoc loggers. `rich` is mandatory for any long-running loop (dataset preprocessing, training epoch loop, evaluation, tuning).
 - **Academic, formal, impersonal tone** in all textual outputs and markdown artifacts. No emojis, no slang, no conversational fillers.
 - Markdown artifacts produced by agents go in a single shared directory — agents must not create new subdirectories for them.
+- **No backward compatibility or fallback onto old logic.** Format, schema, or interface changes update readers and writers to the new form only — no legacy key chains, no tolerant loads for removed formats, no exception handlers that silently skip a feature. Code that breaks loudly gets fixed; old generated files that no longer load are regenerated, not supported.

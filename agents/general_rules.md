@@ -217,3 +217,12 @@ This rule exists to:
 - Prevent ambiguity in scientific interpretation
 
 Any use of abbreviated variable names outside the permitted exceptions constitutes a **contract violation** and results in an automatic **FAIL** gate.
+
+## 15. No Backward Compatibility or Silent Fallbacks (Mandatory)
+
+- When a serialized format, configuration schema, or interface changes, readers and writers are updated to the new form only.
+- Legacy key chains, tolerant lookups for removed formats, and exception handlers that silently skip a feature on error are forbidden.
+- Super-defensive style lets things break silently. Code must break loudly so the defect is visible and fixed; temporary breakage is acceptable.
+- Old generated files that no longer load are regenerated, not supported.
+
+Any compatibility shim or silent fallback constitutes a **contract violation** and results in an automatic **FAIL** gate.
