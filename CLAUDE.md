@@ -16,10 +16,13 @@ pip install -e .                                          # editable install (ru
 python main/correct_coordinates.py                        # raw CSVs -> coordinate-corrected CSVs (sensor frame)
 python main/build_parquet_store.py                        # corrected CSVs -> Parquet store (geometry/events/octants)
 python main/create_dataset.py                             # Parquet store -> chunked graph dataset
-python main/train.py  --model_name gps                    # train a model from the registry
+python main/train.py  --model_name gps                    # train a model (loss-only loop; checkpoints best on val loss)
+python main/infer.py  --run_directory runs/gps_<stamp>    # full analysis: metrics, plots, GIFs, report on a run
 python main/tune.py   --model_name gps                    # Optuna search over a model's hyperparameters
 python webui/serve.py                                     # web control panel + server monitoring
 ```
+
+Training computes only the loss per epoch for speed; the full evaluation (per-coordinate metrics, publication plots, rotating 3D GIFs, markdown report, `metadata/metrics.json`) is produced by `main/infer.py` (or automatically when `--infer_after true` is passed to `train.py`). The model zoo includes hierarchical cascade variants (`gps_cascade`, `gatv2_cascade`, `gine_cascade`) whose head predicts each coordinate conditioned on the previously predicted ones.
 
 All runtime configuration is passed through `ConfigCli` overrides of the form `--dotted.path value` (e.g. `--training.loop.epochs 50 --training.optimizer.learning_rate_encoder 1e-3 --model_overrides "{'hidden_dim': 192}"`). Run any entry script with `--help-config` to list its editable fields. Defaults live in the dataclasses, never as module-level values.
 
