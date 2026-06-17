@@ -1,0 +1,33 @@
+[build-system]
+requires      = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name            = "dune-gnn"
+version         = "0.1.0"
+description     = "Graph neural network pipeline for 3D vertex reconstruction in DUNE LArTPC photon detection"
+readme          = "README.md"
+requires-python = ">=3.11"
+dependencies    = [
+    "torch==2.11.0",
+    "torch-geometric==2.7.0",
+    "numpy==2.4.3",
+    "pandas==3.0.1",
+    "scipy==1.17.1",
+    "scikit-learn==1.8.0",
+    "ray==2.54.0",
+    "optuna==4.8.0",
+    "rich==15.0.0",
+    "matplotlib==3.10.8",
+    "tensorboard==2.20.0",
+    "psutil==7.2.2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==9.0.3", "pyflakes==3.4.0"]
+
+[tool.setuptools.packages.find]
+include = ["configuration*", "models*", "pipelines*", "tools*", "webui*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
