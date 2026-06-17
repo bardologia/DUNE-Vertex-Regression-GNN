@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DUNE-GNN Control Console</title>
+  <link rel="stylesheet" href="/static/css/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar__brand">
+      <span class="topbar__mark">DUNE</span>
+      <span class="topbar__name">GNN Control Console</span>
+    </div>
+    <nav class="topbar__nav">
+      <a class="navlink" data-route="scripts" href="#/scripts">Scripts</a>
+      <a class="navlink" data-route="processes" href="#/processes">Processes</a>
+      <a class="navlink" data-route="models" href="#/models">Models</a>
+      <a class="navlink" data-route="results" href="#/results">Results</a>
+      <a class="navlink" data-route="system" href="#/system">System</a>
+    </nav>
+    <div class="topbar__status" id="nav-status">
+      <span class="dot"></span>
+      <span id="status-text">connecting</span>
+    </div>
+  </header>
+
+  <main class="main">
+    <section class="page" data-page="scripts">
+      <div class="page__head">
+        <h1>Scripts</h1>
+        <p>Pipeline entry points. Select one to configure overrides and launch.</p>
+      </div>
+      <div class="filter-row" id="script-filters"></div>
+      <div class="script-grid" id="script-grid"></div>
+      <div class="launch" id="launch-panel" hidden></div>
+    </section>
+
+    <section class="page" data-page="processes">
+      <div class="page__head">
+        <h1>Processes</h1>
+        <p>Running and finished launches. Select a process to follow its log.</p>
+      </div>
+      <div class="processes">
+        <ul class="process-list" id="process-list"></ul>
+        <div class="console" id="console"></div>
+      </div>
+    </section>
+
+    <section class="page" data-page="models">
+      <div class="page__head">
+        <h1>Model Zoo</h1>
+        <p>Registered architectures and their default configuration.</p>
+      </div>
+      <div class="models">
+        <ul class="model-list" id="model-list"></ul>
+        <div class="model-detail" id="model-detail"></div>
+      </div>
+    </section>
+
+    <section class="page" data-page="results">
+      <div class="page__head">
+        <h1>Results</h1>
+        <p>Training runs under runs/. Launch TensorBoard or inspect the file tree.</p>
+      </div>
+      <div class="results">
+        <ul class="run-list" id="run-list"></ul>
+        <div class="run-detail" id="run-detail"></div>
+      </div>
+      <div class="tensorboard-bar" id="tensorboard-bar"></div>
+    </section>
+
+    <section class="page" data-page="system">
+      <div class="page__head">
+        <h1>System</h1>
+        <p>Live host, CPU, memory, disk and GPU monitoring.</p>
+      </div>
+      <div class="system" id="system-board"></div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="/static/js/app.js"></script>
+  <script src="/static/js/router.js"></script>
+  <script src="/static/js/scripts.js"></script>
+  <script src="/static/js/processes.js"></script>
+  <script src="/static/js/console.js"></script>
+  <script src="/static/js/models.js"></script>
+  <script src="/static/js/results.js"></script>
+  <script src="/static/js/system.js"></script>
+  <script src="/static/js/boot.js"></script>
+</body>
+</html>
