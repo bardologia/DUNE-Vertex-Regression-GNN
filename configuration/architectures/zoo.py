@@ -37,6 +37,7 @@ class GPSConfig(BaseGNNConfig):
     heads             : int   = 4
     attention_dropout : float = 0.1
     ffn_ratio         : float = 4.0
+    pooling           : str   = "sagpool_multiscale"
 
 
 @dataclass
