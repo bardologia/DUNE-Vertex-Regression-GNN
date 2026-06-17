@@ -170,6 +170,7 @@ $RECYCLE.BIN/
 # Data files
 data/*.csv
 datasets/
+data_frames/
 
 # Model outputs and training runs
 runs/
