@@ -11,8 +11,7 @@ from tools.training.gradients    import GradientClipper
 from tools.training.scheduling   import Scheduler, Warmup
 from tools.training.stopping     import EarlyStopping
 
-from pipelines.training.loss    import Loss
-from pipelines.training.metrics import Metrics
+from pipelines.training.loss import Loss
 
 
 class Trainer:
@@ -45,14 +44,12 @@ class Trainer:
         self.ema              = ExponentialMovingAverage(self.model, training_config, self.logger, self.tracker)
         self.gradient_clipper = GradientClipper(training_config, self.logger, self.tracker)
         self.criterion        = Loss(training_config.loss, self.logger, self.tracker)
-        self.metrics          = Metrics(training_config.loop.verbose, self.logger, self.tracker)
         self.checkpoint       = Checkpoint(self.logger, self.tracker, str(run_metadata.checkpoint_path))
 
         self.scheduler.set_total_epochs(self.epochs)
 
         self.best_val_loss = float("inf")
         self.best_epoch    = -1
-        self.best_metrics  = {}
         self.global_step   = 0
         self.train_losses  = []
         self.val_losses    = []
@@ -107,7 +104,6 @@ class Trainer:
             "global_step"   : self.global_step,
             "train_losses"  : self.train_losses,
             "val_losses"    : self.val_losses,
-            "best_metrics"  : self.best_metrics,
             "stats"         : self.stats.as_dict(),
         }
 
@@ -145,51 +141,47 @@ class Trainer:
     def train_epoch(self, loader, epoch):
         self.model.train()
 
+        total_loss        = 0.0
+        number_of_batches = len(loader)
+
         with self.logger.track() as progress:
-            task_id          = progress.add_task(f"Epoch {epoch + 1}/{self.epochs} train", total=len(loader))
-            number_of_batches = len(loader)
+            task_id = progress.add_task(f"Epoch {epoch + 1}/{self.epochs} train", total=number_of_batches)
 
             for batch_index, data in enumerate(loader):
-                data                = data.to(self.device, non_blocking=True)
-                _, loss_dict        = self.forward(data)
-                loss                = loss_dict["total_loss"] / self.accumulation_steps
+                data         = data.to(self.device, non_blocking=True)
+                _, loss_dict = self.forward(data)
+                loss         = loss_dict["total_loss"] / self.accumulation_steps
 
                 if not torch.isfinite(loss):
                     raise RuntimeError(f"Non-finite loss at batch {batch_index}, step {self.global_step}.")
 
-                do_step = (batch_index + 1) % self.accumulation_steps == 0 or (batch_index + 1) >= number_of_batches
+                do_step     = (batch_index + 1) % self.accumulation_steps == 0 or (batch_index + 1) >= number_of_batches
                 self.backward(loss, do_step)
+                total_loss += loss_dict["total_loss"].item()
                 progress.advance(task_id)
+
+        return total_loss / max(1, number_of_batches)
 
     def evaluate(self, loader, epoch, stage="validation"):
         self.model.eval()
         self.ema.apply_to(self.model)
 
-        total_loss          = 0.0
-        number_of_batches   = 0
-        prediction_segments = []
-        target_segments     = []
+        total_loss        = 0.0
+        number_of_batches = 0
 
         try:
             with torch.no_grad():
                 for data in loader:
-                    data                = data.to(self.device, non_blocking=True)
-                    predictions, loss_dict = self.forward(data)
-                    total_loss         += loss_dict["total_loss"].item()
-                    number_of_batches  += 1
-                    prediction_segments.append(predictions.detach().float().cpu())
-                    target_segments.append(data.y.detach().float().cpu())
+                    data            = data.to(self.device, non_blocking=True)
+                    _, loss_dict    = self.forward(data)
+                    total_loss     += loss_dict["total_loss"].item()
+                    number_of_batches += 1
         finally:
             self.ema.restore(self.model)
 
-        average_loss            = total_loss / max(1, number_of_batches)
-        predictions             = torch.cat(prediction_segments)
-        targets                 = torch.cat(target_segments)
-        denormalized_predictions = self.denormalize_targets(predictions.to(self.device)).cpu()
-        denormalized_targets     = self.denormalize_targets(targets.to(self.device)).cpu()
-        metrics                  = self.metrics.calculate(epoch, denormalized_predictions, denormalized_targets, stage=stage)
-
-        return {"avg_loss": average_loss, "metrics": metrics, "predictions": denormalized_predictions, "targets": denormalized_targets}
+        average_loss = total_loss / max(1, number_of_batches)
+        self.tracker.log_scalar(f"{stage}/loss", average_loss, epoch)
+        return {"avg_loss": average_loss}
 
     def train(self, train_loader, val_loader, test_loader):
         self.logger.section("[Training Loop]")
@@ -199,39 +191,40 @@ class Trainer:
         self.optimizer.zero_grad()
         self._apply_learning_rates()
 
-        train_results = None
-
         for epoch in range(self.epochs):
             self.scheduler.step(epoch)
             self._apply_learning_rates()
 
-            self.train_epoch(train_loader, epoch)
+            train_loss      = self.train_epoch(train_loader, epoch)
+            validation_loss = self.evaluate(val_loader, epoch, stage="validation")["avg_loss"]
 
-            validation_results = self.evaluate(val_loader, epoch, stage="validation")
+            self.train_losses.append(train_loss)
+            self.val_losses.append(validation_loss)
 
-            if epoch % self.validation_frequency == 0 or epoch + 1 == self.epochs or train_results is None:
-                train_results = self.evaluate(train_loader, epoch, stage="train")
+            self.tracker.log_metrics("loss_comparison", {"train": train_loss, "val": validation_loss}, step=epoch)
+            self.logger.subsection(f"Epoch {epoch + 1}: train_loss={train_loss:.4f} val_loss={validation_loss:.4f}")
 
-            self.train_losses.append(train_results["avg_loss"])
-            self.val_losses.append(validation_results["avg_loss"])
-
-            self.tracker.log_metrics("loss_comparison", {"train": train_results["avg_loss"], "val": validation_results["avg_loss"]}, step=epoch)
-            self.logger.subsection(f"Epoch {epoch + 1}: train_loss={train_results['avg_loss']:.4f} val_loss={validation_results['avg_loss']:.4f}")
-
-            if self.checkpoint.step(validation_results["avg_loss"], epoch, self):
-                self.best_val_loss = float(validation_results["avg_loss"])
+            if self.checkpoint.step(validation_loss, epoch, self):
+                self.best_val_loss = float(validation_loss)
                 self.best_epoch    = epoch
-                self.best_metrics  = dict(validation_results["metrics"])
 
             self._clear_memory()
 
-            if self.early_stopping(validation_results["avg_loss"], epoch):
+            if self.early_stopping(validation_loss, epoch):
                 break
 
         self.checkpoint.restore_best(self.model, self.device)
 
-        train_final      = self.evaluate(train_loader, self.epochs, stage="final_train")
-        validation_final = self.evaluate(val_loader,   self.epochs, stage="final_validation")
-        test_final       = self.evaluate(test_loader,  self.epochs, stage="final_test")
+        validation_loss = self.evaluate(val_loader, self.epochs, stage="final_validation")["avg_loss"]
+        test_loss       = self.evaluate(test_loader, self.epochs, stage="final_test")["avg_loss"]
 
-        return train_final, validation_final, test_final
+        return {
+            "best_val_loss"         : self.best_val_loss,
+            "best_epoch"            : self.best_epoch,
+            "final_validation_loss" : validation_loss,
+            "final_test_loss"       : test_loss,
+            "checkpoint_path"       : str(self.run_metadata.checkpoint_path),
+            "run_directory"         : str(self.run_metadata.run_directory),
+            "train_losses"          : self.train_losses,
+            "val_losses"            : self.val_losses,
+        }

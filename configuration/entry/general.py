@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib     import Path
 
+import torch
+
 from configuration.data.general     import DatasetConfig, SplitConfig
 from configuration.training.general import TrainingConfig
 from configuration.tuning.general   import TuningConfig
@@ -29,8 +31,18 @@ class TrainEntryConfig:
     dataset_dir     : Path           = field(default_factory=lambda: DEFAULT_DATASET_DIRECTORY)
     subset_fraction : float          = 1.0
     tensorboard     : bool           = False
+    infer_after     : bool           = False
     split           : SplitConfig    = field(default_factory=SplitConfig)
     training        : TrainingConfig = field(default_factory=TrainingConfig)
+
+
+@dataclass
+class InferenceEntryConfig:
+    run_directory : Path  = field(default_factory=lambda: PROJECT_ROOT / "runs")
+    gpu           : int   = 0
+    device        : str   = "cuda" if torch.cuda.is_available() else "cpu"
+    splits        : tuple = ("test", "val", "train")
+    batch_size    : int   = 16
 
 
 @dataclass

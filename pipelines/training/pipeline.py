@@ -47,12 +47,24 @@ class TrainingPipeline:
         train_loader, val_loader, test_loader = self.loaders
         return trainer.train(train_loader, val_loader, test_loader)
 
+    def _infer(self, summary):
+        from pipelines.inference import InferencePipeline
+
+        InferencePipeline(
+            summary["run_directory"],
+            logger     = self.logger,
+            device     = self.training_config.loop.device,
+            batch_size = self.training_config.loop.batch_size,
+        ).run()
+
     def run(self):
         self._prepare_run()
         try:
             self._prepare_data()
             self._build_model()
-            results = self._train()
+            summary = self._train()
+            if self.entry.infer_after:
+                self._infer(summary)
         finally:
             self.run_metadata.close()
-        return results
+        return summary
