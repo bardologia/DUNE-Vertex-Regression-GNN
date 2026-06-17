@@ -173,8 +173,8 @@ datasets/
 data_frames/
 
 # Model outputs and training runs
-runs/
-tuning/
+/runs/
+/tuning/
 checkpoints/
 *.pt
 *.pth
