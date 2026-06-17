@@ -9,10 +9,11 @@ import numpy as np
 import ray
 import torch
 
-from pipelines.dataset.graph        import Graph
-from pipelines.dataset.loading      import DataLoader
+from pipelines.dataset.graph         import Graph
+from pipelines.dataset.loading       import DataLoader
+from pipelines.dataset.parquet_source import ParquetGraphSource
 from pipelines.dataset.preprocessing import DataProcessor
-from pipelines.dataset.ray_executor import RayExecutor
+from pipelines.dataset.ray_executor  import RayExecutor
 
 
 class DatasetBuilder:
@@ -33,8 +34,11 @@ class DatasetBuilder:
         self.coordinate_columns   = config.data.coordinate_columns
 
     def _load_data(self):
-        loader = DataLoader(logger=self.logger, config=self.config)
-        return loader.load()
+        if self.config.data.source == "parquet":
+            source = ParquetGraphSource(self.logger, self.config)
+        else:
+            source = DataLoader(logger=self.logger, config=self.config)
+        return source.load()
 
     def _process_data(self, dataframes):
         processor = DataProcessor(logger=self.logger, config=self.config)
