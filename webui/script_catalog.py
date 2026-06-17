@@ -36,6 +36,11 @@ class ScriptCatalog:
             "category" : "Data",
             "purpose"  : "Materialise the event frames into a partitioned Parquet store.",
         },
+        "infer": {
+            "label"    : "Infer",
+            "category" : "Analysis",
+            "purpose"  : "Run the full inference analysis (metrics, plots, animations, report) on a training run.",
+        },
     }
 
     ORDER = [
@@ -44,6 +49,7 @@ class ScriptCatalog:
         "build_parquet_store",
         "create_dataset",
         "train",
+        "infer",
         "tune",
     ]
 

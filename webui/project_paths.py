@@ -24,6 +24,11 @@ class ProjectPaths:
             "entry_config_module" : "configuration.entry.general",
             "entry_config_class"  : "TuneEntryConfig",
         },
+        "infer": {
+            "file"                : "infer.py",
+            "entry_config_module" : "configuration.entry.general",
+            "entry_config_class"  : "InferenceEntryConfig",
+        },
         "correct_coordinates": {
             "file"                : "correct_coordinates.py",
             "entry_config_module" : None,
