@@ -4,8 +4,16 @@ from tools import ConfigCli
 
 
 def test_model_config_registry_complete():
-    expected = {"gps", "gps_lite", "gatv2", "gine", "graphsage", "pna", "gcn", "transformer", "edgeconv", "general_conv", "res_gated", "supergat"}
+    expected = {
+        "gps", "gps_lite", "gps_cascade", "gatv2", "gatv2_cascade", "gine", "gine_cascade",
+        "graphsage", "pna", "gcn", "transformer", "edgeconv", "general_conv", "res_gated", "supergat",
+    }
     assert set(MODEL_CONFIG_REGISTRY) == expected
+
+
+def test_cascade_head_type():
+    from configuration.architectures import GPSCascadeConfig
+    assert GPSCascadeConfig().head_type == "cascade"
 
 
 def test_default_gps_config_dimensions():

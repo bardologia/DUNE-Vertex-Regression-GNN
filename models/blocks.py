@@ -388,9 +388,44 @@ class MLPRegressionHead(nn.Module):
         return self.net(features)
 
 
+class CascadeRegressionHead(nn.Module):
+    def __init__(self, input_dim: int, config):
+        super().__init__()
+        feature_dim = config.hierarchical_feature_dim
+        hidden_dims = config.regression_hidden_dims
+        dropout     = config.regression_dropout
+
+        self.feature_proj = nn.Sequential(nn.Linear(input_dim, feature_dim), nn.LayerNorm(feature_dim), nn.GELU(), nn.Dropout(dropout))
+        self._initialize_projection()
+
+        self.x_head = CoordinateHead(feature_dim,     hidden_dims, dropout)
+        self.y_head = CoordinateHead(feature_dim + 1, hidden_dims, dropout)
+        self.z_head = CoordinateHead(feature_dim + 2, hidden_dims, dropout)
+
+    def _initialize_projection(self):
+        for module in self.feature_proj.modules():
+            if isinstance(module, nn.Linear):
+                nn.init.kaiming_uniform_(module.weight, nonlinearity="relu")
+                nn.init.zeros_(module.bias)
+            elif isinstance(module, nn.LayerNorm):
+                nn.init.constant_(module.weight, 1.0)
+                nn.init.constant_(module.bias, 0.0)
+
+    def forward(self, features: torch.Tensor) -> torch.Tensor:
+        projected_features = self.feature_proj(features)
+
+        prediction_x = self.x_head(projected_features)
+        prediction_y = self.y_head(torch.cat([projected_features, prediction_x], dim=-1))
+        prediction_z = self.z_head(torch.cat([projected_features, prediction_x, prediction_y], dim=-1))
+
+        return torch.cat([prediction_x, prediction_y, prediction_z], dim=-1)
+
+
 def build_head(config, input_dim: int) -> nn.Module:
     if config.head_type == "hierarchical":
         return HierarchicalRegressionHead(input_dim, config)
+    if config.head_type == "cascade":
+        return CascadeRegressionHead(input_dim, config)
     if config.head_type == "mlp":
         return MLPRegressionHead(input_dim, config)
     raise ValueError(f"Unknown head type '{config.head_type}'")

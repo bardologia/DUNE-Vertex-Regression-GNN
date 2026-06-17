@@ -15,18 +15,21 @@ from .supergat        import SuperGAT
 from .transformer_conv import GraphTransformer
 
 MODEL_REGISTRY: dict[str, type] = {
-    "gps"          : GPS,
-    "gps_lite"     : GPSLite,
-    "gatv2"        : GATv2,
-    "gine"         : GINE,
-    "graphsage"    : GraphSAGE,
-    "pna"          : PNA,
-    "gcn"          : GCN,
-    "transformer"  : GraphTransformer,
-    "edgeconv"     : DynamicEdgeConv,
-    "general_conv" : GeneralGNN,
-    "res_gated"    : ResGatedGNN,
-    "supergat"     : SuperGAT,
+    "gps"           : GPS,
+    "gps_lite"      : GPSLite,
+    "gps_cascade"   : GPS,
+    "gatv2"         : GATv2,
+    "gatv2_cascade" : GATv2,
+    "gine"          : GINE,
+    "gine_cascade"  : GINE,
+    "graphsage"     : GraphSAGE,
+    "pna"           : PNA,
+    "gcn"           : GCN,
+    "transformer"   : GraphTransformer,
+    "edgeconv"      : DynamicEdgeConv,
+    "general_conv"  : GeneralGNN,
+    "res_gated"     : ResGatedGNN,
+    "supergat"      : SuperGAT,
 }
 
 

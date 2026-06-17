@@ -128,17 +128,38 @@ class SuperGATConfig(BaseGNNConfig):
     attention_type    : str   = "MX"
 
 
+@dataclass
+class GPSCascadeConfig(GPSConfig):
+    name      : str = "gps_cascade"
+    head_type : str = "cascade"
+
+
+@dataclass
+class GATv2CascadeConfig(GATv2Config):
+    name      : str = "gatv2_cascade"
+    head_type : str = "cascade"
+
+
+@dataclass
+class GINECascadeConfig(GINEConfig):
+    name      : str = "gine_cascade"
+    head_type : str = "cascade"
+
+
 MODEL_CONFIG_REGISTRY: dict[str, type] = {
-    "gps"          : GPSConfig,
-    "gps_lite"     : GPSLiteConfig,
-    "gatv2"        : GATv2Config,
-    "gine"         : GINEConfig,
-    "graphsage"    : GraphSAGEConfig,
-    "pna"          : PNAConfig,
-    "gcn"          : GCNConfig,
-    "transformer"  : TransformerConvConfig,
-    "edgeconv"     : EdgeConvConfig,
-    "general_conv" : GeneralConvConfig,
-    "res_gated"    : ResGatedConfig,
-    "supergat"     : SuperGATConfig,
+    "gps"           : GPSConfig,
+    "gps_lite"      : GPSLiteConfig,
+    "gps_cascade"   : GPSCascadeConfig,
+    "gatv2"         : GATv2Config,
+    "gatv2_cascade" : GATv2CascadeConfig,
+    "gine"          : GINEConfig,
+    "gine_cascade"  : GINECascadeConfig,
+    "graphsage"     : GraphSAGEConfig,
+    "pna"           : PNAConfig,
+    "gcn"           : GCNConfig,
+    "transformer"   : TransformerConvConfig,
+    "edgeconv"      : EdgeConvConfig,
+    "general_conv"  : GeneralConvConfig,
+    "res_gated"     : ResGatedConfig,
+    "supergat"      : SuperGATConfig,
 }
