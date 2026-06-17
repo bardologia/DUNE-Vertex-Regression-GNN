@@ -10,7 +10,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 @dataclass
 class DataConfig:
+    source                : str   = "parquet"
     input_dir             : Path  = field(default_factory=lambda: PROJECT_ROOT / "data")
+    parquet_store_dir     : Path  = field(default_factory=lambda: PROJECT_ROOT / "data_frames" / "parquet")
+    augment_octants       : bool  = False
     max_files             : int   = 500000
     subset_fraction       : float = 1.0
     coordinate_columns    : tuple = ("event_x", "event_y", "event_z")
