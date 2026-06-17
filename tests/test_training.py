@@ -19,9 +19,9 @@ def test_training_pipeline_one_epoch(tiny_dataset, tmp_path):
     entry.training.loop.verbose               = False
     entry.training.warmup.warmup_steps        = 2
 
-    logger                          = Logger(log_dir="", name="train_test", level="ERROR")
-    train_final, val_final, test_final = TrainingPipeline(entry, logger=logger).run()
+    logger  = Logger(log_dir="", name="train_test", level="ERROR")
+    summary = TrainingPipeline(entry, logger=logger).run()
 
-    assert torch.isfinite(torch.tensor(test_final["metrics"]["mae"]))
-    assert torch.isfinite(torch.tensor(val_final["avg_loss"]))
+    assert torch.isfinite(torch.tensor(summary["final_test_loss"]))
+    assert torch.isfinite(torch.tensor(summary["final_validation_loss"]))
     assert len(list((tmp_path / "runs").rglob("best_model.pt"))) == 1

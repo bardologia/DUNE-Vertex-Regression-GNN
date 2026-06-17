@@ -1,6 +1,6 @@
 from .architectures import BaseGNNConfig, MODEL_CONFIG_REGISTRY
 from .data          import DataConfig, DatasetConfig, GraphConfig, PreprocessingConfig, RayConfig, SplitConfig
-from .entry         import DatasetEntryConfig, TrainEntryConfig, TuneEntryConfig
+from .entry         import DatasetEntryConfig, InferenceEntryConfig, TrainEntryConfig, TuneEntryConfig
 from .training      import (
     EarlyStoppingConfig,
     EMAConfig,
@@ -26,6 +26,7 @@ __all__ = [
     "RayConfig",
     "SplitConfig",
     "DatasetEntryConfig",
+    "InferenceEntryConfig",
     "TrainEntryConfig",
     "TuneEntryConfig",
     "EarlyStoppingConfig",
