@@ -62,10 +62,10 @@ class ConsoleTile {
       fontSize: 12,
       lineHeight: 1.3,
       theme: {
-        background: "#f3f5f8",
-        foreground: "#2b333c",
+        background: "#0b0e14",
+        foreground: "#d6dce4",
         cursor: "#2f6fed",
-        selectionBackground: "#c5d8f7",
+        selectionBackground: "#27405f",
       },
     });
     this.fitAddon = new FitAddon.FitAddon();
