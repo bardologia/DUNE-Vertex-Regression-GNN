@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from pathlib  import Path
 
@@ -47,6 +48,11 @@ class TrainingRunMetadata:
 
     def save_normalization_stats(self, stats) -> Path:
         return stats.save(self.metadata_directory)
+
+    def save_split(self, split_base_ids) -> Path:
+        path = self.metadata_directory / "split_base_ids.json"
+        path.write_text(json.dumps(split_base_ids, indent=2), encoding="utf-8")
+        return path
 
     def close(self) -> None:
         self.writer.flush()

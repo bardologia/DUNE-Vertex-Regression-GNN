@@ -70,6 +70,34 @@ def test_report_aggregates_across_folds(quiet_logger, tmp_path):
     assert (tmp_path / "cross_validation_report.md").exists()
 
 
+def test_cv_folds_are_group_aware_on_base_event(dataset_config, quiet_logger, tmp_path):
+    entry                              = CrossValidationEntryConfig(model_name="graphsage")
+    entry.dataset                      = dataset_config
+    entry.dataset.data.augment_octants = True
+    entry.cross_validation             = CrossValidationConfig(n_folds=3, validation_fraction=0.2)
+    entry.training.io.log_base_dir     = tmp_path
+
+    pipeline = CrossValidationPipeline(entry, logger=quiet_logger)
+    pipeline._prepare_run()
+    pipeline._prepare_folds()
+
+    base_ids         = pipeline.samples[:, 7].astype(int)
+    covered_test_ids = set()
+
+    for train_indices, validation_indices, test_indices in pipeline.folds:
+        train_ids      = set(base_ids[train_indices].tolist())
+        validation_ids = set(base_ids[validation_indices].tolist())
+        test_ids       = set(base_ids[test_indices].tolist())
+
+        assert train_ids.isdisjoint(validation_ids)
+        assert train_ids.isdisjoint(test_ids)
+        assert validation_ids.isdisjoint(test_ids)
+        covered_test_ids |= test_ids
+
+    total_test_samples = sum(len(test_indices) for _, _, test_indices in pipeline.folds)
+    assert total_test_samples > len(covered_test_ids)
+
+
 def test_pipeline_runs_two_folds(dataset_config, quiet_logger):
     entry                  = CrossValidationEntryConfig(model_name="graphsage")
     entry.dataset          = dataset_config
