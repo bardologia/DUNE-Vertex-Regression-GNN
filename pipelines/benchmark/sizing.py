@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from models import get_model
+from pipelines.dataset.graph import FeatureSchema
 
 
 @dataclass
@@ -19,22 +20,24 @@ class SizeMatchResult:
 
 class ModelSizer:
     def __init__(self, config, logger):
-        self.config    = config.size_match
-        self.logger    = logger
-        self.attribute = self.config.scaled_attribute
+        self.config         = config.size_match
+        self.logger         = logger
+        self.attribute      = self.config.scaled_attribute
+        node_dim, edge_dim  = FeatureSchema(config.dataset).dimensions()
+        self.base_overrides = {"input_dim": node_dim, "edge_dim": edge_dim}
 
     @staticmethod
     def parameter_count(model):
         return int(sum(parameter.numel() for parameter in model.parameters()))
 
     def _count_at(self, model_name, width):
-        model, _ = get_model(model_name, **{self.attribute: int(width)})
+        model, _ = get_model(model_name, **{**self.base_overrides, self.attribute: int(width)})
         count    = self.parameter_count(model)
         del model
         return count
 
     def reference_count(self):
-        model, _ = get_model(self.config.reference_model)
+        model, _ = get_model(self.config.reference_model, **self.base_overrides)
         return self.parameter_count(model)
 
     def _bracket_upper(self, model_name, target):
@@ -82,7 +85,7 @@ class ModelSizer:
         return SizeMatchResult(
             model         = model_name,
             width         = int(best_width),
-            overrides     = {self.attribute: int(best_width)},
+            overrides     = {**self.base_overrides, self.attribute: int(best_width)},
             parameters    = int(best_count),
             target        = int(target),
             deviation_pct = float(deviation_pct),

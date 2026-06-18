@@ -83,7 +83,7 @@ class SizeMatchStage(BenchmarkStage):
     def _compute(self, model_name):
         if model_name == self.config.size_match.reference_model:
             parameters = self.target
-            result     = {"model": model_name, "width": None, "overrides": {}, "parameters": parameters, "target": self.target, "deviation_pct": 0.0, "iterations": 0, "flags": []}
+            result     = {"model": model_name, "width": None, "overrides": dict(self.sizer.base_overrides), "parameters": parameters, "target": self.target, "deviation_pct": 0.0, "iterations": 0, "flags": []}
             self.logger.subsection(f"{model_name}: reference ({parameters:,} parameters)")
             return result
 

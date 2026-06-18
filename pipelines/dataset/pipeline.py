@@ -6,7 +6,7 @@ from torch_geometric.loader import DataLoader as GraphDataLoader
 
 from pipelines.dataset.augmentation         import Augmentation
 from pipelines.dataset.coordinate_correction import DatasetCorrector
-from pipelines.dataset.graph                import Graph
+from pipelines.dataset.graph                import FeatureSchema, Graph
 from pipelines.dataset.graph_dataset        import DegreeHistogramEstimator, GraphDataset, StatsEstimator
 from pipelines.dataset.parquet_store        import ParquetDatasetWriter, ParquetEventReader
 from pipelines.dataset.splitting            import TargetBalancer
@@ -133,6 +133,11 @@ class DatasetPipeline:
         val_loader   = GraphDataLoader(datasets["val"],   batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory, persistent_workers=persistent)
         test_loader  = GraphDataLoader(datasets["test"],  batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory, persistent_workers=persistent)
         return train_loader, val_loader, test_loader
+
+    @staticmethod
+    def inject_feature_dimensions(model_overrides, dataset_config):
+        node_dimension, edge_dimension = FeatureSchema(dataset_config).dimensions()
+        return {**model_overrides, "input_dim": node_dimension, "edge_dim": edge_dimension}
 
     def pna_degree_histogram(self, model_name, dataset):
         if model_name != "pna":
