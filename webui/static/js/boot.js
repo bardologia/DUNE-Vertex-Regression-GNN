@@ -3,72 +3,92 @@
 class Application {
   constructor() {
     this.scriptPanel = null;
-    this.processPanel = null;
-    this.modelPanel = null;
+    this.launchPanel = null;
+    this.consolePanel = null;
     this.resultsPanel = null;
-    this.systemPanel = null;
+    this.observatory = null;
     this.router = null;
   }
 
   async init() {
+    this._buildScene();
     await this._probeBackend();
     this._buildPanels();
     this._buildRouter();
   }
 
+  _buildScene() {
+    const canvas = document.getElementById("server-anim");
+    if (canvas && window.ServerScene) {
+      window.serverScene = new window.ServerScene(canvas);
+    }
+  }
+
   async _probeBackend() {
-    const status = await window.apiGet("/api/system/status");
+    const status = await window.apiGet("/api/system");
     const wrapper = document.getElementById("nav-status");
     const text = document.getElementById("status-text");
     const live = !status.error;
     wrapper.classList.toggle("is-ok", live);
     wrapper.classList.toggle("is-down", !live);
     text.textContent = live ? `${status.host || "backend"} live` : "offline";
+
+    const footer = document.getElementById("footer-root");
+    if (footer && status.disk) footer.textContent = status.disk.path || "";
   }
 
   _buildPanels() {
+    this.observatory = new window.Observatory({
+      board: document.getElementById("status-board"),
+      host: document.getElementById("status-host"),
+      sum: document.getElementById("status-sum"),
+    });
+
     this.scriptPanel = new window.ScriptPanel({
       grid: document.getElementById("script-grid"),
       filters: document.getElementById("script-filters"),
-      launch: document.getElementById("launch-panel"),
     });
     this.scriptPanel.load();
-    window.scriptPanel = this.scriptPanel;
 
-    this.processPanel = new window.ProcessPanel({
-      list: document.getElementById("process-list"),
-      console: document.getElementById("console"),
+    this.launchPanel = new window.LaunchPanel({
+      rail: document.getElementById("launch-rail"),
+      config: document.getElementById("launch-config"),
+      kicker: document.getElementById("launch-kicker"),
+      title: document.getElementById("launch-title"),
+      purpose: document.getElementById("launch-purpose"),
+      facts: document.getElementById("launch-facts"),
     });
-    window.processPanel = this.processPanel;
 
-    this.modelPanel = new window.ModelPanel({
-      list: document.getElementById("model-list"),
-      detail: document.getElementById("model-detail"),
+    this.consolePanel = new window.ConsolePanel({
+      list: document.getElementById("job-list"),
+      count: document.getElementById("job-count"),
+      tiles: document.getElementById("console-tiles"),
     });
+    window.consolePanel = this.consolePanel;
 
     this.resultsPanel = new window.ResultsPanel({
       list: document.getElementById("run-list"),
       detail: document.getElementById("run-detail"),
       bar: document.getElementById("tensorboard-bar"),
     });
-
-    this.systemPanel = new window.SystemPanel(document.getElementById("system-board"));
   }
 
   _buildRouter() {
-    this.router = new window.Router((page) => this._onRoute(page));
+    this.router = new window.Router((page, param) => this._onRoute(page, param));
     window.router = this.router;
     this.router.start();
   }
 
-  _onRoute(page) {
-    if (page === "processes") this.processPanel.enter();
-    else this.processPanel.leave();
+  _onRoute(page, param) {
+    if (page === "system") this.observatory.enter();
+    else this.observatory.leave();
 
-    if (page === "system") this.systemPanel.enter();
-    else this.systemPanel.leave();
+    if (page === "console") this.consolePanel.enter();
+    else this.consolePanel.leave();
 
-    if (page === "models") this.modelPanel.enter();
+    if (page === "launch") this.launchPanel.enter(param);
+    else this.launchPanel.leave();
+
     if (page === "results") this.resultsPanel.enter();
   }
 }

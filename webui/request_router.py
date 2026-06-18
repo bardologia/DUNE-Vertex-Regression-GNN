@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 import mimetypes
-from urllib.parse import parse_qs, urlparse
+from pathlib       import Path
+from urllib.parse  import parse_qs, urlparse
 
 from config_registry     import ConfigRegistry
 from gpu_watchdog        import GpuWatchdog
@@ -42,8 +43,8 @@ class RequestRouter:
         if path.startswith("/static/"):
             self._serve_static(handler, path[len("/static/"):])
             return
-        if path == "/api/system/status":
-            self._send_json(handler, self.system.status())
+        if path == "/api/system/status" or path == "/api/system":
+            self._send_json(handler, self._system_payload())
             return
         if path == "/api/system/gpu":
             self._send_json(handler, self.gpu_watchdog.latest())
@@ -66,6 +67,10 @@ class RequestRouter:
             return
         if path == "/api/runs":
             self._send_json(handler, self.results.list_runs())
+            return
+        if path == "/api/runs/file":
+            target = (parse_qs(urlparse(handler.path).query).get("path") or [""])[0]
+            self._serve_run_file(handler, target)
             return
         if path == "/api/processes":
             self._send_json(handler, {"processes": self.processes.list()})
@@ -111,6 +116,36 @@ class RequestRouter:
             return
 
         self._send_json(handler, {"error": "not found"}, 404)
+
+    def _system_payload(self) -> dict:
+        payload   = self.system.status()
+        watchdog  = self.gpu_watchdog.latest()
+        payload["watchdog"] = {
+            "armed"     : bool(watchdog.get("armed")),
+            "interval"  : self.gpu_watchdog.INTERVAL_SECONDS,
+            "gpu_count" : len(payload.get("gpus", [])),
+            "updated"   : watchdog.get("updated"),
+        }
+        return payload
+
+    def _serve_run_file(self, handler, raw_path: str) -> None:
+        runs_root = self.paths.runs_dir.resolve()
+        target    = (runs_root / raw_path) if not Path(raw_path).is_absolute() else Path(raw_path)
+        target    = target.resolve()
+
+        if not target.is_relative_to(runs_root) or not target.is_file():
+            self._send_json(handler, {"error": "not found"}, 404)
+            return
+
+        data         = target.read_bytes()
+        content_type = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+
+        handler.send_response(200)
+        handler.send_header("Content-Type", content_type)
+        handler.send_header("Content-Length", str(len(data)))
+        handler.send_header("Cache-Control", "max-age=300")
+        handler.end_headers()
+        handler.wfile.write(data)
 
     def _with_pid(self, identifier: str, action):
         try:
