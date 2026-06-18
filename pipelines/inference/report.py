@@ -13,7 +13,7 @@ class AnalysisReport:
         self.logger           = logger
 
     def _metric_table(self, document, metrics):
-        table = MarkdownTable(["Coord", "MAE", "RMSE", "Median", "Bias", "R2"], align=["left", "right", "right", "right", "right", "right"])
+        table = MarkdownTable(["Coord", "MAE [cm]", "RMSE [cm]", "Median [cm]", "Bias [cm]", "R2"], align=["left", "right", "right", "right", "right", "right"])
         for name in self.COORDINATE_NAMES:
             table.add_row(name, f"{metrics[f'mae_{name}']:.4f}", f"{metrics[f'rmse_{name}']:.4f}", f"{metrics[f'median_{name}']:.4f}", f"{metrics[f'bias_{name}']:.4f}", f"{metrics[f'r2_{name}']:.4f}")
         table.add_row("overall", f"{metrics['mae']:.4f}", f"{metrics['rmse']:.4f}", f"{metrics['median_error']:.4f}", f"{metrics['bias']:.4f}", f"{metrics['r2']:.4f}")

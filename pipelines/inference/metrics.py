@@ -16,7 +16,7 @@ class InferenceMetrics:
         for index, name in enumerate(self.COORDINATE_NAMES):
             residual_sum_of_squares = torch.sum(difference[:, index] ** 2).item()
             total_sum_of_squares    = torch.sum((targets[:, index] - targets[:, index].mean()) ** 2).item()
-            r_squared               = 1 - (residual_sum_of_squares / total_sum_of_squares) if total_sum_of_squares > 0 else 0.0
+            r_squared               = 1 - (residual_sum_of_squares / total_sum_of_squares) if total_sum_of_squares > 0 else float("nan")
 
             results[f"mae_{name}"]    = float(absolute_difference[:, index].mean().item())
             results[f"rmse_{name}"]   = float(torch.sqrt((difference[:, index] ** 2).mean()).item())
@@ -60,7 +60,7 @@ class InferenceMetrics:
 
         residual_sum_of_squares = torch.sum(difference ** 2).item()
         total_sum_of_squares    = torch.sum((targets - targets.mean(dim=0, keepdim=True)) ** 2).item()
-        r_squared               = 1 - (residual_sum_of_squares / total_sum_of_squares) if total_sum_of_squares > 0 else 0.0
+        r_squared               = 1 - (residual_sum_of_squares / total_sum_of_squares) if total_sum_of_squares > 0 else float("nan")
 
         results = {
             "count"        : int(predictions.shape[0]),
