@@ -10,17 +10,22 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.animation import FuncAnimation, PillowWriter
 
+from pipelines.inference.plots import PublicationStyle
+
 
 class AnalysisAnimations:
     UNIT             = "cm"
     MAXIMUM_POINTS   = 2000
     NUMBER_OF_FRAMES = 48
+    FRAME_DPI        = 100
 
     def __init__(self, output_directory, logger):
         self.output_directory = Path(output_directory)
         self.logger           = logger
         self.output_directory.mkdir(parents=True, exist_ok=True)
         self.generated        = []
+
+        PublicationStyle.apply()
 
     def _subsample(self, predictions, targets):
         if predictions.shape[0] <= self.MAXIMUM_POINTS:
@@ -31,7 +36,7 @@ class AnalysisAnimations:
 
     def _save(self, animation, filename):
         path = self.output_directory / filename
-        animation.save(path, writer=PillowWriter(fps=15))
+        animation.save(path, writer=PillowWriter(fps=15), dpi=self.FRAME_DPI)
         self.generated.append(filename)
 
     def _rotating_predictions(self, predictions, targets):
@@ -43,7 +48,7 @@ class AnalysisAnimations:
         axis.set_ylabel(f"y [{self.UNIT}]")
         axis.set_zlabel(f"z [{self.UNIT}]")
         axis.set_title("Predicted versus true vertices")
-        axis.legend(loc="upper right")
+        axis.legend(loc="upper left", bbox_to_anchor=(1.02, 1.0), frameon=False)
 
         def update(frame_index):
             axis.view_init(elev=20, azim=frame_index * (360 / self.NUMBER_OF_FRAMES))
