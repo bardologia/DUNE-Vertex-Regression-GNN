@@ -10,6 +10,7 @@ from optuna.samplers import TPESampler
 from configuration.architectures      import MODEL_CONFIG_REGISTRY
 from configuration.training.general   import OptimizerConfig
 from models                           import get_model
+from tools.runtime.reproducibility import Reproducibility
 from pipelines.dataset.pipeline   import DatasetPipeline
 from pipelines.shared.run_metadata import LightweightRunContext
 from pipelines.training.trainer   import Trainer
@@ -51,6 +52,8 @@ class Tuner:
         return sampled
 
     def _objective(self, trial):
+        Reproducibility.seed_everything(self.tuning.random_state + trial.number)
+
         model_overrides, optimizer_overrides = self._suggest(trial)
 
         training_config = deepcopy(self.training_config)
@@ -89,6 +92,10 @@ class Tuner:
 
     def optimize(self):
         self.logger.section("[Hyperparameter Tuning]")
+
+        if self.tuning.warmup_trials >= self.tuning.n_trials:
+            raise ValueError(f"warmup_trials ({self.tuning.warmup_trials}) must be smaller than n_trials ({self.tuning.n_trials}) for the median pruner to ever activate.")
+
         self._prepare_data()
 
         sampler = TPESampler(seed=self.tuning.random_state)
