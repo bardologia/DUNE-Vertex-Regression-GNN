@@ -7,7 +7,7 @@ from dataclasses import dataclass
 class TuningConfig:
     epochs        : int  = 15
     n_trials      : int  = 5
-    warmup_trials : int  = 5
+    warmup_trials : int  = 2
     warmup_steps  : int  = 3
     batch_size    : int  = 128
     random_state  : int  = 42
