@@ -116,8 +116,8 @@ class DatasetCorrector:
         with self.logger.track() as progress:
             task_id = progress.add_task("Correcting coordinates", total=len(discovered_files))
             for source_path in discovered_files:
-                raw_target_path = self.archive_raw_file(source_path)
-                corrected_path  = self.write_corrected_file(source_path)
+                self.archive_raw_file(source_path)
+                corrected_path = self.write_corrected_file(source_path)
                 manifest_rows.append(self.build_manifest_row(source_path, corrected_path))
                 progress.advance(task_id)
 

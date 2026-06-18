@@ -3,8 +3,6 @@ from __future__ import annotations
 import os
 import threading
 import time
-from datetime import datetime
-from pathlib  import Path
 import psutil
 import pynvml
 
@@ -286,9 +284,9 @@ class ResourceMonitor:
     def _log_startup_info(self):
         if self.logger is None:
             return
-        
+
         self.logger.section("[Resource Monitor]")
-        self.logger.subsection(f"Enabled        : True")
+        self.logger.subsection("Enabled        : True")
         self.logger.subsection(f"Poll interval  : {self.interval:.1f} s")
         self.logger.subsection(f"NVML available : {self._nvml_ok} ({len(self._gpu_handles)} GPUs)")
         self.logger.subsection(f"TB logging     : {self.log_to_tb}")

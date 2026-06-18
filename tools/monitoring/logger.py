@@ -1,9 +1,7 @@
 import logging
 import os
-import sys
 from contextlib import contextmanager
 from datetime   import datetime
-from pathlib    import Path
 from typing     import Any, Mapping, Optional, Sequence
 
 from rich.console import Console
