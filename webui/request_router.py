@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import http.client
 import json
 import mimetypes
 import queue
+import threading
 from pathlib       import Path
 from urllib.parse  import parse_qs, urlparse
 
@@ -81,7 +83,7 @@ class RequestRouter:
             self._stream_process(handler, identifier)
             return
         if path == "/api/tensorboard":
-            self._send_json(handler, {"instances": self.tensorboard.list()})
+            self._send_json(handler, {"instances": self.tensorboard.list_instances()})
             return
 
         self._send_json(handler, {"error": "not found"}, 404)
@@ -94,6 +96,8 @@ class RequestRouter:
             overrides   = body.get("overrides", {})
             interpreter = body.get("interpreter") or self.paths.preferred_interpreter()
             result      = self.processes.launch(script, overrides, interpreter)
+            if result.get("ok") and script == "train":
+                threading.Thread(target=self.tensorboard.ensure, args=(self.tensorboard.default_logdir(),), daemon=True).start()
             self._send_json(handler, result, 200 if result.get("ok") else 400)
             return
 
@@ -103,14 +107,23 @@ class RequestRouter:
             self._send_json(handler, result, 200 if result.get("ok") else 400)
             return
 
+        if path == "/api/tensorboard/start":
+            result = self.tensorboard.ensure(self.tensorboard.default_logdir())
+            self._send_json(handler, result, 200 if result.get("ok") else 400)
+            return
+
         if path == "/api/tensorboard":
-            result = self.tensorboard.launch(body.get("run", ""))
+            logdir = self.tensorboard.resolve_run_logdir(body.get("run", ""))
+            if logdir is None:
+                self._send_json(handler, {"ok": False, "error": "run directory not found under runs/"}, 400)
+                return
+            result = self.tensorboard.ensure(logdir)
             self._send_json(handler, result, 200 if result.get("ok") else 400)
             return
 
         if path.startswith("/api/tensorboard/") and path.endswith("/stop"):
-            identifier = path[len("/api/tensorboard/"):-len("/stop")]
-            result     = self._with_pid(identifier, self.tensorboard.stop)
+            tb_id  = path[len("/api/tensorboard/"):-len("/stop")]
+            result = self.tensorboard.stop(tb_id)
             self._send_json(handler, result, 200 if result.get("ok") else 400)
             return
 
@@ -230,13 +243,54 @@ class RequestRouter:
         handler.end_headers()
         handler.wfile.write(data)
 
+    def _proxy_tensorboard(self, handler) -> None:
+        segments = handler.path.split("/")
+        tb_id    = segments[2].split("?")[0] if len(segments) > 2 else ""
+        record   = self.tensorboard.get(tb_id)
+
+        if record is None:
+            self._send_json(handler, {"error": "unknown tensorboard instance"}, 404)
+            return
+
+        length = int(handler.headers.get("Content-Length", 0) or 0)
+        body   = handler.rfile.read(length) if length > 0 else None
+
+        headers = {"Host": f"127.0.0.1:{record['port']}", "Accept-Encoding": "identity"}
+        for name in ("Content-Type", "Accept", "X-XSRF-Protected"):
+            value = handler.headers.get(name)
+            if value:
+                headers[name] = value
+
+        connection = http.client.HTTPConnection("127.0.0.1", record["port"], timeout=60)
+        try:
+            connection.request(handler.command, handler.path, body=body, headers=headers)
+            response = connection.getresponse()
+            payload  = response.read()
+            status   = response.status
+            passthru = {name: response.getheader(name) for name in ("Content-Type", "Content-Encoding", "Cache-Control", "Location")}
+        except OSError as error:
+            self._send_json(handler, {"error": f"tensorboard unreachable: {error}"}, 502)
+            return
+        finally:
+            connection.close()
+
+        handler.send_response(status)
+        for name, value in passthru.items():
+            if value:
+                handler.send_header(name, value)
+        handler.send_header("Content-Length", str(len(payload)))
+        handler.end_headers()
+        handler.wfile.write(payload)
+
     def route(self, handler) -> None:
         parsed = urlparse(handler.path)
         path   = parsed.path.rstrip("/") or "/"
         method = handler.command
 
         try:
-            if method == "GET":
+            if parsed.path.startswith("/tb/"):
+                self._proxy_tensorboard(handler)
+            elif method == "GET":
                 self._route_get(handler, path)
             elif method == "POST":
                 self._route_post(handler, path)

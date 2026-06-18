@@ -4,6 +4,9 @@ import shutil
 import socket
 import subprocess
 import threading
+import time
+import urllib.request
+import uuid
 from datetime import datetime
 from pathlib  import Path
 
@@ -13,7 +16,9 @@ from server_logger import ServerLogger
 
 class TensorboardManager:
 
-    HOST = "127.0.0.1"
+    HOST              = "127.0.0.1"
+    STARTUP_TIMEOUT_S = 90.0
+    PROBE_INTERVAL_S  = 0.5
 
     def __init__(self, paths: ProjectPaths, logger: ServerLogger) -> None:
         self.paths     = paths
@@ -21,7 +26,10 @@ class TensorboardManager:
         self.instances = {}
         self.lock      = threading.Lock()
 
-    def _resolve_logdir(self, run_directory: str) -> Path | None:
+    def default_logdir(self) -> str:
+        return str(self.paths.runs_dir.resolve())
+
+    def resolve_run_logdir(self, run_directory: str) -> str | None:
         candidate = Path(run_directory).expanduser()
         if not candidate.is_absolute():
             candidate = self.paths.runs_dir / run_directory
@@ -33,32 +41,31 @@ class TensorboardManager:
             return None
 
         tensorboard_directory = candidate / "tensorboard"
-        return tensorboard_directory if tensorboard_directory.is_dir() else candidate
+        return str(tensorboard_directory if tensorboard_directory.is_dir() else candidate)
 
-    def _existing(self, logdir: str) -> dict | None:
-        for record in self.instances.values():
-            if record["logdir"] == logdir and record["process"].poll() is None:
-                return record
-        return None
-
-    def launch(self, run_directory: str) -> dict:
-        logdir = self._resolve_logdir(run_directory)
-        if logdir is None:
-            return {"ok": False, "error": "run directory not found under runs/"}
-
-        logdir_text = str(logdir)
+    def ensure(self, logdir: str) -> dict:
+        logdir = str(logdir)
 
         with self.lock:
-            existing = self._existing(logdir_text)
-            if existing is not None:
-                return {"ok": True, **self._view(existing)}
+            for record in self.instances.values():
+                if record["logdir"] == logdir and record["status"] in ("starting", "running") and record["process"].poll() is None:
+                    return {"ok": True, **self._view(record)}
 
-        port    = self._free_port()
+        port  = self._free_port()
+        tb_id = uuid.uuid4().hex[:8]
+
         binary  = shutil.which("tensorboard")
-        command = [binary] if binary else ["tensorboard"]
-        argv    = command + ["--logdir", logdir_text, "--host", self.HOST, "--port", str(port), "--reload_interval", "30"]
+        command = [binary] if binary else [self.paths.preferred_interpreter(), "-m", "tensorboard.main"]
+        argv    = command + [
+            "--logdir",          logdir,
+            "--host",            self.HOST,
+            "--port",            str(port),
+            "--path_prefix",     f"/tb/{tb_id}",
+            "--reload_interval", "30",
+        ]
 
-        log_path = self.paths.webui_logs_dir / f"tensorboard_{port}.log"
+        log_path = self.paths.webui_logs_dir / f"tensorboard_{tb_id}.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
             log_handle = open(log_path, "wb")
@@ -67,18 +74,23 @@ class TensorboardManager:
             return {"ok": False, "error": str(error)}
 
         record = {
-            "logdir"  : logdir_text,
-            "port"    : port,
-            "pid"     : process.pid,
-            "url"     : f"http://{self.HOST}:{port}/",
-            "started" : datetime.now().isoformat(timespec="seconds"),
-            "process" : process,
+            "id"       : tb_id,
+            "logdir"   : logdir,
+            "port"     : port,
+            "pid"      : process.pid,
+            "status"   : "starting",
+            "started"  : datetime.now().isoformat(timespec="seconds"),
+            "process"  : process,
+            "log_path" : log_path,
         }
 
         with self.lock:
-            self.instances[process.pid] = record
+            self.instances[tb_id] = record
 
-        self.logger.ok(f"tensorboard started on port {port} for {logdir_text}")
+        self.logger.ok(f"tensorboard {tb_id} starting on port {port} for {logdir}")
+
+        threading.Thread(target=self._probe, args=(record,), daemon=True).start()
+
         return {"ok": True, **self._view(record)}
 
     def _free_port(self) -> int:
@@ -86,25 +98,61 @@ class TensorboardManager:
             probe.bind((self.HOST, 0))
             return probe.getsockname()[1]
 
+    def _probe(self, record: dict) -> None:
+        url      = f"http://{self.HOST}:{record['port']}/tb/{record['id']}/"
+        deadline = time.monotonic() + self.STARTUP_TIMEOUT_S
+
+        while time.monotonic() < deadline:
+            if record["process"].poll() is not None:
+                record["status"] = "failed"
+                self.logger.error(f"tensorboard {record['id']} exited during startup: {self._log_tail(record)}")
+                return
+
+            try:
+                with urllib.request.urlopen(url, timeout=2):
+                    record["status"] = "running"
+                    self.logger.ok(f"tensorboard {record['id']} ready at /tb/{record['id']}/")
+                    return
+            except OSError:
+                time.sleep(self.PROBE_INTERVAL_S)
+
+        record["status"] = "failed"
+        if record["process"].poll() is None:
+            record["process"].terminate()
+        self.logger.error(f"tensorboard {record['id']} failed to start within {self.STARTUP_TIMEOUT_S:.0f}s: {self._log_tail(record)}")
+
+    def _log_tail(self, record: dict, max_chars: int = 500) -> str:
+        try:
+            text = record["log_path"].read_text(errors="replace").strip()
+        except OSError:
+            return "no output captured"
+        return text[-max_chars:] if text else "no output captured"
+
+    def get(self, tb_id: str) -> dict | None:
+        with self.lock:
+            return self.instances.get(tb_id)
+
     def _view(self, record: dict) -> dict:
-        running = record["process"].poll() is None
+        if record["status"] == "running" and record["process"].poll() is not None:
+            record["status"] = "stopped"
         return {
-            "pid"     : record["pid"],
+            "id"      : record["id"],
             "logdir"  : record["logdir"],
             "port"    : record["port"],
-            "url"     : record["url"],
+            "pid"     : record["pid"],
+            "status"  : record["status"],
             "started" : record["started"],
-            "status"  : "running" if running else "stopped",
+            "url"     : f"/tb/{record['id']}/",
         }
 
-    def list(self) -> list[dict]:
+    def list_instances(self) -> list[dict]:
         with self.lock:
             records = list(self.instances.values())
         return [self._view(record) for record in sorted(records, key=lambda item: item["started"], reverse=True)]
 
-    def stop(self, pid: int) -> dict:
+    def stop(self, tb_id: str) -> dict:
         with self.lock:
-            record = self.instances.get(pid)
+            record = self.instances.get(tb_id)
 
         if record is None:
             return {"ok": False, "error": "unknown tensorboard instance"}
@@ -112,7 +160,8 @@ class TensorboardManager:
         if record["process"].poll() is None:
             record["process"].terminate()
 
-        self.logger.warning(f"tensorboard {pid} stopped")
+        record["status"] = "stopped"
+        self.logger.warning(f"tensorboard {tb_id} stopped")
         return {"ok": True}
 
     def stop_all(self) -> None:
@@ -122,3 +171,4 @@ class TensorboardManager:
         for record in records:
             if record["process"].poll() is None:
                 record["process"].terminate()
+            record["status"] = "stopped"

@@ -10,7 +10,7 @@ class EventScene extends CanvasBase {
     this.tracks     = [];
     this.flashes    = [];
     this.ambient    = [];
-    this.palette    = ["111, 155, 255", "45, 212, 191", "150, 140, 255", "190, 214, 255"];
+    this.palette    = ["47, 111, 237", "14, 147, 132", "108, 92, 231", "37, 99, 180"];
 
     this._seedAmbient();
 
@@ -52,7 +52,7 @@ class EventScene extends CanvasBase {
     const y = by != null ? by : this.h * (0.12 + Math.random() * 0.76);
     const core = this.palette[(Math.random() * 2) | 0];
 
-    this.flashes.push({ x, y, r: 0, life: 0.55, maxLife: 0.55, col: "200, 222, 255" });
+    this.flashes.push({ x, y, r: 0, life: 0.55, maxLife: 0.55, col: "90, 140, 245" });
 
     const photonCount = 54 + ((Math.random() * 40) | 0);
     for (let i = 0; i < photonCount; i++) {
@@ -89,7 +89,6 @@ class EventScene extends CanvasBase {
     const ctx = this.ctx;
     ctx.globalCompositeOperation = "source-over";
     ctx.clearRect(0, 0, this.w, this.h);
-    ctx.globalCompositeOperation = "lighter";
 
     this._drawAmbient(ctx, dt);
     this._drawFlashes(ctx, dt);
