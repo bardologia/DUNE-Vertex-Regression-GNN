@@ -106,7 +106,7 @@ class Scheduler:
         self._log_scheduler_info()
 
     def _resolved_t_max(self) -> int:
-        return self._t_max_override if self._t_max_override is not None else self.config.scheduler.epochs
+        return self._t_max_override if self._t_max_override is not None else self.config.loop.epochs
 
     def _cosine_annealing(self, epoch: int) -> list[float]:
         maximum_epochs = self._resolved_t_max()

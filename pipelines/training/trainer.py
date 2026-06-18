@@ -38,7 +38,7 @@ class Trainer:
         self.early_stopping   = EarlyStopping(training_config, self.logger, self.tracker)
         self.gradient_clipper = GradientClipper(training_config, self.logger, self.tracker)
         self.criterion        = Loss(training_config.loss, self.stats, self.logger, self.tracker)
-        self.checkpoint       = Checkpoint(self.logger, self.tracker, str(run_metadata.checkpoint_path))
+        self.checkpoint       = Checkpoint(self.logger, self.tracker, str(run_metadata.checkpoint_path), min_delta=training_config.early_stopping.min_delta)
 
         self.scheduler.set_total_epochs(self.epochs)
 
@@ -55,9 +55,7 @@ class Trainer:
         regression_head_parameters = list(self.model.regression_head.parameters())
         regression_head_parameters += list(self.model.norm.parameters())
         pool_parameters            = list(self.model.pool.parameters())
-
-        pool_identifiers   = {id(parameter) for parameter in pool_parameters}
-        encoder_parameters = [parameter for parameter in self.model.encoder.parameters() if id(parameter) not in pool_identifiers]
+        encoder_parameters         = list(self.model.encoder.parameters())
 
         optimizer_config = self.config.optimizer
         groups = [
@@ -65,6 +63,11 @@ class Trainer:
             {"params": pool_parameters,            "lr": optimizer_config.learning_rate_pool,            "weight_decay": optimizer_config.weight_decay_pool,            "name": "pool"},
             {"params": encoder_parameters,         "lr": optimizer_config.learning_rate_encoder,         "weight_decay": optimizer_config.weight_decay_encoder,         "name": "encoder"},
         ]
+
+        grouped_parameter_count = sum(parameter.numel() for group in groups for parameter in group["params"])
+        total_parameter_count   = sum(parameter.numel() for parameter in self.model.parameters())
+        if grouped_parameter_count != total_parameter_count:
+            raise RuntimeError(f"Optimizer parameter groups cover {grouped_parameter_count} parameters but the model holds {total_parameter_count}; the encoder/pool/head partition is incomplete.")
 
         self.logger.section("[Optimizer Parameter Groups]")
         for group in groups:

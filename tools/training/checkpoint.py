@@ -6,15 +6,16 @@ import torch
 
 
 class Checkpoint:
-    def __init__(self, logger, tracker, save_path: str):
+    def __init__(self, logger, tracker, save_path: str, min_delta: float = 0.0):
         self.logger          = logger
         self.tracker         = tracker
         self.save_path       = save_path
+        self.min_delta       = float(min_delta)
         self.best_val_loss   = float("inf")
         self.best_epoch      = -1
 
     def step(self, val_loss: float, epoch: int, trainer) -> bool:
-        if val_loss < self.best_val_loss:
+        if val_loss < self.best_val_loss - self.min_delta:
             self.best_val_loss = float(val_loss)
             self.best_epoch    = int(epoch)
             self.save(trainer, self.save_path, epoch)

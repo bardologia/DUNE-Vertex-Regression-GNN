@@ -41,7 +41,6 @@ class OptimizerConfig:
 @dataclass
 class SchedulerConfig:
     type    : str   = "cosine_annealing"
-    epochs  : int   = 250
     eta_min : float = 1e-6
 
 

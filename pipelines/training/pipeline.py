@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import numpy as np
-import torch
-
-from models import get_model
+from models                        import get_model
+from tools.runtime.reproducibility import Reproducibility
 from pipelines.dataset.pipeline    import DatasetPipeline
 from pipelines.shared.run_metadata import TrainingRunMetadata
 
@@ -17,8 +15,7 @@ class TrainingPipeline:
         self.external_logger = logger
 
     def _prepare_run(self):
-        torch.manual_seed(self.entry.seed)
-        np.random.seed(self.entry.seed)
+        Reproducibility.seed_everything(self.entry.seed)
 
         self.run_metadata = TrainingRunMetadata(
             self.training_config,
@@ -46,6 +43,7 @@ class TrainingPipeline:
     def _train(self):
         self.run_metadata.save_resolved_config(self.entry)
         self.run_metadata.save_normalization_stats(self.stats)
+        self.run_metadata.save_split(self.dataset_pipeline.split_base_ids)
 
         trainer                              = Trainer(self.model, self.stats, self.training_config, self.run_metadata)
         train_loader, val_loader, test_loader = self.loaders
