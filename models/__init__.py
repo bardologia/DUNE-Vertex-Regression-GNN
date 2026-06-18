@@ -1,3 +1,5 @@
+from dataclasses import fields
+
 from configuration.architectures import MODEL_CONFIG_REGISTRY
 
 from .blocks          import GraphRegressor
@@ -33,19 +35,27 @@ MODEL_REGISTRY: dict[str, type] = {
 }
 
 
-def get_model(name: str, config=None, **overrides):
-    key = name.lower().replace("-", "_").replace(" ", "_")
-    if key not in MODEL_REGISTRY:
-        raise ValueError(f"Unknown model '{name}'. Available: {list(MODEL_REGISTRY.keys())}")
+class ModelFactory:
+    @classmethod
+    def create(cls, name: str, config=None, **overrides):
+        key = name.lower().replace("-", "_").replace(" ", "_")
+        if key not in MODEL_REGISTRY:
+            raise ValueError(f"Unknown model '{name}'. Available: {list(MODEL_REGISTRY.keys())}")
 
-    if config is None:
-        config = MODEL_CONFIG_REGISTRY[key](**overrides)
-    elif overrides:
-        for field_name, value in overrides.items():
-            if hasattr(config, field_name):
+        if config is None:
+            config = MODEL_CONFIG_REGISTRY[key](**overrides)
+        elif overrides:
+            valid_field_names = {field_definition.name for field_definition in fields(config)}
+            unknown_keys      = [key_name for key_name in overrides if key_name not in valid_field_names]
+            if unknown_keys:
+                raise ValueError(f"Unknown override key(s) {unknown_keys} for {type(config).__name__}")
+            for field_name, value in overrides.items():
                 setattr(config, field_name, value)
 
-    return MODEL_REGISTRY[key](config), config
+        return MODEL_REGISTRY[key](config), config
+
+
+get_model = ModelFactory.create
 
 
 __all__ = [

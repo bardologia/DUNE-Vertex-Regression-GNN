@@ -7,25 +7,48 @@ from torch_geometric.nn    import SAGPooling, Set2Set, GATv2Conv
 from torch_geometric.utils import scatter, to_dense_batch
 
 
-def build_activation(name: str) -> nn.Module:
-    table = {
+class ModuleFactory:
+    ACTIVATIONS = {
         "gelu"       : nn.GELU,
         "relu"       : nn.ReLU,
         "elu"        : nn.ELU,
         "leaky_relu" : nn.LeakyReLU,
         "tanh"       : nn.Tanh,
     }
-    return table[name]()
 
+    @classmethod
+    def activation(cls, name: str) -> nn.Module:
+        return cls.ACTIVATIONS[name]()
 
-def build_norm(name: str, dimension: int) -> nn.Module:
-    if name == "layer":
-        return nn.LayerNorm(dimension)
-    if name == "batch":
-        return nn.BatchNorm1d(dimension)
-    if name == "none":
-        return nn.Identity()
-    raise ValueError(f"Unknown normalization '{name}'")
+    @classmethod
+    def norm(cls, name: str, dimension: int) -> nn.Module:
+        if name == "layer":
+            return nn.LayerNorm(dimension)
+        if name == "batch":
+            return nn.BatchNorm1d(dimension)
+        if name == "none":
+            return nn.Identity()
+        raise ValueError(f"Unknown normalization '{name}'")
+
+    @classmethod
+    def pooling(cls, config, hidden_dim: int) -> nn.Module:
+        if config.pooling == "mean_max":
+            return MeanMaxPool(hidden_dim)
+        if config.pooling == "sagpool_multiscale":
+            return MultiScalePool(hidden_dim, num_levels=config.pool_num_levels, ratio=config.sag_ratio)
+        if config.pooling == "set2set":
+            return Set2SetPool(hidden_dim, processing_steps=config.set2set_steps)
+        raise ValueError(f"Unknown pooling '{config.pooling}'")
+
+    @classmethod
+    def head(cls, config, input_dim: int) -> nn.Module:
+        if config.head_type == "hierarchical":
+            return HierarchicalRegressionHead(input_dim, config)
+        if config.head_type == "cascade":
+            return CascadeRegressionHead(input_dim, config)
+        if config.head_type == "mlp":
+            return MLPRegressionHead(input_dim, config)
+        raise ValueError(f"Unknown head type '{config.head_type}'")
 
 
 class DropPath(nn.Module):
@@ -122,16 +145,6 @@ class Set2SetPool(nn.Module):
 
     def forward(self, node_features, edge_index, batch, edge_attr=None) -> torch.Tensor:
         return self.set2set(node_features, batch)
-
-
-def build_pooling(config, hidden_dim: int) -> nn.Module:
-    if config.pooling == "mean_max":
-        return MeanMaxPool(hidden_dim)
-    if config.pooling == "sagpool_multiscale":
-        return MultiScalePool(hidden_dim, num_levels=config.pool_num_levels, ratio=config.sag_ratio)
-    if config.pooling == "set2set":
-        return Set2SetPool(hidden_dim, processing_steps=config.set2set_steps)
-    raise ValueError(f"Unknown pooling '{config.pooling}'")
 
 
 class GPSLayer(nn.Module):
@@ -238,8 +251,8 @@ class MessagePassingEncoder(nn.Module):
         self.input_proj = nn.Sequential(nn.Linear(config.input_dim, config.hidden_dim), nn.LayerNorm(config.hidden_dim))
 
         self.convolutions = nn.ModuleList([convolution_factory(config.hidden_dim, config.hidden_dim, index) for index in range(config.num_layers)])
-        self.norms        = nn.ModuleList([build_norm(config.normalization, config.hidden_dim) for _ in range(config.num_layers)])
-        self.activation   = build_activation(config.activation)
+        self.norms        = nn.ModuleList([ModuleFactory.norm(config.normalization, config.hidden_dim) for _ in range(config.num_layers)])
+        self.activation   = ModuleFactory.activation(config.activation)
         self.dropout      = nn.Dropout(config.dropout)
 
         drop_path_rates = [rate.item() for rate in torch.linspace(0, config.drop_path_rate, config.num_layers)]
@@ -428,24 +441,14 @@ class CascadeRegressionHead(nn.Module):
         return torch.cat([prediction_x, prediction_y, prediction_z], dim=-1)
 
 
-def build_head(config, input_dim: int) -> nn.Module:
-    if config.head_type == "hierarchical":
-        return HierarchicalRegressionHead(input_dim, config)
-    if config.head_type == "cascade":
-        return CascadeRegressionHead(input_dim, config)
-    if config.head_type == "mlp":
-        return MLPRegressionHead(input_dim, config)
-    raise ValueError(f"Unknown head type '{config.head_type}'")
-
-
 class GraphRegressor(nn.Module):
     def __init__(self, config, encoder: nn.Module):
         super().__init__()
         self.config          = config
         self.encoder         = encoder
-        self.pool            = build_pooling(config, encoder.out_dim)
+        self.pool            = ModuleFactory.pooling(config, encoder.out_dim)
         self.norm            = nn.LayerNorm(self.pool.out_dim)
-        self.regression_head = build_head(config, self.pool.out_dim)
+        self.regression_head = ModuleFactory.head(config, self.pool.out_dim)
 
     def _prepare_edge_attributes(self, data, reference):
         edge_attr = getattr(data, "edge_attr", None)
