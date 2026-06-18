@@ -19,6 +19,7 @@ python main/train.py  --model_name gps                    # train a model (reads
 python main/infer.py  --run_directory runs/gps_<stamp>    # full analysis: metrics, plots, GIFs, report on a run
 python main/tune.py   --model_name gps                    # Optuna search over a model's tunable_params()
 python main/cross_validate.py --model_name gps            # stratified K-fold CV; aggregates held-out test metrics
+python main/benchmark.py                                  # benchmark the whole model zoo; ranked comparison report
 python webui/serve.py                                     # web control panel + server monitoring
 ```
 
@@ -48,6 +49,7 @@ Dataclass config tree introspected by `ConfigCli`:
 - `architectures/zoo.py` — `BaseGNNConfig` plus one config dataclass per model and `MODEL_CONFIG_REGISTRY`.
 - `tuning/` — `TuningConfig`.
 - `cross_validation/` — `CrossValidationConfig` (`n_folds`, `validation_fraction`, `stratified`, `shuffle`, `random_state`).
+- `benchmark/` — `BenchmarkConfig` aggregating `SizeMatchConfig`, `OverfitGateConfig`, `MaxBatchConfig`, `BenchmarkTrainingConfig`, `ComparisonConfig` plus its own `dataset` and `training` trees (the model-zoo benchmark entry config; ConfigCli-introspected directly).
 - `entry/` — `DatasetEntryConfig` (raw input / output dirs + worker count for the data-prep scripts), `TrainEntryConfig`, `TuneEntryConfig`, `CrossValidationEntryConfig` (what the entry scripts and the webui edit).
 
 ### models/
@@ -59,6 +61,8 @@ Dataclass config tree introspected by `ConfigCli`:
 - `training/` — `Loss`, `Metrics`, `Trainer`, `TrainingPipeline`.
 - `tuning/` — `Tuner`.
 - `cross_validation/pipeline.py` — `CrossValidationPipeline` (stratified K-fold orchestrator: prepare samples once, build folds, train each fold under `runs/cv_<model>_<stamp>/`, evaluate held-out test metrics) and `CrossValidationReport` (aggregates per-fold test metrics into `cross_validation_metrics.json` + `cross_validation_report.md`).
+- `benchmark/` — model-zoo benchmark, sequential in-process under `runs/benchmark_<stamp>/`. `sizing.py` (`ModelSizer`, `SizeMatchResult`; binary-search `hidden_dim` to a reference parameter count), `batch_probe.py` (`MaxBatchProbe`; real-loss forward/backward, peak-VRAM ceiling, CPU-skipped), `results.py` (`TrialCollector`, `ComparisonReport`), `stages.py` (`SizeMatchStage`, `OverfitGateStage`, `MaxBatchStage`, `TrainingStage`, `EvaluationStage`, `ComparisonStage`; each writes a per-model-keyed JSON to `pipeline/` with per-model resume), `pipeline.py` (`BenchmarkPipeline` sequencing the stages with an overfit-gate abort). Drives `Trainer` directly for the overfit gate via `LightweightRunContext` (shared with the Tuner), reuses `TrainingRunMetadata`/`Predictor`/`InferenceMetrics` for training and evaluation.
+- `shared/run_metadata.py` also defines `LightweightRunContext` (minimal logger/tracker/checkpoint context for driving `Trainer` outside a full run, used by the Tuner and the benchmark overfit gate).
 
 ### tools/
 Self-contained, copy-adapted from DLR-TomoSAR. `monitoring/` (`Logger`, `Tracker`, `ResourceMonitor`, `ShapeLogger`, `ModelSummary`), `training/` (`Warmup`, `Scheduler`, `EarlyStopping`, `GradientClipper`, `Checkpoint`), `runtime/` (`ConfigCli`, `Reproducibility`), `reporting/` (markdown, plotting). Always log through `tools.monitoring.Logger`.

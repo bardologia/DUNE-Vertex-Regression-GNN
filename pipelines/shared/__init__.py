@@ -1,3 +1,3 @@
-from .run_metadata import TrainingRunMetadata
+from .run_metadata import LightweightRunContext, TrainingRunMetadata
 
-__all__ = ["TrainingRunMetadata"]
+__all__ = ["LightweightRunContext", "TrainingRunMetadata"]

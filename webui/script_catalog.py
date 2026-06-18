@@ -21,6 +21,11 @@ class ScriptCatalog:
             "category" : "Training",
             "purpose"  : "Run stratified K-fold cross-validation, aggregating held-out test metrics across folds.",
         },
+        "benchmark": {
+            "label"    : "Benchmark",
+            "category" : "Training",
+            "purpose"  : "Benchmark the whole model zoo: capacity matching, overfit gate, max-batch probe, training, and a ranked comparison report.",
+        },
         "correct_coordinates": {
             "label"    : "Correct Coordinates",
             "category" : "Data",
@@ -51,6 +56,7 @@ class ScriptCatalog:
         "infer",
         "tune",
         "cross_validate",
+        "benchmark",
     ]
 
     def __init__(self, paths: ProjectPaths) -> None:
