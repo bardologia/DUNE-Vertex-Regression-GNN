@@ -18,6 +18,9 @@ def test_training_pipeline_one_epoch(parquet_store, tmp_path):
     entry.training.loop.validation_frequency  = 1
     entry.training.loop.verbose               = False
     entry.training.warmup.warmup_steps        = 2
+    entry.training.loss.euclidean_weight      = 0.2
+    entry.training.loss.containment_weight    = 0.1
+    entry.training.loss.light_falloff_weight  = 0.5
 
     logger  = Logger(log_dir="", name="train_test", level="ERROR")
     summary = TrainingPipeline(entry, logger=logger).run()

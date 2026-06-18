@@ -3,7 +3,6 @@ from .data          import AugmentationConfig, DataConfig, DatasetConfig, GraphC
 from .entry         import InferenceEntryConfig, TrainEntryConfig, TuneEntryConfig
 from .training      import (
     EarlyStoppingConfig,
-    EMAConfig,
     GradientClipperConfig,
     IOConfig,
     LossConfig,
@@ -29,7 +28,6 @@ __all__ = [
     "TrainEntryConfig",
     "TuneEntryConfig",
     "EarlyStoppingConfig",
-    "EMAConfig",
     "GradientClipperConfig",
     "IOConfig",
     "LossConfig",

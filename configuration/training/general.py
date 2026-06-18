@@ -51,12 +51,6 @@ class EarlyStoppingConfig:
 
 
 @dataclass
-class EMAConfig:
-    use_ema   : bool  = False
-    ema_decay : float = 0.9995
-
-
-@dataclass
 class GradientClipperConfig:
     clip_mode           : str   = "fixed"
     max_grad_norm       : float = 1.0
@@ -77,8 +71,17 @@ class OverfitConfig:
 
 @dataclass
 class LossConfig:
-    type        : str   = "mse"
+    data_term   : str   = "mse"
     huber_delta : float = 1.0
+    data_weight : float = 1.0
+
+    euclidean_weight : float = 0.0
+
+    containment_weight : float = 0.0
+    containment_radius : float = 4.0
+
+    light_falloff_weight  : float = 0.0
+    light_falloff_epsilon : float = 1.0
 
 
 @dataclass
@@ -104,7 +107,6 @@ class TrainingConfig:
     scheduler        : SchedulerConfig       = field(default_factory=SchedulerConfig)
     warmup           : WarmupConfig          = field(default_factory=WarmupConfig)
     early_stopping   : EarlyStoppingConfig   = field(default_factory=EarlyStoppingConfig)
-    ema              : EMAConfig             = field(default_factory=EMAConfig)
     gradient_clipper : GradientClipperConfig = field(default_factory=GradientClipperConfig)
     overfit          : OverfitConfig         = field(default_factory=OverfitConfig)
     loss             : LossConfig            = field(default_factory=LossConfig)
