@@ -1,0 +1,536 @@
+"use strict";
+
+class EventViewer {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+
+    this.scene = new THREE.Scene();
+    this.camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1e6);
+
+    this.target = new THREE.Vector3(0, 0, 0);
+    this.radius = 10;
+    this.theta = Math.PI * 0.25;
+    this.phi = Math.PI * 0.35;
+    this.minRadius = 0.01;
+    this.maxRadius = 1e6;
+
+    this.points = null;
+    this.box = null;
+    this.axes = null;
+    this.running = false;
+
+    this._buildMarkers();
+    this._wireControls();
+    this._loop = this._loop.bind(this);
+  }
+
+  _buildMarkers() {
+    const make = (color) => {
+      const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(1, 20, 20),
+        new THREE.MeshBasicMaterial({ color })
+      );
+      mesh.visible = false;
+      this.scene.add(mesh);
+      return mesh;
+    };
+
+    this.gtMarker = make(0x18c08f);
+    this.predMarker = make(0xff7a3c);
+
+    this.targetMarker = new THREE.Mesh(
+      new THREE.SphereGeometry(1, 16, 16),
+      new THREE.MeshBasicMaterial({ color: 0x2f6fed, wireframe: true, transparent: true, opacity: 0.55 })
+    );
+    this.targetMarker.visible = false;
+    this.scene.add(this.targetMarker);
+
+    const lineGeometry = new THREE.BufferGeometry();
+    lineGeometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3));
+    this.errorLine = new THREE.Line(lineGeometry, new THREE.LineBasicMaterial({ color: 0xff3b3b }));
+    this.errorLine.visible = false;
+    this.scene.add(this.errorLine);
+  }
+
+  _wireControls() {
+    let dragging = false;
+    let lastX = 0;
+    let lastY = 0;
+
+    this.canvas.addEventListener("pointerdown", (event) => {
+      dragging = true;
+      lastX = event.clientX;
+      lastY = event.clientY;
+      this.canvas.setPointerCapture(event.pointerId);
+    });
+    this.canvas.addEventListener("pointermove", (event) => {
+      if (!dragging) return;
+      this.theta -= (event.clientX - lastX) * 0.008;
+      this.phi -= (event.clientY - lastY) * 0.008;
+      this.phi = Math.max(0.05, Math.min(Math.PI - 0.05, this.phi));
+      lastX = event.clientX;
+      lastY = event.clientY;
+    });
+    const release = (event) => {
+      dragging = false;
+      try { this.canvas.releasePointerCapture(event.pointerId); } catch (e) {}
+    };
+    this.canvas.addEventListener("pointerup", release);
+    this.canvas.addEventListener("pointercancel", release);
+    this.canvas.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      this.radius *= 1 + Math.sign(event.deltaY) * 0.12;
+      this.radius = Math.max(this.minRadius, Math.min(this.maxRadius, this.radius));
+    }, { passive: false });
+  }
+
+  start() {
+    if (this.running) return;
+    this.running = true;
+    requestAnimationFrame(this._loop);
+  }
+
+  stop() {
+    this.running = false;
+  }
+
+  _resize() {
+    const width = this.canvas.clientWidth;
+    const height = this.canvas.clientHeight;
+    if (!width || !height) return;
+    if (this.canvas.width === width && this.canvas.height === height && this._lastW === width && this._lastH === height) return;
+
+    this._lastW = width;
+    this._lastH = height;
+    this.renderer.setSize(width, height, false);
+    this.camera.aspect = width / height;
+    this.camera.updateProjectionMatrix();
+  }
+
+  _colorForLight(value, min, max) {
+    const t = max > min ? (value - min) / (max - min) : 0.5;
+    const stops = [
+      [0.18, 0.30, 0.78],
+      [0.16, 0.72, 0.86],
+      [0.62, 0.84, 0.30],
+      [0.98, 0.86, 0.24],
+    ];
+    const scaled = t * (stops.length - 1);
+    const index = Math.max(0, Math.min(stops.length - 2, Math.floor(scaled)));
+    const frac = scaled - index;
+    const a = stops[index];
+    const b = stops[index + 1];
+    return [a[0] + (b[0] - a[0]) * frac, a[1] + (b[1] - a[1]) * frac, a[2] + (b[2] - a[2]) * frac];
+  }
+
+  setEvent(detail) {
+    const positions = detail.sensors.positions;
+    const light = detail.sensors.light;
+    const gt = detail.gt;
+    const pred = detail.pred;
+
+    const min = [Infinity, Infinity, Infinity];
+    const max = [-Infinity, -Infinity, -Infinity];
+    const include = (point) => {
+      for (let axis = 0; axis < 3; axis++) {
+        if (point[axis] < min[axis]) min[axis] = point[axis];
+        if (point[axis] > max[axis]) max[axis] = point[axis];
+      }
+    };
+    positions.forEach(include);
+    include(gt);
+    include(pred);
+    if (!positions.length) { include([0, 0, 0]); }
+
+    const center = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];
+    const extent = Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2], 1e-3);
+
+    this.target.set(center[0], center[1], center[2]);
+    this.radius = extent * 1.9;
+    this.minRadius = extent * 0.05;
+    this.maxRadius = extent * 12;
+
+    let lightMin = Infinity;
+    let lightMax = -Infinity;
+    light.forEach((value) => { if (value < lightMin) lightMin = value; if (value > lightMax) lightMax = value; });
+
+    const positionArray = new Float32Array(positions.length * 3);
+    const colorArray = new Float32Array(positions.length * 3);
+    positions.forEach((point, i) => {
+      positionArray[i * 3] = point[0];
+      positionArray[i * 3 + 1] = point[1];
+      positionArray[i * 3 + 2] = point[2];
+      const rgb = this._colorForLight(light[i], lightMin, lightMax);
+      colorArray[i * 3] = rgb[0];
+      colorArray[i * 3 + 1] = rgb[1];
+      colorArray[i * 3 + 2] = rgb[2];
+    });
+
+    if (this.points) {
+      this.scene.remove(this.points);
+      this.points.geometry.dispose();
+      this.points.material.dispose();
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positionArray, 3));
+    geometry.setAttribute("color", new THREE.BufferAttribute(colorArray, 3));
+    const material = new THREE.PointsMaterial({ size: extent * 0.018, vertexColors: true, sizeAttenuation: true, transparent: true, opacity: 0.92 });
+    this.points = new THREE.Points(geometry, material);
+    this.scene.add(this.points);
+
+    const markerRadius = extent * 0.028;
+    this.gtMarker.scale.setScalar(markerRadius);
+    this.gtMarker.position.set(gt[0], gt[1], gt[2]);
+    this.gtMarker.visible = true;
+
+    this.predMarker.scale.setScalar(markerRadius);
+    this.predMarker.position.set(pred[0], pred[1], pred[2]);
+    this.predMarker.visible = true;
+
+    const linePositions = this.errorLine.geometry.getAttribute("position");
+    linePositions.setXYZ(0, gt[0], gt[1], gt[2]);
+    linePositions.setXYZ(1, pred[0], pred[1], pred[2]);
+    linePositions.needsUpdate = true;
+    this.errorLine.visible = true;
+
+    this._buildBox(min, max);
+  }
+
+  setTargetMarker(point, visible) {
+    if (!visible) { this.targetMarker.visible = false; return; }
+    const scale = this.radius * 0.03;
+    this.targetMarker.scale.setScalar(Math.max(scale, 1e-3));
+    this.targetMarker.position.set(point[0], point[1], point[2]);
+    this.targetMarker.visible = true;
+  }
+
+  _buildBox(min, max) {
+    if (this.box) {
+      this.scene.remove(this.box);
+      this.box.geometry.dispose();
+      this.box.material.dispose();
+    }
+    if (this.axes) this.scene.remove(this.axes);
+
+    const size = new THREE.Vector3(max[0] - min[0], max[1] - min[1], max[2] - min[2]);
+    const center = new THREE.Vector3((min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2);
+    const geometry = new THREE.BoxGeometry(Math.max(size.x, 1e-3), Math.max(size.y, 1e-3), Math.max(size.z, 1e-3));
+    const edges = new THREE.EdgesGeometry(geometry);
+    this.box = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0xbcc5cf, transparent: true, opacity: 0.4 }));
+    this.box.position.copy(center);
+    geometry.dispose();
+    this.scene.add(this.box);
+
+    this.axes = new THREE.AxesHelper(Math.max(size.x, size.y, size.z) * 0.55);
+    this.axes.position.set(min[0], min[1], min[2]);
+    this.scene.add(this.axes);
+  }
+
+  _loop() {
+    if (!this.running) return;
+    this._resize();
+
+    const sinPhi = Math.sin(this.phi);
+    this.camera.position.set(
+      this.target.x + this.radius * sinPhi * Math.sin(this.theta),
+      this.target.y + this.radius * Math.cos(this.phi),
+      this.target.z + this.radius * sinPhi * Math.cos(this.theta)
+    );
+    this.camera.lookAt(this.target);
+    this.renderer.render(this.scene, this.camera);
+
+    requestAnimationFrame(this._loop);
+  }
+}
+
+class EventExplorerPanel {
+  constructor(refs) {
+    this.refs = refs;
+    this.runs = [];
+    this.currentRun = null;
+    this.currentSplit = "test";
+    this.meta = null;
+    this.gt = [];
+    this.error = [];
+    this.nActive = [];
+    this.selectedIndex = null;
+    this.entered = false;
+    this.polling = false;
+    this.pendingIndex = null;
+    this.fetching = false;
+    this.viewer = null;
+
+    this.refs.splits.querySelectorAll(".ev-split").forEach((button) => {
+      button.addEventListener("click", () => this._setSplit(button.dataset.split));
+    });
+  }
+
+  async enter() {
+    if (!this.viewer) this.viewer = new EventViewer(this.refs.canvas);
+    this.viewer.start();
+
+    if (!this.entered) {
+      this.entered = true;
+      await this._loadRuns();
+    }
+  }
+
+  leave() {
+    if (this.viewer) this.viewer.stop();
+  }
+
+  async _loadRuns() {
+    const data = await window.apiGet("/api/events/runs");
+    this.runs = (data && data.runs) || [];
+    this._renderRuns();
+
+    if (!this.runs.length) {
+      this.refs.hint.hidden = false;
+      this.refs.hint.textContent = "No runs with a saved checkpoint under runs/. Train a model first.";
+      this.refs.stage.hidden = true;
+    }
+  }
+
+  _renderRuns() {
+    this.refs.runs.innerHTML = "";
+    this.runs.forEach((run) => {
+      const pill = document.createElement("button");
+      pill.type = "button";
+      pill.className = "ev-run" + (run.run === this.currentRun ? " is-active" : "");
+      pill.innerHTML =
+        `<span class="ev-run__name">${window.escapeHtml(run.run)}</span>` +
+        `<span class="ev-run__model">${window.escapeHtml(run.model)}</span>`;
+      pill.addEventListener("click", () => this._selectRun(run.run));
+      this.refs.runs.appendChild(pill);
+    });
+  }
+
+  _selectRun(run) {
+    if (this.polling) { window.toast("A split is still loading.", "warn"); return; }
+    this.currentRun = run;
+    this._renderRuns();
+    this._load();
+  }
+
+  _setSplit(split) {
+    if (split === this.currentSplit) return;
+    this.currentSplit = split;
+    this.refs.splits.querySelectorAll(".ev-split").forEach((button) => {
+      button.classList.toggle("is-active", button.dataset.split === split);
+    });
+    if (this.currentRun && !this.polling) this._load();
+  }
+
+  async _load() {
+    if (!this.currentRun) return;
+
+    this.refs.stage.hidden = true;
+    this.refs.hint.hidden = true;
+    this.refs.progress.hidden = false;
+    this._setProgress("requesting load");
+
+    const result = await window.apiPost("/api/events/load", { run: this.currentRun, split: this.currentSplit });
+    if (!result.ok) {
+      this.refs.progress.hidden = true;
+      this.refs.hint.hidden = false;
+      this.refs.hint.textContent = result.error || "Load failed.";
+      return;
+    }
+    await this._poll();
+  }
+
+  _setProgress(stage) {
+    this.refs.progressFill.classList.add("is-indeterminate");
+    this.refs.progressLabel.textContent = stage;
+  }
+
+  async _poll() {
+    this.polling = true;
+    const run = this.currentRun;
+    const split = this.currentSplit;
+
+    while (true) {
+      let status;
+      try {
+        status = await window.apiGet("/api/events/status");
+      } catch (e) {
+        this._failLoad("Backend unreachable.");
+        break;
+      }
+
+      if (status.run !== run || status.split !== split) {
+        this.refs.progress.hidden = true;
+        break;
+      }
+
+      if (status.state === "loading") {
+        this._setProgress(status.stage || "loading");
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        continue;
+      }
+
+      if (status.state === "ready") {
+        this.refs.progress.hidden = true;
+        await this._fetchList(run, split);
+        break;
+      }
+
+      this._failLoad(status.error || "Load failed.");
+      break;
+    }
+
+    this.polling = false;
+  }
+
+  _failLoad(message) {
+    this.refs.progress.hidden = true;
+    this.refs.hint.hidden = false;
+    this.refs.hint.textContent = message;
+  }
+
+  async _fetchList(run, split) {
+    const data = await window.apiGet(`/api/events/list?run=${encodeURIComponent(run)}&split=${encodeURIComponent(split)}`);
+    if (!data || !data.ok) { this._failLoad((data && data.error) || "Could not read events."); return; }
+
+    this.meta = data.meta;
+    this.gt = data.gt;
+    this.error = data.error;
+    this.nActive = data.n_active;
+
+    this.refs.stage.hidden = false;
+    this._buildSliders();
+
+    const center = [
+      (this.meta.bounds_min[0] + this.meta.bounds_max[0]) / 2,
+      (this.meta.bounds_min[1] + this.meta.bounds_max[1]) / 2,
+      (this.meta.bounds_min[2] + this.meta.bounds_max[2]) / 2,
+    ];
+    this._setSliderValues(center);
+    this._snap(center);
+  }
+
+  _buildSliders() {
+    const axes = ["x", "y", "z"];
+    this.refs.sliders.innerHTML = "";
+    this.sliderInputs = {};
+
+    axes.forEach((axis, index) => {
+      const min = this.meta.bounds_min[index];
+      const max = this.meta.bounds_max[index];
+      const step = (max - min) / 400 || 0.001;
+
+      const row = document.createElement("div");
+      row.className = "ev-slider";
+      row.innerHTML =
+        `<label>${axis}</label>` +
+        `<input type="range" min="${min}" max="${max}" step="${step}" value="${(min + max) / 2}" data-axis="${index}" />` +
+        `<output data-axis="${index}">0</output>`;
+      this.refs.sliders.appendChild(row);
+
+      const input = row.querySelector("input");
+      this.sliderInputs[index] = input;
+      input.addEventListener("input", () => this._onSlider());
+    });
+  }
+
+  _setSliderValues(point) {
+    for (let index = 0; index < 3; index++) {
+      this.sliderInputs[index].value = point[index];
+      this.refs.sliders.querySelector(`output[data-axis="${index}"]`).textContent = this._fmt(point[index]);
+    }
+  }
+
+  _onSlider() {
+    const point = [0, 1, 2].map((index) => {
+      const value = parseFloat(this.sliderInputs[index].value);
+      this.refs.sliders.querySelector(`output[data-axis="${index}"]`).textContent = this._fmt(value);
+      return value;
+    });
+    this._snap(point);
+  }
+
+  _snap(point) {
+    if (!this.gt.length) return;
+
+    let best = 0;
+    let bestDistance = Infinity;
+    for (let i = 0; i < this.gt.length; i++) {
+      const dx = this.gt[i][0] - point[0];
+      const dy = this.gt[i][1] - point[1];
+      const dz = this.gt[i][2] - point[2];
+      const distance = dx * dx + dy * dy + dz * dz;
+      if (distance < bestDistance) { bestDistance = distance; best = i; }
+    }
+
+    if (this.viewer) this.viewer.setTargetMarker(point, true);
+    this.refs.nearest.textContent = `· snapped ${this._fmt(Math.sqrt(bestDistance))} cm away`;
+
+    if (best !== this.selectedIndex) this._queueDetail(best);
+  }
+
+  _queueDetail(index) {
+    this.selectedIndex = index;
+    this.pendingIndex = index;
+    this._pump();
+  }
+
+  async _pump() {
+    if (this.fetching) return;
+    this.fetching = true;
+    while (this.pendingIndex !== null) {
+      const index = this.pendingIndex;
+      this.pendingIndex = null;
+      await this._fetchDetail(index);
+    }
+    this.fetching = false;
+  }
+
+  async _fetchDetail(index) {
+    const run = this.currentRun;
+    const split = this.currentSplit;
+    const data = await window.apiGet(`/api/events/detail?run=${encodeURIComponent(run)}&split=${encodeURIComponent(split)}&index=${index}`);
+    if (!data || !data.ok) return;
+    if (run !== this.currentRun || split !== this.currentSplit) return;
+
+    if (this.viewer) this.viewer.setEvent(data);
+    this._renderStats(data);
+  }
+
+  _renderStats(detail) {
+    const vector = (point) => `<span class="ev-vec">${point.map((value) => this._fmt(value)).join(" &middot; ")}</span>`;
+    const octant = detail.signs.map((sign) => (sign < 0 ? "−" : "+")).join("");
+
+    const rows = [
+      ["true vertex (x y z)", vector(detail.gt)],
+      ["prediction (x y z)", vector(detail.pred)],
+      ["abs error (x y z)", vector(detail.error_xyz)],
+      ["3D error", `<span class="ev-strong">${this._fmt(detail.error)} cm</span>`],
+      ["error percentile", `${(detail.error_rank * 100).toFixed(1)} % of split below`],
+      ["active sensors", String(detail.n_active)],
+      ["total light", this._fmt(detail.total_light)],
+      ["base event id", String(detail.base_event_id)],
+      ["octant", octant],
+      ["split error mean / median", `${this._fmt(this.meta.error_mean)} / ${this._fmt(this.meta.error_median)} cm`],
+    ];
+
+    this.refs.stats.innerHTML = rows
+      .map(([key, value]) => `<tr><th>${window.escapeHtml(key)}</th><td>${value}</td></tr>`)
+      .join("");
+
+    this.refs.readout.textContent = `event ${detail.index + 1} / ${this.meta.count} · ${this.currentRun} · ${this.currentSplit}`;
+  }
+
+  _fmt(value) {
+    if (!Number.isFinite(value)) return "–";
+    const abs = Math.abs(value);
+    if (abs >= 1000) return value.toFixed(0);
+    if (abs >= 10) return value.toFixed(1);
+    if (abs >= 0.01 || abs === 0) return value.toFixed(2);
+    return value.toExponential(1);
+  }
+}
+
+window.EventViewer = EventViewer;
+window.EventExplorerPanel = EventExplorerPanel;

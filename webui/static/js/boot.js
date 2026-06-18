@@ -7,6 +7,7 @@ class Application {
     this.consolePanel = null;
     this.resultsPanel = null;
     this.tensorboardView = null;
+    this.eventExplorerPanel = null;
     this.observatory = null;
     this.router = null;
   }
@@ -78,6 +79,21 @@ class Application {
     });
 
     this.tensorboardView = new window.TensorboardView();
+
+    this.eventExplorerPanel = new window.EventExplorerPanel({
+      runs: document.getElementById("ev-runs"),
+      splits: document.getElementById("ev-splits"),
+      hint: document.getElementById("ev-hint"),
+      progress: document.getElementById("ev-progress"),
+      progressFill: document.getElementById("ev-progress-fill"),
+      progressLabel: document.getElementById("ev-progress-label"),
+      stage: document.getElementById("ev-stage"),
+      canvas: document.getElementById("ev-canvas"),
+      readout: document.getElementById("ev-readout"),
+      nearest: document.getElementById("ev-nearest"),
+      sliders: document.getElementById("ev-sliders"),
+      stats: document.getElementById("ev-stats"),
+    });
   }
 
   _buildRouter() {
@@ -98,6 +114,9 @@ class Application {
 
     if (page === "tensorboard") this.tensorboardView.enter();
     else this.tensorboardView.leave();
+
+    if (page === "events") this.eventExplorerPanel.enter();
+    else this.eventExplorerPanel.leave();
 
     if (page === "results") this.resultsPanel.enter();
   }

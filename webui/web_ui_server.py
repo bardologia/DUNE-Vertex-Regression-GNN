@@ -3,6 +3,7 @@ from __future__ import annotations
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from config_registry     import ConfigRegistry
+from event_explorer      import EventExplorer
 from gpu_watchdog        import GpuWatchdog
 from model_library       import ModelLibrary
 from process_manager     import ProcessManager
@@ -45,6 +46,7 @@ class WebUIServer:
         self.tensorboard  = TensorboardManager(self.paths, self.logger)
         self.results      = ResultsBrowser(self.paths, self.logger)
         self.models       = ModelLibrary(self.paths)
+        self.events       = EventExplorer(self.paths, self.logger)
 
         self.router = RequestRouter(
             paths        = self.paths,
@@ -57,6 +59,7 @@ class WebUIServer:
             tensorboard  = self.tensorboard,
             results      = self.results,
             models       = self.models,
+            events       = self.events,
         )
 
     def _report_ready(self) -> None:
