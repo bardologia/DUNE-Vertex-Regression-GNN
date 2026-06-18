@@ -10,6 +10,23 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
+class PublicationStyle:
+    SETTINGS = {
+        "figure.dpi"       : 300,
+        "savefig.dpi"      : 300,
+        "font.size"        : 10,
+        "font.family"      : "sans-serif",
+        "axes.grid"        : True,
+        "grid.alpha"       : 0.3,
+        "axes.spines.top"  : False,
+        "axes.spines.right": False,
+    }
+
+    @staticmethod
+    def apply():
+        plt.rcParams.update(PublicationStyle.SETTINGS)
+
+
 class AnalysisPlots:
     COORDINATE_NAMES = ("x", "y", "z")
     UNIT             = "cm"
@@ -20,16 +37,7 @@ class AnalysisPlots:
         self.output_directory.mkdir(parents=True, exist_ok=True)
         self.generated        = []
 
-        plt.rcParams.update({
-            "figure.dpi"     : 300,
-            "savefig.dpi"    : 300,
-            "font.size"      : 10,
-            "font.family"    : "sans-serif",
-            "axes.grid"      : True,
-            "grid.alpha"     : 0.3,
-            "axes.spines.top": False,
-            "axes.spines.right": False,
-        })
+        PublicationStyle.apply()
 
     def _save(self, figure, filename):
         path = self.output_directory / filename
