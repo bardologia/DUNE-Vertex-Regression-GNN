@@ -5,7 +5,6 @@ import time
 import traceback
 from copy        import deepcopy
 from dataclasses import asdict
-from datetime    import datetime
 from pathlib     import Path
 
 import torch
@@ -45,6 +44,9 @@ class BenchmarkStage:
 
     def _save(self, records):
         self._result_path().write_text(json.dumps(records, indent=2), encoding="utf-8")
+
+    def _overrides(self, model_name):
+        return self.size_records.get(model_name, {}).get("overrides", {})
 
     def _prepare(self):
         return None
@@ -110,9 +112,6 @@ class OverfitGateStage(BenchmarkStage):
         self.subset  = Subset(self.dataset, list(range(subset_size)))
         self.loader  = GraphDataLoader(self.subset, batch_size=self.gate.batch_size, shuffle=True)
 
-    def _overrides(self, model_name):
-        return self.size_records.get(model_name, {}).get("overrides", {})
-
     def _train_tiny(self, model_name):
         training_config                     = deepcopy(self.config.training)
         training_config.loop.epochs         = self.gate.epochs
@@ -175,9 +174,6 @@ class MaxBatchStage(BenchmarkStage):
         subset_size = min(self.config.max_batch.sample_count, len(self.dataset))
         self.subset = Subset(self.dataset, list(range(subset_size)))
 
-    def _overrides(self, model_name):
-        return self.size_records.get(model_name, {}).get("overrides", {})
-
     def _compute(self, model_name):
         probe  = MaxBatchProbe(self.config, model_name, self.subset, self.stats, self.logger, overrides=self._overrides(model_name))
         result = probe.run()
@@ -202,9 +198,6 @@ class TrainingStage(BenchmarkStage):
     def _prepare(self):
         self.logger.section("[Benchmark | Training]")
         self.training_directory = self.run_directory / "training"
-
-    def _overrides(self, model_name):
-        return self.size_records.get(model_name, {}).get("overrides", {})
 
     def _batch_size(self, model_name):
         record = self.max_batch_records.get(model_name, {})
@@ -268,9 +261,6 @@ class EvaluationStage(BenchmarkStage):
         self.logger.section("[Benchmark | Evaluation]")
         self.device     = self.config.training.loop.device if torch.cuda.is_available() else "cpu"
         self.batch_size = self.config.training.loop.batch_size
-
-    def _overrides(self, model_name):
-        return self.size_records.get(model_name, {}).get("overrides", {})
 
     def _compute(self, model_name):
         training_record = self.training_records.get(model_name, {})
