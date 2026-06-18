@@ -10,6 +10,8 @@ from tools.monitoring.logger  import Logger
 from tools.monitoring.tracker import NullTracker, Tracker
 from tools.runtime.config_cli import ConfigCli
 
+from pipelines.shared.run_paths import RunPaths
+
 
 class LightweightRunContext:
     def __init__(self, logger, checkpoint_path, tracker=None):
@@ -27,16 +29,17 @@ class TrainingRunMetadata:
         self.training_config = training_config
         self.model_name      = model_name
 
-        stamp                  = datetime.now().strftime("%Y%m%d-%H%M%S")
-        resolved_name          = run_name if run_name else stamp
-        self.run_directory     = Path(base_logdir) / f"{model_name}_{resolved_name}"
-        self.tensorboard_dir   = self.run_directory / "tensorboard"
-        self.logs_directory    = self.run_directory / "logs"
-        self.metadata_directory = self.run_directory / "metadata"
-        self.checkpoint_dir    = self.run_directory / "checkpoints"
+        stamp         = datetime.now().strftime("%Y%m%d-%H%M%S")
+        resolved_name = run_name if run_name else stamp
+        run_paths     = RunPaths(base_logdir, model_name, resolved_name)
 
-        for directory in (self.tensorboard_dir, self.logs_directory, self.metadata_directory, self.checkpoint_dir):
-            directory.mkdir(parents=True, exist_ok=True)
+        self.run_directory      = run_paths.run_directory
+        self.tensorboard_dir    = run_paths.tensorboard_dir
+        self.logs_directory     = run_paths.logs_directory
+        self.metadata_directory = run_paths.metadata_directory
+        self.checkpoint_dir     = run_paths.checkpoint_dir
+
+        run_paths.create()
 
         self.checkpoint_path = self.checkpoint_dir / training_config.io.checkpoint_name
         self.writer          = SummaryWriter(log_dir=str(self.tensorboard_dir))

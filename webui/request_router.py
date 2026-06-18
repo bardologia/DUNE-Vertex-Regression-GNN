@@ -5,8 +5,11 @@ import json
 import mimetypes
 import queue
 import threading
+from datetime      import datetime
 from pathlib       import Path
 from urllib.parse  import parse_qs, urlparse
+
+from pipelines.shared.run_paths import RunPaths
 
 from config_registry     import ConfigRegistry
 from event_explorer      import EventExplorer
@@ -115,11 +118,18 @@ class RequestRouter:
 
         if path == "/api/launch":
             script      = body.get("script", "")
-            overrides   = body.get("overrides", {})
+            overrides   = dict(body.get("overrides", {}))
             interpreter = body.get("interpreter") or self.paths.preferred_interpreter()
-            result      = self.processes.launch(script, overrides, interpreter)
+
+            if script == "train" and not overrides.get("run_name"):
+                overrides["run_name"] = datetime.now().strftime("%Y%m%d-%H%M%S")
+
+            result = self.processes.launch(script, overrides, interpreter)
+
             if result.get("ok") and script == "train":
-                threading.Thread(target=self.tensorboard.ensure, args=(self.tensorboard.default_logdir(),), daemon=True).start()
+                logdir = self._scoped_train_logdir(overrides, interpreter)
+                threading.Thread(target=self.tensorboard.ensure, args=(logdir,), daemon=True).start()
+
             self._send_json(handler, result, 200 if result.get("ok") else 400)
             return
 
@@ -155,6 +165,23 @@ class RequestRouter:
             return
 
         self._send_json(handler, {"error": "not found"}, 404)
+
+    def _scoped_train_logdir(self, overrides: dict, interpreter: str) -> str:
+        defaults    = self._train_config_defaults(interpreter)
+        model_name  = overrides.get("model_name")              or defaults.get("model_name", "gps")
+        base_logdir = overrides.get("training.io.log_base_dir") or defaults.get("training.io.log_base_dir", "runs")
+
+        base = Path(base_logdir)
+        if not base.is_absolute():
+            base = self.paths.repo_root / base
+
+        return str(RunPaths(base, model_name, overrides["run_name"]).tensorboard_dir)
+
+    def _train_config_defaults(self, interpreter: str) -> dict:
+        schema = self.configs.schema("train", interpreter)
+        if not schema.get("ok"):
+            return {}
+        return {leaf["path"]: leaf["value"] for leaf in schema["leaves"]}
 
     def _system_payload(self) -> dict:
         payload   = self.system.status()
