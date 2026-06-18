@@ -16,6 +16,24 @@ def test_cascade_head_type():
     assert GPSCascadeConfig().head_type == "cascade"
 
 
+def test_model_configs_declare_tunable_params():
+    for name, config_class in MODEL_CONFIG_REGISTRY.items():
+        space = config_class.tunable_params()
+        assert isinstance(space, dict) and len(space) > 0
+        for specification in space.values():
+            assert specification["type"] in ("float", "int", "categorical")
+
+    assert "heads" in MODEL_CONFIG_REGISTRY["gatv2"].tunable_params()
+    assert "heads" not in MODEL_CONFIG_REGISTRY["gcn"].tunable_params()
+    assert "sag_ratio" in MODEL_CONFIG_REGISTRY["gps"].tunable_params()
+
+
+def test_model_config_sections():
+    from configuration.architectures import BaseGNNConfig
+    assert "encoder" in BaseGNNConfig.SECTIONS
+    assert "head" in BaseGNNConfig.SECTIONS
+
+
 def test_default_gps_config_dimensions():
     config = GPSConfig()
     assert config.input_dim  == 8

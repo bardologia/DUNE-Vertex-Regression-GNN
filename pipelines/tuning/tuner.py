@@ -7,8 +7,9 @@ import optuna
 from optuna.pruners  import MedianPruner
 from optuna.samplers import TPESampler
 
-from configuration.architectures import MODEL_CONFIG_REGISTRY
-from models                       import get_model
+from configuration.architectures      import MODEL_CONFIG_REGISTRY
+from configuration.training.general   import OptimizerConfig
+from models                           import get_model
 from tools.monitoring.tracker     import NullTracker
 from pipelines.dataset.pipeline   import DatasetPipeline
 from pipelines.training.trainer   import Trainer
@@ -37,35 +38,23 @@ class Tuner:
         self.train_loader, self.val_loader, _ = DatasetPipeline.build_loaders(datasets, self.tuning.batch_size, num_workers=0)
 
     def _suggest(self, trial):
-        default_config = MODEL_CONFIG_REGISTRY[self.entry.model_name]()
+        self.model_space     = MODEL_CONFIG_REGISTRY[self.entry.model_name].tunable_params()
+        self.optimizer_space = OptimizerConfig.tunable_params()
+        return self._sample(trial, self.model_space), self._sample(trial, self.optimizer_space)
 
-        model_overrides = {
-            "hidden_dim"               : trial.suggest_categorical("hidden_dim", [64, 128, 192, 256]),
-            "num_layers"               : trial.suggest_int("num_layers", 2, 6),
-            "dropout"                  : trial.suggest_float("dropout", 0.0, 0.2, step=0.05),
-            "drop_path_rate"           : trial.suggest_float("drop_path_rate", 0.0, 0.2, step=0.05),
-            "hierarchical_feature_dim" : trial.suggest_categorical("hierarchical_feature_dim", [128, 256, 384]),
-            "coord_embed_dim"          : trial.suggest_categorical("coord_embed_dim", [32, 64, 128]),
-            "regression_dropout"       : trial.suggest_float("regression_dropout", 0.0, 0.2, step=0.05),
-        }
-
-        if hasattr(default_config, "heads"):
-            model_overrides["heads"] = trial.suggest_categorical("heads", [2, 4, 8])
-
-        if default_config.pooling == "sagpool_multiscale":
-            model_overrides["pool_num_levels"] = trial.suggest_int("pool_num_levels", 2, 4)
-            model_overrides["sag_ratio"]       = trial.suggest_float("sag_ratio", 0.3, 0.7, step=0.1)
-
-        optimizer_overrides = {
-            "learning_rate_regression_head" : trial.suggest_float("learning_rate_regression_head", 5e-5, 2e-3, log=True),
-            "learning_rate_pool"            : trial.suggest_float("learning_rate_pool", 1e-5, 1e-3, log=True),
-            "learning_rate_encoder"         : trial.suggest_float("learning_rate_encoder", 1e-5, 1e-3, log=True),
-            "weight_decay_regression_head"  : trial.suggest_float("weight_decay_regression_head", 1e-6, 1e-4, log=True),
-            "weight_decay_pool"             : trial.suggest_float("weight_decay_pool", 1e-6, 1e-4, log=True),
-            "weight_decay_encoder"          : trial.suggest_float("weight_decay_encoder", 1e-6, 5e-4, log=True),
-        }
-
-        return model_overrides, optimizer_overrides
+    def _sample(self, trial, space):
+        sampled = {}
+        for name, specification in space.items():
+            kind = specification["type"]
+            if kind == "float":
+                sampled[name] = trial.suggest_float(name, specification["low"], specification["high"], step=specification.get("step"), log=specification.get("log", False))
+            elif kind == "int":
+                sampled[name] = trial.suggest_int(name, specification["low"], specification["high"])
+            elif kind == "categorical":
+                sampled[name] = trial.suggest_categorical(name, specification["choices"])
+            else:
+                raise ValueError(f"Unknown tunable type '{kind}' for '{name}'")
+        return sampled
 
     def _objective(self, trial):
         model_overrides, optimizer_overrides = self._suggest(trial)
@@ -100,7 +89,7 @@ class Tuner:
 
     def build_best_overrides(self):
         best_parameters     = self.study.best_params
-        optimizer_keys      = {"learning_rate_regression_head", "learning_rate_pool", "learning_rate_encoder", "weight_decay_regression_head", "weight_decay_pool", "weight_decay_encoder"}
+        optimizer_keys      = set(OptimizerConfig.tunable_params())
         model_overrides     = {key: value for key, value in best_parameters.items() if key not in optimizer_keys}
         optimizer_overrides = {key: value for key, value in best_parameters.items() if key in optimizer_keys}
         return model_overrides, optimizer_overrides
