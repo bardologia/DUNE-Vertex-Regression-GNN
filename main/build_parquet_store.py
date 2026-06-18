@@ -16,7 +16,7 @@ class ParquetStoreEntry:
         self.config = ConfigCli(self.config, description="Build the Parquet store from corrected CSVs").apply()
 
         logger = Logger(log_dir="logs", name="parquet_store")
-        ParquetDatasetWriter(self.config.raw_input_dir, self.config.output_dir, worker_count=self.config.worker_count, logger=logger).run()
+        ParquetDatasetWriter(self.config.raw_input_dir, self.config.output_dir, worker_count=self.config.worker_count, logger=logger, hot_channels=self.config.hot_channels).run()
         logger.close()
 
 

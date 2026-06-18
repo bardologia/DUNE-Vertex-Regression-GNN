@@ -8,6 +8,15 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 @dataclass
+class HotChannelConfig:
+    enabled         : bool  = True
+    active_fraction : float = 0.999
+    median_factor   : float = 50.0
+    neighbor_count  : int   = 8
+    min_events      : int   = 100
+
+
+@dataclass
 class DataConfig:
     parquet_store_dir  : Path  = field(default_factory=lambda: PROJECT_ROOT / "data_frames" / "parquet")
     raw_input_dir      : Path  = field(default_factory=lambda: PROJECT_ROOT / "data")
@@ -20,6 +29,8 @@ class DataConfig:
 
     coordinate_columns : tuple = ("event_x", "event_y", "event_z")
     position_columns   : tuple = ("x", "y", "z")
+
+    hot_channels       : HotChannelConfig = field(default_factory=HotChannelConfig)
 
 
 @dataclass
