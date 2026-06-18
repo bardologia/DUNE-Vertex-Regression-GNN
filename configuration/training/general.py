@@ -26,6 +26,17 @@ class OptimizerConfig:
     betas : tuple = (0.9, 0.999)
     eps   : float = 1e-8
 
+    @classmethod
+    def tunable_params(cls) -> dict:
+        return {
+            "learning_rate_regression_head" : {"type": "float", "low": 5e-5, "high": 2e-3, "log": True},
+            "learning_rate_pool"            : {"type": "float", "low": 1e-5, "high": 1e-3, "log": True},
+            "learning_rate_encoder"         : {"type": "float", "low": 1e-5, "high": 1e-3, "log": True},
+            "weight_decay_regression_head"  : {"type": "float", "low": 1e-6, "high": 1e-4, "log": True},
+            "weight_decay_pool"             : {"type": "float", "low": 1e-6, "high": 1e-4, "log": True},
+            "weight_decay_encoder"          : {"type": "float", "low": 1e-6, "high": 5e-4, "log": True},
+        }
+
 
 @dataclass
 class SchedulerConfig:

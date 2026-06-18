@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 
 
 @dataclass
@@ -29,6 +29,37 @@ class BaseGNNConfig:
     coord_embed_dim          : int   = 64
     regression_hidden_dims   : tuple = (128, 64)
     regression_dropout       : float = 0.1
+
+    SECTIONS = {
+        "dimensions" : ("input_dim", "edge_dim", "output_dim"),
+        "encoder"    : ("hidden_dim", "num_layers", "dropout", "activation", "normalization", "use_edge_features", "drop_path_rate", "heads", "attention_dropout", "ffn_ratio"),
+        "pooling"    : ("pooling", "pool_num_levels", "sag_ratio", "set2set_steps"),
+        "head"       : ("head_type", "hierarchical_feature_dim", "coord_embed_dim", "regression_hidden_dims", "regression_dropout"),
+    }
+
+    @classmethod
+    def tunable_params(cls) -> dict:
+        field_names = {field_definition.name for field_definition in fields(cls)}
+
+        space = {
+            "hidden_dim"               : {"type": "categorical", "choices": [64, 128, 192, 256]},
+            "num_layers"               : {"type": "int",         "low": 2, "high": 6},
+            "dropout"                  : {"type": "float",       "low": 0.0, "high": 0.2, "step": 0.05},
+            "drop_path_rate"           : {"type": "float",       "low": 0.0, "high": 0.2, "step": 0.05},
+            "hierarchical_feature_dim" : {"type": "categorical", "choices": [128, 256, 384]},
+            "coord_embed_dim"          : {"type": "categorical", "choices": [32, 64, 128]},
+            "regression_dropout"       : {"type": "float",       "low": 0.0, "high": 0.2, "step": 0.05},
+        }
+
+        if "heads" in field_names:
+            space["heads"]             = {"type": "categorical", "choices": [2, 4, 8]}
+        if "attention_dropout" in field_names:
+            space["attention_dropout"] = {"type": "float", "low": 0.0, "high": 0.2, "step": 0.05}
+        if cls().pooling == "sagpool_multiscale":
+            space["pool_num_levels"]   = {"type": "int",   "low": 2, "high": 4}
+            space["sag_ratio"]         = {"type": "float", "low": 0.3, "high": 0.7, "step": 0.1}
+
+        return space
 
 
 @dataclass
