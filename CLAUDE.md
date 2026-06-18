@@ -15,25 +15,35 @@ pip install -e .                                          # editable install (ru
 
 python main/correct_coordinates.py                        # raw CSVs -> coordinate-corrected CSVs (sensor frame)
 python main/build_parquet_store.py                        # corrected CSVs -> Parquet store (geometry/events/octants)
-python main/create_dataset.py                             # Parquet store -> chunked graph dataset
-python main/train.py  --model_name gps                    # train a model (loss-only loop; checkpoints best on val loss)
+python main/train.py  --model_name gps                    # train a model (reads the store on the fly; loss-only loop)
 python main/infer.py  --run_directory runs/gps_<stamp>    # full analysis: metrics, plots, GIFs, report on a run
-python main/tune.py   --model_name gps                    # Optuna search over a model's hyperparameters
+python main/tune.py   --model_name gps                    # Optuna search over a model's tunable_params()
 python webui/serve.py                                     # web control panel + server monitoring
 ```
 
-Training computes only the loss per epoch for speed; the full evaluation (per-coordinate metrics, publication plots, rotating 3D GIFs, markdown report, `metadata/metrics.json`) is produced by `main/infer.py` (or automatically when `--infer_after true` is passed to `train.py`). The model zoo includes hierarchical cascade variants (`gps_cascade`, `gatv2_cascade`, `gine_cascade`) whose head predicts each coordinate conditioned on the previously predicted ones.
+The Parquet store is the single dataset source of truth; there is no separate build-dataset
+step. `DatasetPipeline` (`pipelines/dataset/pipeline.py`) is the centralized orchestrator:
+ensure-store -> load -> samples -> split -> fit/load normalization -> per-split `GraphDataset`.
+The `GraphDataset` builds each graph on the fly per access, applying deterministic physics
+(scale + detection efficiency) and, for the train split when `dataset.augmentation.enabled`,
+composable augmentation (sensor dropout, spurious activation, light noise, photon thinning,
+gain jitter), then normalizes. Training computes only the loss per epoch; the full evaluation
+(per-coordinate metrics, publication plots, rotating 3D GIFs, markdown report,
+`metadata/metrics.json`) is produced by `main/infer.py` (or `train.py --infer_after true`).
+The model zoo includes hierarchical cascade variants (`gps_cascade`, `gatv2_cascade`,
+`gine_cascade`). Each model config exposes `SECTIONS` and a `tunable_params()` search space
+that the Tuner reads.
 
 All runtime configuration is passed through `ConfigCli` overrides of the form `--dotted.path value` (e.g. `--training.loop.epochs 50 --training.optimizer.learning_rate_encoder 1e-3 --model_overrides "{'hidden_dim': 192}"`). Run any entry script with `--help-config` to list its editable fields. Defaults live in the dataclasses, never as module-level values.
 
 ## Architecture
 
-Pipeline: raw CSVs -> coordinate correction -> Parquet store (+ octant augmentation) -> preprocessing -> KNN graph construction -> GNN encoder -> pooling -> regression head -> $(x, y, z)$.
+Pipeline: raw CSVs -> coordinate correction -> Parquet store (+ octant index) -> on-the-fly graph construction (physics + augmentation + normalization) -> GNN encoder -> pooling -> regression head -> $(x, y, z)$.
 
 ### configuration/
 Dataclass config tree introspected by `ConfigCli`:
-- `data/` — `DataConfig` (source `parquet`|`csv`, parquet store path, octant augmentation), `GraphConfig`, `PreprocessingConfig`, `SplitConfig`, `RayConfig`, aggregated `DatasetConfig`.
-- `training/general.py` — `OptimizerConfig` (three learning-rate groups), `SchedulerConfig`, `WarmupConfig`, `EarlyStoppingConfig`, `EMAConfig`, `GradientClipperConfig`, `OverfitConfig`, `LossConfig`, `TrainingLoopConfig`, aggregated `TrainingConfig`. Field names match the `tools/training` components.
+- `data/` — `DataConfig` (parquet store path, optional store build, octant augmentation, subset, stats sampling), `GraphConfig`, `PhysicsConfig` (scale + detection efficiency), `SplitConfig`, `AugmentationConfig`, aggregated `DatasetConfig`.
+- `training/general.py` — `OptimizerConfig` (three learning-rate groups + `tunable_params()`), `SchedulerConfig`, `WarmupConfig`, `EarlyStoppingConfig`, `GradientClipperConfig`, `OverfitConfig`, `LossConfig` (weighted data/euclidean/containment/physics light-falloff terms), `TrainingLoopConfig`, aggregated `TrainingConfig`. Field names match the `tools/training` components. There is no EMA.
 - `architectures/zoo.py` — `BaseGNNConfig` plus one config dataclass per model and `MODEL_CONFIG_REGISTRY`.
 - `tuning/` — `TuningConfig`.
 - `entry/` — `DatasetEntryConfig`, `TrainEntryConfig`, `TuneEntryConfig` (what the entry scripts and the webui edit).
@@ -42,13 +52,13 @@ Dataclass config tree introspected by `ConfigCli`:
 `blocks.py` holds the shared parts (DropPath, FeedForward, GPS layer/encoder, generic `MessagePassingEncoder`, mean-max / multiscale-SAGPool / Set2Set pooling, FiLM hierarchical and MLP heads) and the `GraphRegressor` base, which wraps `encoder -> pool -> norm -> regression_head` and exposes those three submodules for the optimizer parameter groups. Each architecture is one file (`gps`, `gps_lite`, `gatv2`, `gine`, `graphsage`, `pna`, `gcn`, `transformer_conv`, `edgeconv`, `general_conv`, `res_gated`, `supergat`). `models/__init__.py` defines `MODEL_REGISTRY` and `get_model(name, config=None, **overrides)`.
 
 ### pipelines/
-- `dataset/` — `coordinate_correction.py` (`CoordinateTransform`, `DatasetCorrector`, `DatasetAugmentor`), `parquet_store.py` (`ParquetDatasetWriter`, `ParquetEventReader`), `parquet_source.py` (`ParquetGraphSource`), `loading.py` (CSV `DataLoader`), `preprocessing.py` (`DataProcessor`), `graph.py` (`Graph`), `ray_executor.py` (shared `RayExecutor`), `builder.py` (`DatasetBuilder`), `normalization.py` (`Normalizer`, `NormalizationStats`), `splitting.py` (`TargetBalancer`), `pipeline.py` (`DatasetPipeline`).
+- `dataset/` — `coordinate_correction.py` (`CoordinateTransform`, `DatasetCorrector`, `DatasetAugmentor`), `parquet_store.py` (`ParquetDatasetWriter`, `ParquetEventReader`), `graph.py` (`GraphAssembler`, `NodeFeatures`, `EdgeFeatures`, `Graph`), `augmentation.py` (`Augmentation`), `graph_dataset.py` (`GraphDataset`, `StatsEstimator`), `normalization.py` (`ChannelStrategySelector`, `FeatureGroupNormalizer`, `NormalizationStats`), `splitting.py` (`TargetBalancer`), `pipeline.py` (`DatasetPipeline`, the centralized orchestrator).
 - `shared/run_metadata.py` — `TrainingRunMetadata` (run directories, tensorboard writer, tracker).
 - `training/` — `Loss`, `Metrics`, `Trainer`, `TrainingPipeline`.
 - `tuning/` — `Tuner`.
 
 ### tools/
-Self-contained, copy-adapted from DLR-TomoSAR. `monitoring/` (`Logger`, `Tracker`, `ResourceMonitor`, `ShapeLogger`, `ModelSummary`), `training/` (`Warmup`, `Scheduler`, `EarlyStopping`, `GradientClipper`, `Checkpoint`, `MetricAggregator`, `ExponentialMovingAverage`), `runtime/` (`ConfigCli`, `Reproducibility`), `reporting/` (markdown, plotting). Always log through `tools.monitoring.Logger`.
+Self-contained, copy-adapted from DLR-TomoSAR. `monitoring/` (`Logger`, `Tracker`, `ResourceMonitor`, `ShapeLogger`, `ModelSummary`), `training/` (`Warmup`, `Scheduler`, `EarlyStopping`, `GradientClipper`, `Checkpoint`, `MetricAggregator`), `runtime/` (`ConfigCli`, `Reproducibility`), `reporting/` (markdown, plotting). Always log through `tools.monitoring.Logger`.
 
 ### webui/
 Stdlib `ThreadingHTTPServer` + `RequestRouter` over component libraries (scripts catalog, config registry, process manager, system + GPU monitor, tensorboard manager, results browser, model library) with a hash-routed vanilla-JS SPA. Control panel for launching the entry scripts and monitoring the server. No animations or documentation pages.
