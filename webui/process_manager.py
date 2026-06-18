@@ -6,6 +6,7 @@ import shlex
 import signal
 import subprocess
 import threading
+import time
 from collections import deque
 from datetime    import datetime
 
@@ -27,6 +28,9 @@ class ProcessManager:
         self.paths.webui_logs_dir.mkdir(parents=True, exist_ok=True)
 
     def launch(self, script_key: str, overrides: dict | None, interpreter: str) -> dict:
+        if not self._is_permitted_interpreter(interpreter):
+            return {"ok": False, "error": "interpreter not permitted"}
+
         entry = self.paths.script_entry(script_key)
         if entry is None or not entry["path"].exists():
             return {"ok": False, "error": "script not found"}
@@ -75,6 +79,10 @@ class ProcessManager:
         watcher.start()
 
         return {"ok": True, "pid": process.pid, "log_path": str(log_path)}
+
+    def _is_permitted_interpreter(self, interpreter: str) -> bool:
+        permitted = {candidate["path"] for candidate in self.paths.discover_interpreters()}
+        return interpreter in permitted
 
     def _clean_overrides(self, overrides: dict | None) -> dict:
         cleaned = {}
@@ -196,8 +204,17 @@ class ProcessManager:
 
     def stop_all(self, grace: float = 6.0) -> None:
         with self.lock:
-            running = [record["pid"] for record in self.processes.values() if record["status"] == "running"]
+            running = [record for record in self.processes.values() if record["status"] == "running"]
 
-        for pid in running:
-            self._signal_group(pid, signal.SIGTERM)
-            self.logger.warning(f"shutdown stop for pid {pid}")
+        for record in running:
+            self._signal_group(record["pid"], signal.SIGTERM)
+            self.logger.warning(f"shutdown stop for pid {record['pid']}")
+
+        deadline = time.monotonic() + grace
+        for record in running:
+            remaining = max(0.0, deadline - time.monotonic())
+            try:
+                record["process"].wait(timeout=remaining)
+            except subprocess.TimeoutExpired:
+                self._signal_group(record["pid"], signal.SIGKILL)
+                self.logger.warning(f"escalated to SIGKILL for pid {record['pid']}")

@@ -36,6 +36,18 @@ class ModelLibrary:
         self.cache  = None
         self.lock   = threading.Lock()
 
+    def _signature(self) -> tuple:
+        watched  = sorted((self.paths.repo_root / "models").rglob("*.py"))
+        watched += sorted((self.paths.repo_root / "configuration" / "architectures").rglob("*.py"))
+
+        stamps = []
+        for path in watched:
+            try:
+                stamps.append((path.name, path.stat().st_mtime_ns))
+            except OSError:
+                continue
+        return tuple(stamps)
+
     def _run_bootstrap(self, interpreter: str) -> dict:
         argv = [interpreter, "-c", self.BOOTSTRAP, str(self.paths.repo_root)]
 
@@ -56,12 +68,14 @@ class ModelLibrary:
         return {"ok": True, "models": payload["models"]}
 
     def list(self, interpreter: str) -> dict:
+        signature = self._signature()
+
         with self.lock:
-            if self.cache is not None:
-                return self.cache
+            if self.cache is not None and self.cache[0] == signature:
+                return self.cache[1]
 
         result = self._run_bootstrap(interpreter)
         if result.get("ok"):
             with self.lock:
-                self.cache = result
+                self.cache = (signature, result)
         return result

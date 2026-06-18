@@ -12,8 +12,8 @@ class ResultsBrowser:
 
     SKIPPED_DIRECTORIES = {"__pycache__", ".git", ".ipynb_checkpoints"}
     MAX_DEPTH           = 6
-    METADATA_FILES      = ("metadata/summary.json", "metadata/metrics.json", "metadata.json", "summary.json")
-    METRIC_KEYS         = ("best_metric", "best_validation_loss", "best_val_loss", "best_loss", "euclidean_error", "rmse", "mae")
+    BEST_METRIC_SPLITS  = ("test", "validation", "train")
+    BEST_METRIC_NAME    = "euclidean_mean"
 
     def __init__(self, paths: ProjectPaths, logger: ServerLogger) -> None:
         self.paths  = paths
@@ -27,30 +27,25 @@ class ResultsBrowser:
         directories.sort(key=lambda entry: entry.stat().st_mtime, reverse=True)
         return directories
 
-    def _metadata(self, run_directory: Path) -> dict:
-        for relative in self.METADATA_FILES:
-            candidate = run_directory / relative
-            if candidate.is_file():
-                try:
-                    return json.loads(candidate.read_text(encoding="utf-8"))
-                except (OSError, ValueError):
-                    continue
-        return {}
+    def _model_name(self, run_directory: Path) -> str:
+        config_path = run_directory / "metadata" / "resolved_config.json"
+        if not config_path.is_file():
+            return "unknown"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        return str(config.get("model_name", "unknown"))
 
-    def _best_metric(self, metadata: dict):
-        for key in self.METRIC_KEYS:
-            if key in metadata:
-                return {"name": key, "value": metadata[key]}
+    def _best_metric(self, run_directory: Path):
+        metrics_path = run_directory / "metadata" / "metrics.json"
+        if not metrics_path.is_file():
+            return None
+
+        payload = json.loads(metrics_path.read_text(encoding="utf-8"))
+        splits  = payload.get("splits", {})
+        for split_name in self.BEST_METRIC_SPLITS:
+            split_metrics = splits.get(split_name, {})
+            if self.BEST_METRIC_NAME in split_metrics:
+                return {"name": f"{split_name}/{self.BEST_METRIC_NAME}", "value": split_metrics[self.BEST_METRIC_NAME], "unit": payload.get("unit")}
         return None
-
-    def _model_name(self, metadata: dict, run_directory: Path) -> str:
-        for key in ("model_name", "model", "backbone_name"):
-            if metadata.get(key):
-                return str(metadata[key])
-
-        name  = run_directory.name
-        first = name.split("_")[0]
-        return first if first and not first.startswith("run") else "unknown"
 
     def _timestamp(self, run_directory: Path) -> str:
         return datetime.fromtimestamp(run_directory.stat().st_mtime).isoformat(timespec="seconds")
@@ -80,13 +75,12 @@ class ResultsBrowser:
         return {"name": directory.name, "files": files, "children": children}
 
     def _run(self, run_directory: Path) -> dict:
-        metadata = self._metadata(run_directory)
         return {
             "name"        : run_directory.name,
             "path"        : str(run_directory),
-            "model"       : self._model_name(metadata, run_directory),
+            "model"       : self._model_name(run_directory),
             "timestamp"   : self._timestamp(run_directory),
-            "best_metric" : self._best_metric(metadata),
+            "best_metric" : self._best_metric(run_directory),
             "tree"        : self._tree(run_directory, 0),
         }
 
