@@ -46,7 +46,6 @@ class DatasetBuilder:
         dataframes, outliers = processor.detect_spatial_outliers(dataframes, self.zscore_threshold, self.radius)
         dataframes           = processor.scale_light_intensity(dataframes, self.scale_factor)
         dataframes           = processor.apply_detection_efficiency(dataframes, self.detection_efficiency, seed=self.random_state)
-        dataframes           = processor.apply_log_transform(dataframes)
 
         return dataframes
 

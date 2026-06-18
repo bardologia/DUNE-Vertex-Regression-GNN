@@ -162,35 +162,3 @@ class DataProcessor:
 
         self.logger.subsection(f"Applied detection efficiency to {len(processed)} dataframes")
         return processed
-
-    def apply_log_transform(self, dataframes):
-        self.logger.section("[Applying Log Transform]")
-        self.logger.subsection("Transform: log1p on light column")
-
-        if len(dataframes) == 0:
-            return []
-
-        self.executor.ensure_initialized()
-
-        def log_transform_batch(dataframe_batch, light_column):
-            updated_batch = []
-            for dataframe in dataframe_batch:
-                modified               = dataframe.copy()
-                modified[light_column] = np.log1p(np.maximum(modified[light_column].fillna(0), 0))
-                updated_batch.append(modified)
-            return updated_batch
-
-        remote_log        = ray.remote(log_transform_batch)
-        dataframe_batches = self.executor.make_batches(dataframes)
-        batch_results     = self.executor.run_batches(
-            remote_log,
-            [(batch, self.light_column) for batch in dataframe_batches],
-            "Applying log1p (Ray batches)",
-        )
-
-        updated = []
-        for updated_batch in batch_results:
-            updated.extend(updated_batch)
-
-        self.logger.subsection(f"Applied log transform to {len(updated)} dataframes")
-        return updated
