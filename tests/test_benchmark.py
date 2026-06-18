@@ -19,6 +19,22 @@ def test_model_sizer_matches_reference(quiet_logger):
     assert result.overrides["hidden_dim"] == result.width
 
 
+def test_model_sizer_produces_head_divisible_width(quiet_logger):
+    config = BenchmarkConfig()
+    config.size_match.reference_model = "gps"
+
+    sizer  = ModelSizer(config, quiet_logger)
+    target = sizer.reference_count()
+    result = sizer.match("gps_lite", target)
+
+    heads = MODEL_CONFIG_REGISTRY["gps_lite"]().heads
+
+    assert result.parameters > 0
+    assert result.width % heads == 0
+    assert abs(result.deviation_pct) < 5.0
+    assert result.overrides["hidden_dim"] == result.width
+
+
 def test_comparison_report_ranks_and_writes(quiet_logger, tmp_path):
     records = [
         {"model": "a", "parameters": 100, "width": 64, "size_deviation_pct": 1.0, "size_flags": [], "overfit_status": "PASS", "overfit_loss": 0.01, "max_batch": 64, "max_batch_peak_gb": 2.0, "max_batch_status": "PASS", "train_status": "DONE", "best_val_loss": 0.5, "final_test_loss": 0.6, "duration_s": 10.0, "run_directory": "x", "metrics": {"euclidean_mean": 7.0, "mae": 3.0, "rmse": 4.0, "r2": 0.7, "median_error": 2.0, "euclidean_median": 6.0}},
