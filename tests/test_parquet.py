@@ -1,4 +1,42 @@
-from pipelines.dataset import ParquetEventReader
+import numpy as np
+
+from configuration.data.general import HotChannelConfig
+from pipelines.dataset          import HotChannelCorrector, ParquetEventReader
+
+
+class _SilentLogger:
+    def subsection(self, message):
+        return None
+
+
+def _hot_channel_setup():
+    generator = np.random.default_rng(0)
+    positions = generator.normal(size=(60, 3))
+    light     = generator.integers(0, 10, size=(400, 60)).astype(np.int32)
+
+    hot = 7
+    light[:, hot] = generator.integers(50_000, 100_000, size=400).astype(np.int32)
+    return positions, light, hot
+
+
+def test_hot_channel_corrector_replaces_with_neighbour_mean():
+    positions, light, hot = _hot_channel_setup()
+    config = HotChannelConfig(active_fraction=0.999, median_factor=50.0, neighbor_count=8, min_events=100)
+
+    corrected = HotChannelCorrector(positions, config, _SilentLogger()).run(light.copy())
+
+    assert corrected[:, hot].max() < 50_000
+    assert corrected.dtype == light.dtype
+    untouched = [c for c in range(light.shape[1]) if c != hot]
+    assert np.array_equal(corrected[:, untouched], light[:, untouched])
+
+
+def test_hot_channel_corrector_skips_small_datasets():
+    positions, light, hot = _hot_channel_setup()
+    config = HotChannelConfig(min_events=10_000)
+
+    corrected = HotChannelCorrector(positions, config, _SilentLogger()).run(light.copy())
+    assert np.array_equal(corrected, light)
 
 
 def test_parquet_reader_iterates_corrected(parquet_store):

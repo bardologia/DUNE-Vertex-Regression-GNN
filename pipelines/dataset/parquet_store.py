@@ -11,21 +11,27 @@ import pyarrow.parquet as pa_parquet
 
 from tools.monitoring.logger import Logger
 from pipelines.dataset.coordinate_correction import CoordinateTransform
+from pipelines.dataset.hot_channels          import HotChannelCorrector
 
 
 class ParquetDatasetWriter:
 
     SIGN_COMBINATIONS = list(itertools.product((1, -1), repeat=3))
 
-    def __init__(self, input_directory: Path, output_directory: Path, worker_count: int = 10, logger: Logger = None):
+    def __init__(self, input_directory: Path, output_directory: Path, worker_count: int = 10, logger: Logger = None, hot_channels=None):
         self.input_directory  = Path(input_directory)
         self.store_directory  = Path(output_directory) / "parquet"
         self.geometry_path    = self.store_directory / "geometry.parquet"
         self.events_path       = self.store_directory / "events.parquet"
         self.octants_path     = self.store_directory / "octants.parquet"
 
+        if hot_channels is None:
+            from configuration.data.general import HotChannelConfig
+            hot_channels = HotChannelConfig()
+
         self.worker_count = worker_count
         self.logger       = logger
+        self.hot_channels = hot_channels
         self.transform    = CoordinateTransform()
 
     def discover_files(self):
@@ -92,6 +98,10 @@ class ParquetDatasetWriter:
                     progress.advance(task_id)
 
         return source_names, target_array, light_matrix
+
+    def correct_hot_channels(self, geometry_frame, light_matrix):
+        positions = geometry_frame[["x", "y", "z"]].values
+        return HotChannelCorrector(positions, self.hot_channels, self.logger).run(light_matrix)
 
     def build_octant_index(self, target_array):
         octant_rows = []
@@ -185,7 +195,8 @@ class ParquetDatasetWriter:
 
         geometry_frame, geometry_hash = self.build_canonical_geometry(discovered_files[0])
         source_names, target_array, light_matrix = self.read_all_events(discovered_files, geometry_hash, len(geometry_frame))
-        octant_rows = self.build_octant_index(target_array)
+        light_matrix = self.correct_hot_channels(geometry_frame, light_matrix)
+        octant_rows  = self.build_octant_index(target_array)
 
         self.write_parquet(geometry_frame, source_names, target_array, light_matrix, octant_rows)
         self.report_sizes(octant_rows)
