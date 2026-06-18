@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import torch
-from sklearn.neighbors    import NearestNeighbors
+from scipy.spatial        import cKDTree
 from torch_geometric.data import Data
 
 
@@ -12,7 +12,6 @@ class GraphAssembler:
     def __init__(self, config):
         self.bidirectional      = config.graph.bidirectional
         self.k_neighbors        = config.graph.k_neighbors
-        self.knn_algorithm      = config.graph.knn_algorithm
 
         self.direction_features = config.graph.direction_features
         self.inertia_features   = config.graph.inertia_features
@@ -25,9 +24,9 @@ class GraphAssembler:
 
     def _nearest_neighbors(self, positions):
         effective_neighbors = self._effective_neighbors(positions.shape[0])
-        estimator           = NearestNeighbors(n_neighbors=effective_neighbors + 1, algorithm=self.knn_algorithm)
-        estimator.fit(positions)
-        return estimator.kneighbors(positions)
+        tree                = cKDTree(positions)
+        distances, indices  = tree.query(positions, k=effective_neighbors + 1)
+        return distances.astype(np.float64), indices.astype(np.int64)
 
 
 class NodeFeatures(GraphAssembler):
