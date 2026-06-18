@@ -36,7 +36,7 @@ def test_model_config_sections():
 
 def test_default_gps_config_dimensions():
     config = GPSConfig()
-    assert config.input_dim  == 8
+    assert config.input_dim  == 7
     assert config.edge_dim   == 7
     assert config.output_dim == 3
     assert config.pooling    == "sagpool_multiscale"

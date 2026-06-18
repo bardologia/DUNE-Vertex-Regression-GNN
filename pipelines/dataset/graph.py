@@ -31,9 +31,6 @@ class NodeFeatures(GraphAssembler):
     def _light_intensity(self, light):
         return light.reshape(-1, 1)
 
-    def _hit_flag(self, light):
-        return (light > 0.0).astype(np.float32).reshape(-1, 1)
-
     def _light_fraction(self, light, total_light):
         return (light / total_light).astype(np.float32).reshape(-1, 1)
 
@@ -51,7 +48,6 @@ class NodeFeatures(GraphAssembler):
         node_features = np.column_stack([
             self._position(positions),
             self._light_intensity(light),
-            self._hit_flag(light),
             self._light_fraction(light, total_light),
             self._distance_to_centroid(positions, light, total_light),
             self._local_light_density(light, neighbor_indices),
@@ -127,15 +123,50 @@ class EdgeFeatures(GraphAssembler):
         return edge_index, edge_attr
 
 
+class ActiveNodeSelector:
+    MINIMUM_NODES = 2
+
+    def __init__(self, config):
+        self.active_only      = config.graph.active_only
+        self.max_active_nodes = int(config.graph.max_active_nodes)
+
+    def _active_indices(self, light):
+        if self.active_only:
+            return np.nonzero(light > 0.0)[0]
+        return np.arange(light.shape[0])
+
+    def _apply_budget(self, indices, light):
+        if self.max_active_nodes > 0 and indices.shape[0] > self.max_active_nodes:
+            brightest_first = np.argsort(light[indices])[::-1]
+            indices         = indices[brightest_first[: self.max_active_nodes]]
+        return indices
+
+    def _enforce_floor(self, indices, light):
+        if indices.shape[0] >= self.MINIMUM_NODES:
+            return indices
+        return np.argsort(light)[::-1][: self.MINIMUM_NODES]
+
+    def select(self, positions, light):
+        indices = self._active_indices(light)
+        indices = self._apply_budget(indices, light)
+        indices = self._enforce_floor(indices, light)
+
+        indices = np.sort(indices)
+        return positions[indices], light[indices]
+
+
 class Graph:
     def __init__(self, config):
         self.config        = config
+        self.node_selector = ActiveNodeSelector(config)
         self.node_features = NodeFeatures(config)
         self.edge_features = EdgeFeatures(config)
 
     def build_from_arrays(self, positions, light):
         positions = np.asarray(positions, dtype=np.float32)
         light     = np.maximum(np.asarray(light, dtype=np.float32), 0.0)
+
+        positions, light = self.node_selector.select(positions, light)
 
         neighbor_distances, neighbor_indices = self.node_features._nearest_neighbors(positions)
 

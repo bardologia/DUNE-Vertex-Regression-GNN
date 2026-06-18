@@ -24,9 +24,12 @@ class DataConfig:
 
 @dataclass
 class GraphConfig:
-    k_neighbors   : int  = 4
-    knn_algorithm : str  = "kd_tree"
-    bidirectional : bool = False
+    k_neighbors      : int  = 4
+    knn_algorithm    : str  = "kd_tree"
+    bidirectional    : bool = False
+
+    active_only      : bool = True
+    max_active_nodes : int  = 0
 
 
 @dataclass

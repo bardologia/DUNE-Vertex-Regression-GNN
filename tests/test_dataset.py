@@ -10,8 +10,30 @@ def test_graph_builder_shapes():
     light     = generator.exponential(size=30).astype(np.float32)
 
     graph = Graph(DatasetConfig()).build_from_arrays(positions, light)
-    assert graph.x.shape         == (30, 8)
+    assert graph.x.shape         == (30, 7)
     assert graph.edge_attr.shape[1] == 7
+
+
+def test_active_only_prunes_dark_nodes():
+    positions = np.random.default_rng(1).normal(size=(40, 3)).astype(np.float32)
+    light     = np.zeros(40, dtype=np.float32)
+    light[:12] = np.arange(1, 13, dtype=np.float32)
+
+    config        = DatasetConfig()
+    config.graph.active_only = True
+    graph         = Graph(config).build_from_arrays(positions, light)
+    assert graph.x.shape[0] == 12
+
+
+def test_max_active_nodes_caps_to_brightest():
+    positions = np.random.default_rng(2).normal(size=(40, 3)).astype(np.float32)
+    light     = np.arange(1, 41, dtype=np.float32)
+
+    config        = DatasetConfig()
+    config.graph.active_only      = True
+    config.graph.max_active_nodes = 8
+    graph         = Graph(config).build_from_arrays(positions, light)
+    assert graph.x.shape[0] == 8
 
 
 def test_dataset_pipeline_produces_splits(dataset_config, quiet_logger):
@@ -22,11 +44,11 @@ def test_dataset_pipeline_produces_splits(dataset_config, quiet_logger):
     assert len(datasets["test"])  > 0
 
     sample = datasets["train"][0]
-    assert sample.x.shape[1]         == 8
+    assert sample.x.shape[1]         == 7
     assert sample.edge_attr.shape[1] == 7
     assert sample.y.shape            == (1, 3)
     assert len(stats.target.methods) == 3
-    assert len(stats.node.methods)   == 8
+    assert len(stats.node.methods)   == 7
 
 
 def test_octant_split_has_no_base_event_leakage(parquet_store, quiet_logger):
