@@ -79,11 +79,42 @@ class LaunchPanel {
   _groups() {
     const groups = new Map();
     this.leaves.forEach((leaf) => {
-      const section = leaf.section || "general";
+      const section = this._topSection(leaf);
       if (!groups.has(section)) groups.set(section, []);
       groups.get(section).push(leaf);
     });
     return [...groups.entries()];
+  }
+
+  _topSection(leaf) {
+    const parts = leaf.path.split(".");
+    return parts.length > 1 ? parts[0] : "general";
+  }
+
+  _subgroups(leaves) {
+    const groups = new Map();
+    leaves.forEach((leaf) => {
+      const namespace = this._namespace(leaf);
+      if (!groups.has(namespace)) groups.set(namespace, []);
+      groups.get(namespace).push(leaf);
+    });
+    return [...groups.entries()];
+  }
+
+  _namespace(leaf) {
+    return leaf.path.split(".").slice(1, -1).join(".");
+  }
+
+  _leafName(leaf) {
+    const parts = leaf.path.split(".");
+    return parts[parts.length - 1];
+  }
+
+  _humanize(token) {
+    return token
+      .split(".")
+      .map((segment) => segment.replace(/_/g, " ").replace(/^./, (character) => character.toUpperCase()))
+      .join(" · ");
   }
 
   _renderConfig() {
@@ -92,15 +123,20 @@ class LaunchPanel {
       return;
     }
 
-    const bands = this._groups().map(([section, leaves], index) => {
-      const fields = leaves.map((leaf) => this._fieldHtml(leaf)).join("");
-      const open = index < 2 ? " is-open" : "";
+    const bands = this._groups().map(([section, leaves]) => {
+      const body = this._subgroups(leaves).map(([namespace, groupLeaves]) => {
+        const fields  = groupLeaves.map((leaf) => this._fieldHtml(leaf)).join("");
+        const heading = namespace ? `<h4 class="band-subgroup__head">${window.escapeHtml(this._humanize(namespace))}</h4>` : "";
+        return `<div class="band-subgroup">${heading}<div class="band-fields">${fields}</div></div>`;
+      }).join("");
+
+      const open = " is-open";
       return (
         `<section class="launch-band${open}" data-section="${window.escapeHtml(section)}">` +
         `<header class="band-head"><i class="band-head__chev" aria-hidden="true"></i>` +
-        `<h3 class="band-head__name">${window.escapeHtml(section)}</h3>` +
+        `<h3 class="band-head__name">${window.escapeHtml(this._humanize(section))}</h3>` +
         `<span class="band-head__count">${leaves.length} field${leaves.length === 1 ? "" : "s"}</span></header>` +
-        `<div class="band-body"><div class="band-fields">${fields}</div></div>` +
+        `<div class="band-body">${body}</div>` +
         `</section>`
       );
     }).join("");
@@ -119,20 +155,21 @@ class LaunchPanel {
   }
 
   _fieldHtml(leaf) {
-    const path = window.escapeHtml(leaf.path);
-    const name = `${path}<span>${window.escapeHtml(leaf.type)}</span>`;
+    const path  = window.escapeHtml(leaf.path);
+    const label = window.escapeHtml(this._leafName(leaf));
+    const name  = `${label}<span>${window.escapeHtml(leaf.type)}</span>`;
     const disabled = leaf.editable ? "" : " disabled";
 
     if (leaf.type === "bool") {
       const on = this.values.get(leaf.path) === "true";
       return (
-        `<div class="cfg-edit__row"><span class="cfg-edit__name">${name}</span>` +
+        `<div class="cfg-edit__row" title="${path}"><span class="cfg-edit__name">${name}</span>` +
         `<button type="button" class="switch${on ? " is-on" : ""}" data-path="${path}"${disabled ? " disabled" : ""} aria-pressed="${on}"><span class="switch__knob"></span></button></div>`
       );
     }
     const value = window.escapeHtml(this.values.get(leaf.path));
     return (
-      `<div class="cfg-edit__row"><span class="cfg-edit__name">${name}</span>` +
+      `<div class="cfg-edit__row" title="${path}"><span class="cfg-edit__name">${name}</span>` +
       `<input class="cfg-edit__input" type="text" data-path="${path}" value="${value}"${disabled} /></div>`
     );
   }
