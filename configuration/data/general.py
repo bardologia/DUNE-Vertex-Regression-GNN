@@ -25,7 +25,7 @@ class DataConfig:
 
     augment_octants    : bool  = False
     subset_fraction    : float = 1.0
-    stats_sample_size  : int   = 256
+    stats_sample_size  : int   = 8192
 
     coordinate_columns : tuple = ("event_x", "event_y", "event_z")
     position_columns   : tuple = ("x", "y", "z")
