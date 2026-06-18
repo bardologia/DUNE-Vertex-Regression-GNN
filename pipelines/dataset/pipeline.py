@@ -5,7 +5,6 @@ import pandas as pd
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
 from pipelines.dataset.augmentation         import Augmentation
-from pipelines.dataset.coordinate_correction import DatasetCorrector
 from pipelines.dataset.graph                import FeatureSchema, Graph
 from pipelines.dataset.graph_dataset        import CachedGraphDataset, DegreeHistogramEstimator, GraphDataset, StatsEstimator
 from pipelines.dataset.parquet_store        import ParquetDatasetWriter, ParquetEventReader
@@ -36,8 +35,7 @@ class DatasetPipeline:
 
         self.logger.section("[Building Parquet Store]")
         store_parent = store_directory.parent
-        DatasetCorrector(self.config.data.raw_input_dir, store_parent, logger=self.logger).run()
-        ParquetDatasetWriter(store_parent / "corrected", store_parent, worker_count=self.config.data.store_worker_count, logger=self.logger, hot_channels=self.config.data.hot_channels).run()
+        ParquetDatasetWriter(self.config.data.raw_input_dir, store_parent, worker_count=self.config.data.store_worker_count, logger=self.logger, hot_channels=self.config.data.hot_channels).run()
 
     def _load_store(self):
         reader                  = ParquetEventReader(self.config.data.parquet_store_dir).load_store()

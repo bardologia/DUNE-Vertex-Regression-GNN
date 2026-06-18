@@ -26,20 +26,10 @@ class ScriptCatalog:
             "category" : "Training",
             "purpose"  : "Benchmark the whole model zoo: capacity matching, overfit gate, max-batch probe, training, and a ranked comparison report.",
         },
-        "correct_coordinates": {
-            "label"    : "Correct Coordinates",
-            "category" : "Data",
-            "purpose"  : "Correct ground-truth vertex coordinates extracted from raw event files.",
-        },
-        "augment_octants": {
-            "label"    : "Augment Octants",
-            "category" : "Data",
-            "purpose"  : "Generate octant-reflected augmentations of the corrected event frames.",
-        },
         "build_parquet_store": {
             "label"    : "Build Parquet Store",
             "category" : "Data",
-            "purpose"  : "Materialise the event frames into a partitioned Parquet store.",
+            "purpose"  : "Materialise the event frames into a partitioned Parquet store: coordinate correction, hot-channel repair, and octant expansion.",
         },
         "infer": {
             "label"    : "Infer",
@@ -49,8 +39,6 @@ class ScriptCatalog:
     }
 
     ORDER = [
-        "correct_coordinates",
-        "augment_octants",
         "build_parquet_store",
         "train",
         "infer",
