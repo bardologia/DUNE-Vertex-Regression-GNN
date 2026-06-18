@@ -1,37 +1,121 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
 import torch
+from scipy.stats import skew
+
+
+class ChannelStrategySelector:
+    EPSILON           = 1e-8
+    SKEWNESS_LOG      = 2.0
+    OUTLIER_RATIO     = 3.0
+    ROBUST_IQR_FACTOR = 1.349
+
+    def select(self, values):
+        finite_values = values[np.isfinite(values)].astype(np.float64)
+
+        standard_deviation = float(finite_values.std())
+        if standard_deviation < self.EPSILON:
+            return "zscore", float(finite_values.mean()), 1.0, False
+
+        minimum         = float(finite_values.min())
+        is_non_negative = minimum >= -self.EPSILON
+        skewness        = float(skew(finite_values)) if finite_values.size > 2 else 0.0
+
+        if is_non_negative and skewness > self.SKEWNESS_LOG:
+            logged = np.log1p(np.maximum(finite_values, 0.0))
+            return "log1p_zscore", float(logged.mean()), float(logged.std()) + self.EPSILON, True
+
+        quantile_75, quantile_25 = np.percentile(finite_values, [75, 25])
+        interquartile_range      = float(quantile_75 - quantile_25)
+        robust_spread            = interquartile_range / self.ROBUST_IQR_FACTOR
+
+        if robust_spread > self.EPSILON and (standard_deviation / robust_spread) > self.OUTLIER_RATIO:
+            return "robust_iqr", float(np.median(finite_values)), interquartile_range + self.EPSILON, False
+
+        return "zscore", float(finite_values.mean()), standard_deviation + self.EPSILON, False
+
+
+class FeatureGroupNormalizer:
+    def __init__(self, methods, center, scale, log_mask):
+        self.methods  = list(methods)
+        self.center   = np.asarray(center,   dtype=np.float32)
+        self.scale    = np.asarray(scale,    dtype=np.float32)
+        self.log_mask = np.asarray(log_mask, dtype=bool)
+
+    @classmethod
+    def fit(cls, matrix):
+        selector       = ChannelStrategySelector()
+        matrix         = np.asarray(matrix, dtype=np.float64)
+        number_of_channels = matrix.shape[1]
+
+        methods   = []
+        centers   = np.zeros(number_of_channels, dtype=np.float32)
+        scales    = np.zeros(number_of_channels, dtype=np.float32)
+        log_masks = np.zeros(number_of_channels, dtype=bool)
+
+        for channel in range(number_of_channels):
+            method, center, scale, log_flag = selector.select(matrix[:, channel])
+            methods.append(method)
+            centers[channel]   = center
+            scales[channel]    = scale
+            log_masks[channel] = log_flag
+
+        return cls(methods, centers, scales, log_masks)
+
+    def forward_numpy(self, matrix):
+        matrix      = np.asarray(matrix, dtype=np.float32)
+        transformed = np.where(self.log_mask, np.log1p(np.maximum(matrix, 0.0)), matrix)
+        return (transformed - self.center) / self.scale
+
+    def inverse_torch(self, values, device):
+        center   = torch.tensor(self.center,   dtype=torch.float32, device=device)
+        scale    = torch.tensor(self.scale,    dtype=torch.float32, device=device)
+        log_mask = torch.tensor(self.log_mask, dtype=torch.bool,    device=device)
+
+        unscaled = values * scale + center
+        return torch.where(log_mask, torch.expm1(unscaled), unscaled)
+
+    def to_dict(self):
+        return {
+            "methods"  : self.methods,
+            "center"   : self.center.tolist(),
+            "scale"    : self.scale.tolist(),
+            "log_mask" : self.log_mask.tolist(),
+        }
+
+    @classmethod
+    def from_dict(cls, payload):
+        return cls(payload["methods"], payload["center"], payload["scale"], payload["log_mask"])
 
 
 class NormalizationStats:
-    KEYS = ("node_mean", "node_std", "edge_mean", "edge_std", "target_mean", "target_std")
+    GROUPS = ("node", "edge", "target")
 
-    def __init__(self, node_mean, node_std, edge_mean, edge_std, target_mean, target_std):
-        self.node_mean   = np.asarray(node_mean,   dtype=np.float32)
-        self.node_std    = np.asarray(node_std,    dtype=np.float32)
-        self.edge_mean   = np.asarray(edge_mean,   dtype=np.float32)
-        self.edge_std    = np.asarray(edge_std,    dtype=np.float32)
-        self.target_mean = np.asarray(target_mean, dtype=np.float32)
-        self.target_std  = np.asarray(target_std,  dtype=np.float32)
+    def __init__(self, node, edge, target):
+        self.node   = node
+        self.edge   = edge
+        self.target = target
 
-    def as_dict(self) -> dict:
-        return {key: getattr(self, key) for key in self.KEYS}
+    def as_dict(self):
+        return {group: getattr(self, group).to_dict() for group in self.GROUPS}
 
-    def save(self, directory) -> Path:
+    def save(self, directory):
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
-        path = directory / "normalization_stats.npz"
-        np.savez(path, **self.as_dict())
+        path    = directory / "normalization_stats.json"
+        payload = {group: getattr(self, group).to_dict() for group in self.GROUPS}
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         return path
 
     @classmethod
     def load(cls, directory):
-        path    = Path(directory) / "normalization_stats.npz"
-        archive = np.load(path)
-        return cls(**{key: archive[key] for key in cls.KEYS})
+        path    = Path(directory) / "normalization_stats.json"
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return cls(**{group: FeatureGroupNormalizer.from_dict(payload[group]) for group in cls.GROUPS})
 
 
 class Normalizer:
@@ -40,71 +124,37 @@ class Normalizer:
         self.source_split = source_split
         self.stats        = None
 
-    def _streaming_statistics(self, graphs, attribute):
-        running_sum   = None
-        running_count = 0
+    def _gather(self, graphs, attribute):
+        segments = [getattr(graph, attribute).detach().cpu().numpy() for graph in graphs if getattr(graph, attribute).numel() > 0]
+        return np.concatenate(segments, axis=0)
 
-        for graph in graphs:
-            values = getattr(graph, attribute)
-            if values is None or values.numel() == 0:
-                continue
-            array = values.detach().cpu().numpy().astype(np.float64)
-            if array.ndim == 1:
-                array = array.reshape(1, -1)
-            if running_sum is None:
-                running_sum = np.zeros(array.shape[1], dtype=np.float64)
-            running_sum   += array.sum(axis=0)
-            running_count += array.shape[0]
+    def _log_strategies(self, title, group):
+        rows = [{"Channel": index, "Method": method, "Center": float(group.center[index]), "Scale": float(group.scale[index])} for index, method in enumerate(group.methods)]
+        self.logger.metrics_table(rows, ["Channel", "Method", "Center", "Scale"], title=title)
 
-        mean = running_sum / running_count
-
-        running_square = np.zeros_like(running_sum)
-        for graph in graphs:
-            values = getattr(graph, attribute)
-            if values is None or values.numel() == 0:
-                continue
-            array = values.detach().cpu().numpy().astype(np.float64)
-            if array.ndim == 1:
-                array = array.reshape(1, -1)
-            running_square += ((array - mean) ** 2).sum(axis=0)
-
-        standard_deviation = np.sqrt(running_square / running_count).astype(np.float32) + 1e-8
-        return mean.astype(np.float32), standard_deviation
-
-    def _log_statistics(self, title, labels, mean, standard_deviation):
-        rows = [{"Feature": label, "Mean": float(mean[index]), "Std": float(standard_deviation[index])} for index, label in enumerate(labels)]
-        self.logger.metrics_table(rows, ["Feature", "Mean", "Std"], title=title)
-
-    def compute_stats(self, splits) -> NormalizationStats:
-        self.logger.section("[Normalization Statistics]")
+    def compute_stats(self, splits):
+        self.logger.section("[Normalization Strategy Selection]")
         source_graphs = splits[self.source_split]
 
-        node_mean,   node_std   = self._streaming_statistics(source_graphs, "x")
-        edge_mean,   edge_std   = self._streaming_statistics(source_graphs, "edge_attr")
-        target_mean, target_std = self._streaming_statistics(source_graphs, "y")
+        node_group   = FeatureGroupNormalizer.fit(self._gather(source_graphs, "x"))
+        edge_group   = FeatureGroupNormalizer.fit(self._gather(source_graphs, "edge_attr"))
+        target_group = FeatureGroupNormalizer.fit(self._gather(source_graphs, "y"))
 
-        self._log_statistics("Node Statistics",   [f"F{index}" for index in range(len(node_mean))], node_mean, node_std)
-        self._log_statistics("Edge Statistics",   [f"F{index}" for index in range(len(edge_mean))], edge_mean, edge_std)
-        self._log_statistics("Target Statistics", ["x", "y", "z"], target_mean, target_std)
+        self._log_strategies("Node feature strategies",   node_group)
+        self._log_strategies("Edge feature strategies",   edge_group)
+        self._log_strategies("Target strategies",         target_group)
 
-        self.stats = NormalizationStats(node_mean, node_std, edge_mean, edge_std, target_mean, target_std)
+        self.stats = NormalizationStats(node_group, edge_group, target_group)
         return self.stats
 
     def normalize(self, splits):
         self.logger.section("[Normalizing Splits]")
 
-        node_mean   = torch.tensor(self.stats.node_mean,   dtype=torch.float32)
-        node_std    = torch.tensor(self.stats.node_std,    dtype=torch.float32)
-        edge_mean   = torch.tensor(self.stats.edge_mean,   dtype=torch.float32)
-        edge_std    = torch.tensor(self.stats.edge_std,    dtype=torch.float32)
-        target_mean = torch.tensor(self.stats.target_mean, dtype=torch.float32)
-        target_std  = torch.tensor(self.stats.target_std,  dtype=torch.float32)
-
         for split_name, graphs in splits.items():
             for graph in graphs:
-                graph.x         = (graph.x - node_mean) / node_std
-                graph.edge_attr = (graph.edge_attr - edge_mean) / edge_std
-                graph.y         = (graph.y - target_mean) / target_std
+                graph.x         = torch.tensor(self.stats.node.forward_numpy(graph.x.numpy()),         dtype=torch.float32)
+                graph.edge_attr = torch.tensor(self.stats.edge.forward_numpy(graph.edge_attr.numpy()), dtype=torch.float32)
+                graph.y         = torch.tensor(self.stats.target.forward_numpy(graph.y.numpy()),       dtype=torch.float32)
 
         return splits
 

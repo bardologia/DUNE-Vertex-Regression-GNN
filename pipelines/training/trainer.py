@@ -26,9 +26,6 @@ class Trainer:
         self.model  = model.to(self.device)
         self.stats  = stats
 
-        self.target_mean = torch.tensor(stats.target_mean, dtype=torch.float32, device=self.device)
-        self.target_std  = torch.tensor(stats.target_std,  dtype=torch.float32, device=self.device)
-
         self.epochs               = training_config.loop.epochs
         self.validation_frequency = training_config.loop.validation_frequency
         self.accumulation_steps   = training_config.loop.gradient_accumulation_steps
@@ -90,9 +87,6 @@ class Trainer:
         effective_learning_rates = self.scheduler.effective_lrs()
         for group, learning_rate in zip(self.optimizer.param_groups, effective_learning_rates):
             group["lr"] = learning_rate
-
-    def denormalize_targets(self, target):
-        return target * self.target_std + self.target_mean
 
     def capture_state(self, epoch) -> dict:
         return {

@@ -43,4 +43,5 @@ def test_dataset_pipeline_splits(tiny_dataset, quiet_logger, split_config):
     assert sample_graph.x.shape[1]         == 8
     assert sample_graph.edge_attr.shape[1] == 7
     assert sample_graph.y.shape            == (1, 3)
-    assert stats.target_mean.shape         == (3,)
+    assert len(stats.target.methods)       == 3
+    assert len(stats.node.methods)         == 8

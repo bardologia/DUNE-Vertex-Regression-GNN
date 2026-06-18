@@ -11,9 +11,6 @@ class Predictor:
         self.device          = device
         self.logger          = logger
 
-        self.target_mean = torch.tensor(stats.target_mean, dtype=torch.float32, device=device)
-        self.target_std  = torch.tensor(stats.target_std,  dtype=torch.float32, device=device)
-
     def prepare(self):
         checkpoint = torch.load(self.checkpoint_path, map_location=self.device, weights_only=False)
         self.model.load_state_dict(checkpoint["params"])
@@ -31,7 +28,7 @@ class Predictor:
         return self
 
     def _denormalize(self, target):
-        return target * self.target_std + self.target_mean
+        return self.stats.target.inverse_torch(target, self.device)
 
     def predict(self, loader):
         prediction_segments = []
