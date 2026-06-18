@@ -10,17 +10,9 @@ from optuna.samplers import TPESampler
 from configuration.architectures      import MODEL_CONFIG_REGISTRY
 from configuration.training.general   import OptimizerConfig
 from models                           import get_model
-from tools.monitoring.tracker     import NullTracker
 from pipelines.dataset.pipeline   import DatasetPipeline
+from pipelines.shared.run_metadata import LightweightRunContext
 from pipelines.training.trainer   import Trainer
-
-
-class TuningTrialContext:
-    def __init__(self, logger, checkpoint_path):
-        self.logger             = logger
-        self.tracker            = NullTracker()
-        self.checkpoint_path    = checkpoint_path
-        self.metadata_directory = Path(checkpoint_path).parent
 
 
 class Tuner:
@@ -74,7 +66,7 @@ class Tuner:
             model_overrides = {**model_overrides, "degree_histogram": degree_histogram}
 
         model, _ = get_model(self.entry.model_name, **model_overrides)
-        context  = TuningTrialContext(self.logger, self.tuner_directory / f"trial_{trial.number}.pt")
+        context  = LightweightRunContext(self.logger, self.tuner_directory / f"trial_{trial.number}.pt")
         trainer  = Trainer(model, self.stats, training_config, context)
 
         best_validation_loss = float("inf")

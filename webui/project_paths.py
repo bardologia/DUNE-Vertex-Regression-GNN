@@ -24,6 +24,11 @@ class ProjectPaths:
             "entry_config_module" : "configuration.entry.general",
             "entry_config_class"  : "CrossValidationEntryConfig",
         },
+        "benchmark": {
+            "file"                : "benchmark.py",
+            "entry_config_module" : "configuration.benchmark.general",
+            "entry_config_class"  : "BenchmarkConfig",
+        },
         "infer": {
             "file"                : "infer.py",
             "entry_config_module" : "configuration.entry.general",

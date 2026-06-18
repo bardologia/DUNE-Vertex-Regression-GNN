@@ -6,8 +6,19 @@ from pathlib  import Path
 from torch.utils.tensorboard import SummaryWriter
 
 from tools.monitoring.logger  import Logger
-from tools.monitoring.tracker import Tracker
+from tools.monitoring.tracker import NullTracker, Tracker
 from tools.runtime.config_cli import ConfigCli
+
+
+class LightweightRunContext:
+    def __init__(self, logger, checkpoint_path, tracker=None):
+        self.logger             = logger
+        self.tracker            = tracker if tracker is not None else NullTracker()
+        self.checkpoint_path    = Path(checkpoint_path)
+        self.metadata_directory = self.checkpoint_path.parent
+        self.run_directory      = self.checkpoint_path.parent
+
+        self.metadata_directory.mkdir(parents=True, exist_ok=True)
 
 
 class TrainingRunMetadata:
