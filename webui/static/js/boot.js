@@ -22,6 +22,10 @@ class Application {
     if (canvas && window.ServerScene) {
       window.serverScene = new window.ServerScene(canvas);
     }
+    const scene = document.getElementById("scene");
+    if (scene && window.EventScene) {
+      window.eventScene = new window.EventScene(scene);
+    }
   }
 
   async _probeBackend() {
