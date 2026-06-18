@@ -37,7 +37,7 @@ class GraphDataset(Dataset):
         return generator.binomial(scaled_counts, self.detection_efficiency).astype(np.float32)
 
     def _light_for_sample(self, light_row, base_event_id):
-        raw_counts = self.light_matrix[light_row].astype(np.float64)
+        raw_counts = self.light_matrix[base_event_id].astype(np.float64)
         light      = self._base_light(raw_counts, base_event_id)
 
         if self.augmentation is not None and self.augmentation.active:
@@ -137,6 +137,13 @@ class StatsEstimator:
         target_group = FeatureGroupNormalizer.fit(np.concatenate(target_segments, axis=0))
 
         self.logger.subsection(f"Fitted normalization on {count} events")
+
+        rows = []
+        for group_name, group in [("node", node_group), ("edge", edge_group), ("target", target_group)]:
+            for strategy, channel_count in sorted(group.strategy_counts().items()):
+                rows.append({"Group": group_name, "Strategy": strategy, "Channels": channel_count})
+        self.logger.metrics_table(rows, ["Group", "Strategy", "Channels"], title="Normalization Strategies")
+
         return NormalizationStats(node_group, edge_group, target_group)
 
 

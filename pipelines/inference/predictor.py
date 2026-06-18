@@ -15,6 +15,12 @@ class Predictor:
         checkpoint = torch.load(self.checkpoint_path, map_location=self.device, weights_only=False)
         self.model.load_state_dict(checkpoint["params"])
         self.model.eval()
+        self.logger.section("[Checkpoint]")
+        self.logger.kv_table({
+            "Path"   : str(self.checkpoint_path),
+            "Epoch"  : checkpoint.get("epoch", "unknown"),
+            "Device" : self.device,
+        })
         return self
 
     def _denormalize(self, target):
@@ -31,4 +37,7 @@ class Predictor:
                 prediction_segments.append(self._denormalize(predictions).cpu())
                 target_segments.append(self._denormalize(data.y).cpu())
 
-        return torch.cat(prediction_segments), torch.cat(target_segments)
+        predictions = torch.cat(prediction_segments)
+        targets     = torch.cat(target_segments)
+        self.logger.subsection(f"Predicted {len(predictions)} events")
+        return predictions, targets

@@ -26,12 +26,33 @@ class TrainingPipeline:
         )
         self.logger = self.run_metadata.logger
 
+        self.logger.section("[Training Pipeline]")
+        self.logger.kv_table({
+            "Model"       : self.entry.model_name,
+            "Seed"        : self.entry.seed,
+            "Device"      : self.training_config.loop.device,
+            "Epochs"      : self.training_config.loop.epochs,
+            "Infer after" : self.entry.infer_after,
+        })
+
     def _prepare_data(self):
         self.dataset_pipeline     = DatasetPipeline(self.entry.dataset, self.logger)
         self.datasets, self.stats = self.dataset_pipeline.run()
 
         loop         = self.training_config.loop
-        self.loaders = DatasetPipeline.build_loaders(self.datasets, loop.batch_size, num_workers=loop.num_workers, pin_memory=loop.pin_memory, persistent_workers=loop.persistent_workers)
+        self.loaders = DatasetPipeline.build_loaders(self.datasets, loop.batch_size, num_workers=loop.num_workers, pin_memory=loop.pin_memory, persistent_workers=loop.persistent_workers, prefetch_factor=loop.prefetch_factor)
+
+        train_loader, val_loader, test_loader = self.loaders
+        self.logger.section("[Data Loaders]")
+        self.logger.kv_table({
+            "Train batches"   : len(train_loader),
+            "Val batches"     : len(val_loader),
+            "Test batches"    : len(test_loader),
+            "Batch size"      : loop.batch_size,
+            "Workers"         : loop.num_workers,
+            "Pin memory"      : loop.pin_memory,
+            "Prefetch factor" : loop.prefetch_factor,
+        })
 
     def _build_model(self):
         self.entry.model_overrides = DatasetPipeline.inject_feature_dimensions(self.entry.model_overrides, self.entry.dataset)
@@ -41,6 +62,15 @@ class TrainingPipeline:
             self.entry.model_overrides = {**self.entry.model_overrides, "degree_histogram": degree_histogram}
 
         self.model, self.model_config = get_model(self.entry.model_name, **self.entry.model_overrides)
+
+        total_params = sum(p.numel() for p in self.model.parameters())
+        self.logger.section("[Model Architecture]")
+        self.logger.kv_table({
+            "Architecture" : self.entry.model_name,
+            "Input dim"    : self.entry.model_overrides.get("input_dim"),
+            "Edge dim"     : self.entry.model_overrides.get("edge_dim"),
+            "Parameters"   : f"{total_params:,}",
+        })
 
     def _train(self):
         self.run_metadata.save_resolved_config(self.entry)

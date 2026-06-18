@@ -84,19 +84,25 @@ class MaxBatchProbe:
         try:
             model, optimizer, criterion = self._build_components()
 
+            candidates = self._candidate_batches()
+            self.logger.subsection(f"{self.model_name}: probing batches {candidates} (budget {self.max_batch_config.vram_budget_gb:.1f} GB)")
+
             best_batch = None
             best_peak  = None
 
-            for batch_size in self._candidate_batches():
+            for batch_size in candidates:
                 try:
                     peak_gb = self._measure(model, optimizer, criterion, batch_size)
                 except torch.cuda.OutOfMemoryError:
                     result["trials"].append({"batch_size": batch_size, "peak_gb": None, "status": "OOM"})
+                    self.logger.subsection(f"  batch {batch_size}: OOM")
                     torch.cuda.empty_cache()
                     break
 
                 within_budget = peak_gb <= self.max_batch_config.vram_budget_gb
-                result["trials"].append({"batch_size": batch_size, "peak_gb": float(peak_gb), "status": "FIT" if within_budget else "OVER"})
+                status        = "FIT" if within_budget else "OVER"
+                result["trials"].append({"batch_size": batch_size, "peak_gb": float(peak_gb), "status": status})
+                self.logger.subsection(f"  batch {batch_size}: {peak_gb:.2f} GB ({status})")
 
                 if not within_budget:
                     break

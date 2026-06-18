@@ -47,6 +47,17 @@ class Trainer:
         self.val_losses    = []
 
         if not self.tuning_mode:
+            self.logger.section("[Training Configuration]")
+            self.logger.kv_table({
+                "Device"            : self.device,
+                "AMP"               : self.use_amp,
+                "Epochs"            : self.epochs,
+                "Grad accumulation" : self.accumulation_steps,
+                "LR (encoder)"      : training_config.optimizer.learning_rate_encoder,
+                "LR (pool)"         : training_config.optimizer.learning_rate_pool,
+                "LR (head)"         : training_config.optimizer.learning_rate_regression_head,
+                "Optimizer betas"   : str(training_config.optimizer.betas),
+            })
             summary = ModelSummary(self.logger, self.model)
             summary.run()
             summary.save_markdown(run_metadata.metadata_directory / "model_summary.md")
@@ -205,6 +216,16 @@ class Trainer:
 
         validation_loss = self.evaluate(val_loader, self.epochs, stage="final_validation")["avg_loss"]
         test_loss       = self.evaluate(test_loader, self.epochs, stage="final_test")["avg_loss"]
+
+        self.logger.section("[Training Complete]")
+        self.logger.kv_table({
+            "Best val loss"   : self.checkpoint.best_val_loss,
+            "Best epoch"      : self.checkpoint.best_epoch + 1,
+            "Final val loss"  : validation_loss,
+            "Final test loss" : test_loss,
+            "Epochs run"      : len(self.train_losses),
+            "Checkpoint"      : str(self.run_metadata.checkpoint_path),
+        })
 
         return {
             "best_val_loss"         : self.checkpoint.best_val_loss,
