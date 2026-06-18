@@ -16,7 +16,6 @@ dependencies    = [
     "pyarrow==17.0.0",
     "scipy==1.17.1",
     "scikit-learn==1.8.0",
-    "ray==2.54.0",
     "optuna==4.8.0",
     "rich==15.0.0",
     "matplotlib==3.10.8",

@@ -5,11 +5,11 @@ from tools import Logger
 from pipelines.training import TrainingPipeline
 
 
-def test_training_pipeline_one_epoch(tiny_dataset, tmp_path):
+def test_training_pipeline_one_epoch(parquet_store, tmp_path):
     entry = TrainEntryConfig()
     entry.model_name                          = "graphsage"
-    entry.dataset_dir                         = tiny_dataset
-    entry.subset_fraction                     = 1.0
+    entry.dataset.data.parquet_store_dir      = parquet_store
+    entry.dataset.data.stats_sample_size      = 32
     entry.training.io.log_base_dir            = tmp_path / "runs"
     entry.training.loop.device                = "cpu"
     entry.training.loop.epochs                = 1

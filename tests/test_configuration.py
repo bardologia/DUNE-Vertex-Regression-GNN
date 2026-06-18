@@ -30,7 +30,9 @@ def test_configcli_nested_overrides():
         "--model_name", "gatv2",
         "--training.loop.epochs", "7",
         "--training.optimizer.learning_rate_encoder", "2e-3",
-        "--split.test_size", "0.2",
+        "--dataset.split.test_size", "0.2",
+        "--dataset.data.subset_fraction", "0.5",
+        "--dataset.augmentation.enabled", "true",
         "--model_overrides", "{'hidden_dim': 64, 'num_layers': 3}",
     ]
     config = ConfigCli(config).apply(argv)
@@ -38,7 +40,9 @@ def test_configcli_nested_overrides():
     assert config.model_name                                == "gatv2"
     assert config.training.loop.epochs                      == 7
     assert abs(config.training.optimizer.learning_rate_encoder - 2e-3) < 1e-12
-    assert abs(config.split.test_size - 0.2) < 1e-12
+    assert abs(config.dataset.split.test_size - 0.2) < 1e-12
+    assert abs(config.dataset.data.subset_fraction - 0.5) < 1e-12
+    assert config.dataset.augmentation.enabled is True
     assert config.model_overrides                           == {"hidden_dim": 64, "num_layers": 3}
 
 

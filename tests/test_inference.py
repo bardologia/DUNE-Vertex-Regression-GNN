@@ -6,19 +6,20 @@ from pipelines.training import TrainingPipeline
 from pipelines.inference import InferencePipeline
 
 
-def test_inference_pipeline_outputs(tiny_dataset, tmp_path):
+def test_inference_pipeline_outputs(parquet_store, tmp_path):
     entry = TrainEntryConfig()
-    entry.model_name                         = "graphsage"
-    entry.dataset_dir                        = tiny_dataset
-    entry.training.io.log_base_dir           = tmp_path / "runs"
-    entry.training.loop.device               = "cpu"
-    entry.training.loop.epochs               = 1
-    entry.training.loop.batch_size           = 8
-    entry.training.loop.num_workers          = 0
-    entry.training.loop.verbose              = False
-    entry.training.warmup.warmup_steps       = 2
+    entry.model_name                     = "graphsage"
+    entry.dataset.data.parquet_store_dir = parquet_store
+    entry.dataset.data.stats_sample_size = 32
+    entry.training.io.log_base_dir       = tmp_path / "runs"
+    entry.training.loop.device           = "cpu"
+    entry.training.loop.epochs           = 1
+    entry.training.loop.batch_size       = 8
+    entry.training.loop.num_workers      = 0
+    entry.training.loop.verbose          = False
+    entry.training.warmup.warmup_steps   = 2
 
-    summary = TrainingPipeline(entry, logger=Logger(log_dir="", name="train", level="ERROR")).run()
+    summary       = TrainingPipeline(entry, logger=Logger(log_dir="", name="train", level="ERROR")).run()
     run_directory = summary["run_directory"]
 
     results = InferencePipeline(run_directory, logger=Logger(log_dir="", name="infer", level="ERROR"), device="cpu", splits=("test",), batch_size=8).run()

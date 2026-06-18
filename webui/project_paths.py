@@ -9,11 +9,6 @@ class ProjectPaths:
     PREFERRED_ENVIRONMENT = "conda:Dune"
 
     SCRIPTS = {
-        "create_dataset": {
-            "file"                : "create_dataset.py",
-            "entry_config_module" : "configuration.entry.general",
-            "entry_config_class"  : "DatasetEntryConfig",
-        },
         "train": {
             "file"                : "train.py",
             "entry_config_module" : "configuration.entry.general",
