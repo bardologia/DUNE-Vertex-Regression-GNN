@@ -410,7 +410,7 @@ main { margin-left: var(--navw); }
 .console-tile__dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--term-line); }
 .console-tile__name { font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--term-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .console-tile__meta { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); margin-right: auto; white-space: nowrap; }
-.console-tile__out { flex: 1; min-height: 0; min-width: 0; padding: 10px 12px; overflow: hidden; }
+.console-tile__out { flex: 1; min-height: 0; min-width: 0; padding: 10px 12px; overflow: hidden; background: #0b0e14; }
 .console-tile__out .xterm { height: 100%; }
 
 /* ---------- Master / detail ---------- */
@@ -509,7 +509,7 @@ main { margin-left: var(--navw); }
 .tb-empty__hint { color: var(--ink-dim); font-size: 0.95rem; max-width: 56ch; margin: 0 0 10px; }
 
 /* ---------- Event explorer ---------- */
-.page--events { display: flex; flex-direction: column; }
+.page--events.is-active { display: flex; flex-direction: column; }
 
 .ev-bar { display: flex; gap: 16px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; margin-bottom: 12px; }
 .ev-runs { display: flex; gap: 8px; flex-wrap: wrap; }
