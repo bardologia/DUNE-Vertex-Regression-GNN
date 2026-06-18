@@ -4,14 +4,12 @@ _EXPORTS = {
     "Detacher": "config_cli",
     "ConfigCli": "config_cli",
     "Reproducibility": "reproducibility",
-    "WorkerInitializer": "reproducibility",
 }
 
 __all__ = [
     "Detacher",
     "ConfigCli",
     "Reproducibility",
-    "WorkerInitializer",
 ]
 
 

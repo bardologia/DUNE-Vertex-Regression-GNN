@@ -10,10 +10,9 @@ class GraphAssembler:
     EPSILON = 1e-8
 
     def __init__(self, config):
-        self.bidirectional    = config.graph.bidirectional
-        self.k_neighbors      = config.graph.k_neighbors
-        self.knn_algorithm    = config.graph.knn_algorithm
-        self.position_columns = config.data.position_columns
+        self.bidirectional = config.graph.bidirectional
+        self.k_neighbors   = config.graph.k_neighbors
+        self.knn_algorithm = config.graph.knn_algorithm
 
     def _effective_neighbors(self, number_of_nodes):
         return max(1, min(int(self.k_neighbors), number_of_nodes - 1))
@@ -130,10 +129,9 @@ class EdgeFeatures(GraphAssembler):
 
 class Graph:
     def __init__(self, config):
-        self.config           = config
-        self.position_columns = config.data.position_columns
-        self.node_features    = NodeFeatures(config)
-        self.edge_features    = EdgeFeatures(config)
+        self.config        = config
+        self.node_features = NodeFeatures(config)
+        self.edge_features = EdgeFeatures(config)
 
     def build_from_arrays(self, positions, light):
         positions = np.asarray(positions, dtype=np.float32)

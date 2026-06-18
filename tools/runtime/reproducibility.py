@@ -29,31 +29,3 @@ class Reproducibility:
         generator.manual_seed(int(seed))
 
         return generator
-
-    @staticmethod
-    def worker_init(base_seed: int):
-        return WorkerInitializer(base_seed)
-
-
-class WorkerInitializer:
-    def __init__(self, base_seed: int) -> None:
-        self.base_seed = int(base_seed)
-
-    def __call__(self, worker_id: int) -> None:
-        seed = (self.base_seed + int(worker_id)) % Reproducibility.SEED_MODULUS
-
-        random.seed(seed)
-        np.random.seed(seed)
-
-        info = torch.utils.data.get_worker_info()
-        if info is None:
-            return
-
-        for augmenter in self._augmenters(info.dataset):
-            augmenter.reseed(seed)
-
-    @staticmethod
-    def _augmenters(dataset) -> list:
-        parts = getattr(dataset, "parts", None) or [dataset]
-
-        return [part.augmenter for part in parts if getattr(part, "augmenter", None) is not None]
