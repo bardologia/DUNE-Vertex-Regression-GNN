@@ -29,29 +29,6 @@ class TensorboardManager:
     def default_logdir(self) -> str:
         return str(self.paths.runs_dir.resolve())
 
-    def ensure_latest_run(self, settle_timeout_s: float = 90.0) -> None:
-        runs_root = self.paths.runs_dir.resolve()
-        before    = self._run_directories(runs_root)
-        deadline  = time.monotonic() + settle_timeout_s
-
-        while time.monotonic() < deadline:
-            appeared = [path for path in self._run_directories(runs_root) - before if (path / "tensorboard").is_dir()]
-            if appeared:
-                newest = max(appeared, key=lambda path: path.stat().st_mtime)
-                self.logger.ok(f"auto-starting tensorboard over new run {newest.name}")
-                self.ensure(str(newest / "tensorboard"))
-                return
-            time.sleep(self.PROBE_INTERVAL_S)
-
-        self.logger.warning("no new run directory appeared after launch; falling back to all runs")
-        self.ensure(self.default_logdir())
-
-    def _run_directories(self, runs_root: Path) -> set:
-        try:
-            return {child for child in runs_root.iterdir() if child.is_dir()}
-        except OSError:
-            return set()
-
     def resolve_run_logdir(self, run_directory: str) -> str | None:
         candidate = Path(run_directory).expanduser()
         if not candidate.is_absolute():

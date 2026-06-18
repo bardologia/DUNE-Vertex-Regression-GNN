@@ -119,7 +119,7 @@ class RequestRouter:
             interpreter = body.get("interpreter") or self.paths.preferred_interpreter()
             result      = self.processes.launch(script, overrides, interpreter)
             if result.get("ok") and script == "train":
-                threading.Thread(target=self.tensorboard.ensure_latest_run, daemon=True).start()
+                threading.Thread(target=self.tensorboard.ensure, args=(self.tensorboard.default_logdir(),), daemon=True).start()
             self._send_json(handler, result, 200 if result.get("ok") else 400)
             return
 

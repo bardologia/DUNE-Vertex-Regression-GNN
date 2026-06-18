@@ -130,7 +130,7 @@ class TensorboardView {
       this.startBtn.hidden = true;
     } else {
       this.emptyTitle.textContent = "No TensorBoard running";
-      this.emptyHint.textContent = "Launch a training job and an instance starts automatically over its log directory, or start one manually over all runs.";
+      this.emptyHint.textContent = "Launch a training job and an instance starts automatically over the runs directory, or start one manually.";
       this.startBtn.hidden = false;
     }
   }
