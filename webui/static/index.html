@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css" />
-<link rel="stylesheet" href="/static/css/styles.css?v=20260618d" />
+<link rel="stylesheet" href="/static/css/styles.css?v=20260618e" />
 </head>
 <body>
 
@@ -26,6 +26,7 @@
     <a href="#/system" data-route="system">Server</a>
     <a href="#/scripts" data-route="scripts">Control panel</a>
     <a href="#/console" data-route="console">Console</a>
+    <a href="#/events" data-route="events">Event explorer</a>
     <a href="#/results" data-route="results">Results</a>
     <a href="#/tensorboard" data-route="tensorboard">TensorBoard</a>
   </nav>
@@ -100,6 +101,58 @@
     </div>
   </section>
 
+  <!-- EVENT EXPLORER -->
+  <section class="page page--pad page--events" data-page="events">
+    <div class="page__head">
+      <h2 class="page__title">Event explorer</h2>
+      <p class="page__lead">
+        Pick a run, then drag the X / Y / Z target through the detector volume to snap to the
+        nearest reconstructed event. The viewer shows the sensors that fired, the true vertex
+        and the predicted vertex, alongside a per-event statistics table.
+      </p>
+    </div>
+
+    <div class="ev-bar">
+      <div class="ev-runs" id="ev-runs" aria-label="Runs"></div>
+      <div class="ev-splits" id="ev-splits" role="tablist" aria-label="Split">
+        <button class="ev-split is-active" data-split="test" role="tab">test</button>
+        <button class="ev-split" data-split="val" role="tab">val</button>
+        <button class="ev-split" data-split="train" role="tab">train</button>
+      </div>
+    </div>
+
+    <div class="ev-hint" id="ev-hint">Select a run to load its events.</div>
+
+    <div class="ev-progress" id="ev-progress" hidden>
+      <div class="ev-progress__bar"><span class="ev-progress__fill" id="ev-progress-fill"></span></div>
+      <div class="ev-progress__label" id="ev-progress-label"></div>
+    </div>
+
+    <div class="ev-stage" id="ev-stage" hidden>
+      <div class="ev-viewer">
+        <canvas id="ev-canvas"></canvas>
+        <div class="ev-legend">
+          <span class="ev-key"><i class="ev-dot ev-dot--sensor"></i>active sensor</span>
+          <span class="ev-key"><i class="ev-dot ev-dot--gt"></i>true vertex</span>
+          <span class="ev-key"><i class="ev-dot ev-dot--pred"></i>prediction</span>
+          <span class="ev-key ev-key--hint">drag to rotate &middot; scroll to zoom</span>
+        </div>
+        <div class="ev-readout" id="ev-readout"></div>
+      </div>
+
+      <aside class="ev-rail">
+        <div class="ev-card">
+          <div class="ev-card__cap">target vertex <span id="ev-nearest"></span></div>
+          <div class="ev-sliders" id="ev-sliders"></div>
+        </div>
+        <div class="ev-card">
+          <div class="ev-card__cap">event statistics</div>
+          <table class="ev-stats"><tbody id="ev-stats"></tbody></table>
+        </div>
+      </aside>
+    </div>
+  </section>
+
   <!-- RESULTS -->
   <section class="page page--pad" data-page="results">
     <div class="page__head">
@@ -161,19 +214,21 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="/static/js/app.js?v=20260618d"></script>
-<script src="/static/js/radar.js?v=20260618d"></script>
-<script src="/static/js/scene.js?v=20260618d"></script>
-<script src="/static/js/server_anim.js?v=20260618d"></script>
-<script src="/static/js/router.js?v=20260618d"></script>
-<script src="/static/js/observatory.js?v=20260618d"></script>
-<script src="/static/js/scripts.js?v=20260618d"></script>
-<script src="/static/js/launch.js?v=20260618d"></script>
+<script src="/static/js/app.js?v=20260618e"></script>
+<script src="/static/js/radar.js?v=20260618e"></script>
+<script src="/static/js/scene.js?v=20260618e"></script>
+<script src="/static/js/server_anim.js?v=20260618e"></script>
+<script src="/static/js/router.js?v=20260618e"></script>
+<script src="/static/js/observatory.js?v=20260618e"></script>
+<script src="/static/js/scripts.js?v=20260618e"></script>
+<script src="/static/js/launch.js?v=20260618e"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
-<script src="/static/js/console.js?v=20260618d"></script>
-<script src="/static/js/results.js?v=20260618d"></script>
-<script src="/static/js/tensorboard.js?v=20260618d"></script>
-<script src="/static/js/boot.js?v=20260618d"></script>
+<script src="/static/js/console.js?v=20260618e"></script>
+<script src="/static/js/results.js?v=20260618e"></script>
+<script src="/static/js/tensorboard.js?v=20260618e"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.134.0/build/three.min.js"></script>
+<script src="/static/js/events.js?v=20260618e"></script>
+<script src="/static/js/boot.js?v=20260618e"></script>
 </body>
 </html>

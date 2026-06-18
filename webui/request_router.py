@@ -9,6 +9,7 @@ from pathlib       import Path
 from urllib.parse  import parse_qs, urlparse
 
 from config_registry     import ConfigRegistry
+from event_explorer      import EventExplorer
 from gpu_watchdog        import GpuWatchdog
 from model_library       import ModelLibrary
 from process_manager     import ProcessManager
@@ -27,7 +28,7 @@ class RequestRouter:
         "tagline" : "Graph neural network vertex reconstruction control console",
     }
 
-    def __init__(self, paths: ProjectPaths, logger: ServerLogger, catalog: ScriptCatalog, configs: ConfigRegistry, processes: ProcessManager, system: SystemMonitor, gpu_watchdog: GpuWatchdog, tensorboard: TensorboardManager, results: ResultsBrowser, models: ModelLibrary) -> None:
+    def __init__(self, paths: ProjectPaths, logger: ServerLogger, catalog: ScriptCatalog, configs: ConfigRegistry, processes: ProcessManager, system: SystemMonitor, gpu_watchdog: GpuWatchdog, tensorboard: TensorboardManager, results: ResultsBrowser, models: ModelLibrary, events: EventExplorer) -> None:
         self.paths        = paths
         self.logger       = logger
         self.catalog      = catalog
@@ -38,6 +39,7 @@ class RequestRouter:
         self.tensorboard  = tensorboard
         self.results      = results
         self.models       = models
+        self.events       = events
 
     def _route_get(self, handler, path: str) -> None:
         if path == "/" or path == "":
@@ -85,6 +87,26 @@ class RequestRouter:
         if path == "/api/tensorboard":
             self._send_json(handler, {"instances": self.tensorboard.list_instances()})
             return
+        if path == "/api/events/runs":
+            self._send_json(handler, self.events.list_runs())
+            return
+        if path == "/api/events/status":
+            self._send_json(handler, self.events.load_status())
+            return
+        if path == "/api/events/list":
+            query = parse_qs(urlparse(handler.path).query)
+            result = self.events.events((query.get("run") or [""])[0], (query.get("split") or [""])[0])
+            self._send_json(handler, result, 200 if result.get("ok") else 400)
+            return
+        if path == "/api/events/detail":
+            query = parse_qs(urlparse(handler.path).query)
+            try:
+                index = int((query.get("index") or ["-1"])[0])
+            except ValueError:
+                index = -1
+            result = self.events.detail((query.get("run") or [""])[0], (query.get("split") or [""])[0], index)
+            self._send_json(handler, result, 200 if result.get("ok") else 400)
+            return
 
         self._send_json(handler, {"error": "not found"}, 404)
 
@@ -124,6 +146,11 @@ class RequestRouter:
         if path.startswith("/api/tensorboard/") and path.endswith("/stop"):
             tb_id  = path[len("/api/tensorboard/"):-len("/stop")]
             result = self.tensorboard.stop(tb_id)
+            self._send_json(handler, result, 200 if result.get("ok") else 400)
+            return
+
+        if path == "/api/events/load":
+            result = self.events.start_load(body.get("run", ""), body.get("split", "test"))
             self._send_json(handler, result, 200 if result.get("ok") else 400)
             return
 
