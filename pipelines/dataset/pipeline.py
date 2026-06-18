@@ -7,7 +7,7 @@ from torch_geometric.loader import DataLoader as GraphDataLoader
 from pipelines.dataset.augmentation         import Augmentation
 from pipelines.dataset.coordinate_correction import DatasetCorrector
 from pipelines.dataset.graph                import FeatureSchema, Graph
-from pipelines.dataset.graph_dataset        import DegreeHistogramEstimator, GraphDataset, StatsEstimator
+from pipelines.dataset.graph_dataset        import CachedGraphDataset, DegreeHistogramEstimator, GraphDataset, StatsEstimator
 from pipelines.dataset.parquet_store        import ParquetDatasetWriter, ParquetEventReader
 from pipelines.dataset.splitting            import TargetBalancer
 
@@ -119,11 +119,17 @@ class DatasetPipeline:
         self.stats          = StatsEstimator(clean_train_dataset, self.config.data.stats_sample_size, self.logger).fit()
 
     def _build_datasets(self, train_samples, validation_samples, test_samples):
-        train_augmentation = None if self.evaluation_mode else Augmentation(self.config.augmentation)
-        self.datasets      = {
-            "train" : self._make_dataset(train_samples,      train_augmentation, self.stats),
-            "val"   : self._make_dataset(validation_samples, None,               self.stats),
-            "test"  : self._make_dataset(test_samples,       None,               self.stats),
+        train_augmentation  = None if self.evaluation_mode else Augmentation(self.config.augmentation)
+        train_is_stochastic = train_augmentation is not None and train_augmentation.active
+
+        train_dataset = self._make_dataset(train_samples,      train_augmentation, self.stats)
+        val_dataset   = self._make_dataset(validation_samples, None,               self.stats)
+        test_dataset  = self._make_dataset(test_samples,       None,               self.stats)
+
+        self.datasets = {
+            "train" : train_dataset if train_is_stochastic else CachedGraphDataset(train_dataset, self.logger),
+            "val"   : CachedGraphDataset(val_dataset,  self.logger),
+            "test"  : CachedGraphDataset(test_dataset, self.logger),
         }
 
     @staticmethod

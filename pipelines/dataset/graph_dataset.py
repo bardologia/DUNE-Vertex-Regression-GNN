@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import multiprocessing as mp
+
 import numpy as np
 import torch
 from torch.utils.data import Dataset
 
 
 class GraphDataset(Dataset):
+    EPOCH_SEED_STRIDE = 1_000_003
+
     def __init__(self, samples, geometry_positions, light_matrix, graph_builder, physics_config, augmentation=None, stats=None):
         self.samples            = samples
         self.geometry_positions = geometry_positions.astype(np.float32)
@@ -19,8 +23,13 @@ class GraphDataset(Dataset):
         self.efficiency_seed      = physics_config.efficiency_seed
         self.augmentation_seed    = augmentation.config.seed if augmentation is not None else 0
 
+        self.epoch = mp.Value("q", 0, lock=False)
+
     def __len__(self):
         return len(self.samples)
+
+    def set_epoch(self, epoch):
+        self.epoch.value = int(epoch)
 
     def _base_light(self, raw_counts, base_event_id):
         generator     = np.random.default_rng(self.efficiency_seed + int(base_event_id))
@@ -32,9 +41,10 @@ class GraphDataset(Dataset):
         light      = self._base_light(raw_counts, base_event_id)
 
         if self.augmentation is not None and self.augmentation.active:
-            generator = np.random.default_rng(self.augmentation_seed + int(light_row))
-            light     = self.augmentation.apply_to_counts(light, generator)
-            light     = self.augmentation.apply_to_light(light, generator)
+            augmentation_seed = self.augmentation_seed + int(light_row) + self.epoch.value * self.EPOCH_SEED_STRIDE
+            generator         = np.random.default_rng(augmentation_seed)
+            light             = self.augmentation.apply_to_counts(light, generator)
+            light             = self.augmentation.apply_to_light(light, generator)
 
         return light
 
@@ -61,6 +71,39 @@ class GraphDataset(Dataset):
             data = self._normalize(data)
 
         return data
+
+
+class CachedGraphDataset(Dataset):
+    def __init__(self, base_dataset, logger):
+        self.base_dataset = base_dataset
+        self.logger       = logger
+        self.graphs       = self._materialize()
+
+    @property
+    def samples(self):
+        return self.base_dataset.samples
+
+    def _materialize(self):
+        self.logger.section("[Graph Cache]")
+        graphs = [None] * len(self.base_dataset)
+
+        with self.logger.track() as progress:
+            task_id = progress.add_task("Caching deterministic graphs", total=len(self.base_dataset))
+            for index in range(len(self.base_dataset)):
+                graphs[index] = self.base_dataset[index]
+                progress.advance(task_id)
+
+        self.logger.subsection(f"Cached {len(graphs)} graphs")
+        return graphs
+
+    def set_epoch(self, epoch):
+        return None
+
+    def __len__(self):
+        return len(self.graphs)
+
+    def __getitem__(self, index):
+        return self.graphs[index]
 
 
 class StatsEstimator:

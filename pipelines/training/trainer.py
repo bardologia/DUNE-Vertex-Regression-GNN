@@ -78,8 +78,6 @@ class Trainer:
 
     def _clear_memory(self):
         gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
 
     def _apply_learning_rates(self):
         effective_learning_rates = self.scheduler.effective_lrs()
@@ -172,6 +170,7 @@ class Trainer:
     def run_epoch(self, train_loader, val_loader, epoch):
         self.scheduler.step(epoch)
         self._apply_learning_rates()
+        train_loader.dataset.set_epoch(epoch)
 
         train_loss      = self.train_epoch(train_loader, epoch)
         validation_loss = self.evaluate(val_loader, epoch, stage="validation")["avg_loss"]
