@@ -1,7 +1,6 @@
 from tools import (
     Checkpoint,
     EarlyStopping,
-    ExponentialMovingAverage,
     GradientClipper,
     Logger,
     MarkdownDoc,
@@ -13,8 +12,9 @@ from tools import (
 
 
 def test_tools_importable():
-    for component in (Logger, Tracker, Warmup, Scheduler, EarlyStopping, GradientClipper, Checkpoint, ExponentialMovingAverage):
+    for component in (Logger, Tracker, Warmup, Scheduler, EarlyStopping, GradientClipper, Checkpoint):
         assert component is not None
+
 
 
 def test_markdown_document_renders():

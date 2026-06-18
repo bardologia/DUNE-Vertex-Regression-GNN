@@ -6,7 +6,6 @@ import torch
 
 from tools.monitoring.inspection import ModelSummary
 from tools.training.checkpoint   import Checkpoint
-from tools.training.ema          import ExponentialMovingAverage
 from tools.training.gradients    import GradientClipper
 from tools.training.scheduling   import Scheduler, Warmup
 from tools.training.stopping     import EarlyStopping
@@ -38,9 +37,8 @@ class Trainer:
         self.warmup           = Warmup(training_config, self.logger, self.tracker)
         self.scheduler        = Scheduler(base_lrs, self.warmup, training_config, self.logger, self.tracker)
         self.early_stopping   = EarlyStopping(training_config, self.logger, self.tracker)
-        self.ema              = ExponentialMovingAverage(self.model, training_config, self.logger, self.tracker)
         self.gradient_clipper = GradientClipper(training_config, self.logger, self.tracker)
-        self.criterion        = Loss(training_config.loss, self.logger, self.tracker)
+        self.criterion        = Loss(training_config.loss, self.stats, self.logger, self.tracker)
         self.checkpoint       = Checkpoint(self.logger, self.tracker, str(run_metadata.checkpoint_path))
 
         self.scheduler.set_total_epochs(self.epochs)
@@ -92,7 +90,6 @@ class Trainer:
         return {
             "params"        : self.model.state_dict(),
             "optimizer"     : self.optimizer.state_dict(),
-            "ema"           : self.ema.state_dict(),
             "scaler"        : self.scaler.state_dict() if self.scaler else None,
             "epoch"         : epoch,
             "global_step"   : self.global_step,
@@ -104,7 +101,7 @@ class Trainer:
     def forward(self, data):
         with torch.amp.autocast("cuda", enabled=self.use_amp):
             predictions = self.model(data)
-            loss_dict   = self.criterion(predictions, data.y, self.global_step)
+            loss_dict   = self.criterion(predictions, data, self.global_step)
         return predictions, loss_dict
 
     def backward(self, loss, do_step: bool):
@@ -129,7 +126,6 @@ class Trainer:
         self.optimizer.zero_grad(set_to_none=True)
         self.warmup.step()
         self.global_step += 1
-        self.ema.update(self.model, step=self.global_step)
         self._apply_learning_rates()
 
     def train_epoch(self, loader, epoch):
@@ -158,20 +154,16 @@ class Trainer:
 
     def evaluate(self, loader, epoch, stage="validation"):
         self.model.eval()
-        self.ema.apply_to(self.model)
 
         total_loss        = 0.0
         number_of_batches = 0
 
-        try:
-            with torch.no_grad():
-                for data in loader:
-                    data            = data.to(self.device, non_blocking=True)
-                    _, loss_dict    = self.forward(data)
-                    total_loss     += loss_dict["total_loss"].item()
-                    number_of_batches += 1
-        finally:
-            self.ema.restore(self.model)
+        with torch.no_grad():
+            for data in loader:
+                data            = data.to(self.device, non_blocking=True)
+                _, loss_dict    = self.forward(data)
+                total_loss     += loss_dict["total_loss"].item()
+                number_of_batches += 1
 
         average_loss = total_loss / max(1, number_of_batches)
         self.tracker.log_scalar(f"{stage}/loss", average_loss, epoch)

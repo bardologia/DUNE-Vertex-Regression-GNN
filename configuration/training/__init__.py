@@ -1,6 +1,5 @@
 from .general import (
     EarlyStoppingConfig,
-    EMAConfig,
     GradientClipperConfig,
     IOConfig,
     LossConfig,
@@ -14,7 +13,6 @@ from .general import (
 
 __all__ = [
     "EarlyStoppingConfig",
-    "EMAConfig",
     "GradientClipperConfig",
     "IOConfig",
     "LossConfig",

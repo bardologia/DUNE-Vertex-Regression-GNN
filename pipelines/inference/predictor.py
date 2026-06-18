@@ -14,16 +14,6 @@ class Predictor:
     def prepare(self):
         checkpoint = torch.load(self.checkpoint_path, map_location=self.device, weights_only=False)
         self.model.load_state_dict(checkpoint["params"])
-
-        ema_state = checkpoint.get("ema")
-        if ema_state is not None and ema_state.get("enabled"):
-            shadow = ema_state["shadow"]
-            with torch.no_grad():
-                for name, parameter in self.model.named_parameters():
-                    if name in shadow:
-                        parameter.copy_(shadow[name].to(self.device))
-            self.logger.subsection("Applied EMA shadow weights for inference")
-
         self.model.eval()
         return self
 
