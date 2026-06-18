@@ -7,8 +7,8 @@ from dataclasses import dataclass, field, fields
 class BaseGNNConfig:
     name              : str   = "base"
 
-    input_dim         : int   = 7
-    edge_dim          : int   = 7
+    input_dim         : int   = 17
+    edge_dim          : int   = 23
     output_dim        : int   = 3
 
     hidden_dim        : int   = 128

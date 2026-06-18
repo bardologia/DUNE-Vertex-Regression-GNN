@@ -34,6 +34,8 @@ class TrainingPipeline:
         self.loaders = DatasetPipeline.build_loaders(self.datasets, loop.batch_size, num_workers=loop.num_workers, pin_memory=loop.pin_memory, persistent_workers=loop.persistent_workers)
 
     def _build_model(self):
+        self.entry.model_overrides = DatasetPipeline.inject_feature_dimensions(self.entry.model_overrides, self.entry.dataset)
+
         degree_histogram = self.dataset_pipeline.pna_degree_histogram(self.entry.model_name, self.datasets["train"])
         if degree_histogram is not None:
             self.entry.model_overrides = {**self.entry.model_overrides, "degree_histogram": degree_histogram}

@@ -25,11 +25,11 @@ def synthetic_batch():
     from torch_geometric.loader import DataLoader
 
     def make_graph(node_count=40, neighbors=4):
-        node_features = torch.randn(node_count, 7)
+        node_features = torch.randn(node_count, 17)
         source        = torch.arange(node_count).repeat_interleave(neighbors)
         destination   = torch.randint(0, node_count, (node_count * neighbors,))
         edge_index    = torch.stack([source, destination])
-        edge_attr     = torch.randn(node_count * neighbors, 7)
+        edge_attr     = torch.randn(node_count * neighbors, 23)
         target        = torch.randn(1, 3)
         return Data(x=node_features, edge_index=edge_index, edge_attr=edge_attr, y=target)
 

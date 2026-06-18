@@ -1,6 +1,6 @@
 from .augmentation         import Augmentation
 from .coordinate_correction import CoordinateTransform, DatasetAugmentor, DatasetCorrector
-from .graph                import ActiveNodeSelector, EdgeFeatures, Graph, GraphAssembler, NodeFeatures
+from .graph                import ActiveNodeSelector, EdgeFeatures, FeatureSchema, Graph, GraphAssembler, NodeFeatures
 from .graph_dataset        import GraphDataset, StatsEstimator
 from .normalization        import ChannelStrategySelector, FeatureGroupNormalizer, NormalizationStats
 from .parquet_store        import ParquetDatasetWriter, ParquetEventReader
@@ -15,6 +15,7 @@ __all__ = [
     "DatasetPipeline",
     "ActiveNodeSelector",
     "EdgeFeatures",
+    "FeatureSchema",
     "Graph",
     "GraphAssembler",
     "NodeFeatures",

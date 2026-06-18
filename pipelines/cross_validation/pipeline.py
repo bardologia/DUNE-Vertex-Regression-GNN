@@ -168,6 +168,8 @@ class CrossValidationPipeline:
         loaders         = DatasetPipeline.build_loaders(datasets, loop.batch_size, num_workers=loop.num_workers, pin_memory=loop.pin_memory, persistent_workers=loop.persistent_workers)
         train_loader, validation_loader, test_loader = loaders
 
+        self.entry.model_overrides = DatasetPipeline.inject_feature_dimensions(self.entry.model_overrides, self.entry.dataset)
+
         run_metadata = TrainingRunMetadata(self.training_config, self.entry.model_name, self.run_directory, run_name=f"fold_{fold_index}")
         run_metadata.save_resolved_config(self.entry)
         run_metadata.save_normalization_stats(stats)
