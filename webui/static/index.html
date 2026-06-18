@@ -3,12 +3,13 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="light" />
 <title>DUNE-GNN Control Console</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css" />
-<link rel="stylesheet" href="/static/css/styles.css?v=20260618c" />
+<link rel="stylesheet" href="/static/css/styles.css?v=20260618d" />
 </head>
 <body>
 
@@ -26,6 +27,7 @@
     <a href="#/scripts" data-route="scripts">Control panel</a>
     <a href="#/console" data-route="console">Console</a>
     <a href="#/results" data-route="results">Results</a>
+    <a href="#/tensorboard" data-route="tensorboard">TensorBoard</a>
   </nav>
   <div class="nav__status" id="nav-status" title="Backend connection">
     <span class="dot" id="status-dot"></span>
@@ -115,6 +117,35 @@
     <div class="tb-bar" id="tensorboard-bar"></div>
   </section>
 
+  <!-- TENSORBOARD -->
+  <section class="page page--pad page--tb" data-page="tensorboard">
+    <div class="page__head page__head--row">
+      <div>
+        <h2 class="page__title">TensorBoard</h2>
+        <p class="page__lead">
+          Live training curves served straight from the run directories. An instance
+          launches automatically whenever a training job starts.
+        </p>
+      </div>
+      <div class="tb-actions">
+        <button class="btn btn--mini" id="tb-open" disabled>Open in tab</button>
+        <button class="btn btn--mini btn--danger" id="tb-stop" disabled>Stop</button>
+      </div>
+    </div>
+    <div class="tb-strip" id="tb-strip" aria-label="TensorBoard instances"></div>
+    <div class="tb-stage">
+      <iframe class="tb-frame" id="tb-frame" title="TensorBoard" src="about:blank"></iframe>
+      <div class="tb-empty" id="tb-empty">
+        <p class="tb-empty__title" id="tb-empty-title">No TensorBoard running</p>
+        <p class="tb-empty__hint" id="tb-empty-hint">
+          Launch a training job and an instance starts automatically over its log directory,
+          or start one manually over all runs.
+        </p>
+        <button class="btn btn--primary" id="tb-start">Start TensorBoard</button>
+      </div>
+    </div>
+  </section>
+
 </main>
 
 <footer class="footer">
@@ -130,18 +161,19 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="/static/js/app.js?v=20260618b"></script>
-<script src="/static/js/radar.js?v=20260618b"></script>
-<script src="/static/js/scene.js?v=20260618b"></script>
-<script src="/static/js/server_anim.js?v=20260618b"></script>
-<script src="/static/js/router.js?v=20260618b"></script>
-<script src="/static/js/observatory.js?v=20260618b"></script>
-<script src="/static/js/scripts.js?v=20260618b"></script>
-<script src="/static/js/launch.js?v=20260618b"></script>
+<script src="/static/js/app.js?v=20260618d"></script>
+<script src="/static/js/radar.js?v=20260618d"></script>
+<script src="/static/js/scene.js?v=20260618d"></script>
+<script src="/static/js/server_anim.js?v=20260618d"></script>
+<script src="/static/js/router.js?v=20260618d"></script>
+<script src="/static/js/observatory.js?v=20260618d"></script>
+<script src="/static/js/scripts.js?v=20260618d"></script>
+<script src="/static/js/launch.js?v=20260618d"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
-<script src="/static/js/console.js?v=20260618c"></script>
-<script src="/static/js/results.js?v=20260618b"></script>
-<script src="/static/js/boot.js?v=20260618b"></script>
+<script src="/static/js/console.js?v=20260618d"></script>
+<script src="/static/js/results.js?v=20260618d"></script>
+<script src="/static/js/tensorboard.js?v=20260618d"></script>
+<script src="/static/js/boot.js?v=20260618d"></script>
 </body>
 </html>

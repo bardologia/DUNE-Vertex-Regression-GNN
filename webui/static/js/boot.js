@@ -6,6 +6,7 @@ class Application {
     this.launchPanel = null;
     this.consolePanel = null;
     this.resultsPanel = null;
+    this.tensorboardView = null;
     this.observatory = null;
     this.router = null;
   }
@@ -75,6 +76,8 @@ class Application {
       detail: document.getElementById("run-detail"),
       bar: document.getElementById("tensorboard-bar"),
     });
+
+    this.tensorboardView = new window.TensorboardView();
   }
 
   _buildRouter() {
@@ -92,6 +95,9 @@ class Application {
 
     if (page === "launch") this.launchPanel.enter(param);
     else this.launchPanel.leave();
+
+    if (page === "tensorboard") this.tensorboardView.enter();
+    else this.tensorboardView.leave();
 
     if (page === "results") this.resultsPanel.enter();
   }

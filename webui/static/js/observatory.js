@@ -305,7 +305,7 @@ class Observatory {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
 
-    ctx.strokeStyle = "rgba(140, 160, 180, 0.08)";
+    ctx.strokeStyle = "rgba(40, 55, 75, 0.10)";
     ctx.lineWidth = 1;
     [0.25, 0.5, 0.75].forEach((f) => {
       const y = Math.round(h * f) + 0.5;
@@ -378,7 +378,7 @@ class Observatory {
   }
 }
 
-Observatory.prototype.blue = "111, 155, 255";
-Observatory.prototype.teal = "45, 212, 191";
+Observatory.prototype.blue = "47, 111, 237";
+Observatory.prototype.teal = "14, 147, 132";
 
 window.Observatory = Observatory;

@@ -154,23 +154,23 @@ class ResultsPanel {
   async _launchTensorboard(name) {
     const result = await window.apiPost("/api/tensorboard", { run: name });
     if (!result.ok) { window.toast(result.error || "TensorBoard launch failed", "error"); return; }
-    window.toast(`TensorBoard on port ${result.port}`, "ok");
+    window.toast("TensorBoard starting — see the TensorBoard tab", "ok");
     await this._refreshTensorboard();
   }
 
   async _refreshTensorboard() {
     const data = await window.apiGet("/api/tensorboard");
-    const instances = data.instances || [];
+    const instances = (data.instances || []).filter((instance) => instance.status === "starting" || instance.status === "running");
     if (!instances.length) { this.barElement.innerHTML = ""; return; }
 
     this.barElement.innerHTML = instances
       .map((instance) => {
-        const stop = instance.status === "running" ? `<button class="btn btn--mini btn--danger" data-stop="${instance.pid}">Stop</button>` : "";
+        const open = instance.status === "running" ? `<a href="${window.escapeHtml(instance.url)}" target="_blank">open</a>` : "";
         return (
-          `<div class="tb-instance"><span class="badge badge--${instance.status === "running" ? "running" : "failed"}">${instance.status}</span>` +
-          `<a href="${window.escapeHtml(instance.url)}" target="_blank">${window.escapeHtml(instance.url)}</a>` +
+          `<div class="tb-instance"><span class="badge badge--${instance.status === "running" ? "running" : "connecting"}">${instance.status}</span>` +
+          open +
           `<span class="tb-instance__path">${window.escapeHtml(instance.logdir)}</span>` +
-          `<span class="tb-spacer"></span>${stop}</div>`
+          `<span class="tb-spacer"></span><button class="btn btn--mini btn--danger" data-stop="${window.escapeHtml(instance.id)}">Stop</button></div>`
         );
       })
       .join("");

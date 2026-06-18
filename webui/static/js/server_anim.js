@@ -6,11 +6,11 @@ class ServerScene extends CanvasBase {
     super(canvas);
     this.t     = 0;
     this.frame = 0;
-    this.ink   = "150, 168, 184";
-    this.blue  = "111, 155, 255";
-    this.teal  = "45, 212, 191";
-    this.amber = "227, 179, 65";
-    this.red   = "239, 110, 110";
+    this.ink   = "90, 104, 120";
+    this.blue  = "47, 111, 237";
+    this.teal  = "14, 147, 132";
+    this.amber = "183, 121, 31";
+    this.red   = "214, 69, 80";
 
     this.load       = 0.15;
     this.loadTarget = 0.15;
