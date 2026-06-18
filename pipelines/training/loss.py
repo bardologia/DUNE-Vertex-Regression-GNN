@@ -61,16 +61,21 @@ class Loss:
         targets    = data.y
         components = {}
 
-        total_loss          = self.config.data_weight * self._data_term(predictions, targets)
-        components["data"]  = float(total_loss.item())
+        data_term          = self._data_term(predictions, targets)
+        total_loss         = self.config.data_weight * data_term
+        components["data"] = float(data_term.item())
+
+        if self.config.euclidean_weight > 0.0 or self.config.containment_weight > 0.0:
+            physical_predictions = self.stats.target.inverse_torch(predictions, predictions.device)
+            physical_targets     = self.stats.target.inverse_torch(targets, predictions.device)
 
         if self.config.euclidean_weight > 0.0:
-            euclidean              = self._euclidean_term(predictions, targets)
+            euclidean              = self._euclidean_term(physical_predictions, physical_targets)
             total_loss             = total_loss + self.config.euclidean_weight * euclidean
             components["euclidean"] = float(euclidean.item())
 
         if self.config.containment_weight > 0.0:
-            containment              = self._containment_term(predictions)
+            containment              = self._containment_term(physical_predictions)
             total_loss               = total_loss + self.config.containment_weight * containment
             components["containment"] = float(containment.item())
 
