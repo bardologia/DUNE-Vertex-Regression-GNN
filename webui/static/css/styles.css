@@ -408,10 +408,8 @@ main { margin-left: var(--navw); }
 .console-tile__dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--term-line); }
 .console-tile__name { font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--term-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .console-tile__meta { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); margin-right: auto; white-space: nowrap; }
-.console-tile__out { flex: 1; min-height: 0; min-width: 0; padding: 12px 14px; overflow-y: auto; font-family: var(--mono); font-size: 12px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; color: var(--term-ink); }
-.console-tile__out .ln-err { color: #f6a6a6; }
-.console-tile__out .ln-warn { color: #e8c879; }
-.console-tile__out .ln-ok { color: #79e3c4; }
+.console-tile__out { flex: 1; min-height: 0; min-width: 0; padding: 10px 12px; overflow: hidden; }
+.console-tile__out .xterm { height: 100%; }
 
 /* ---------- Master / detail ---------- */
 .master--results { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 18px; align-items: start; }

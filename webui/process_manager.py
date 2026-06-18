@@ -1,31 +1,62 @@
 from __future__ import annotations
 
+import codecs
 import os
+import queue
 import re
 import shlex
 import signal
 import subprocess
 import threading
 import time
-from collections import deque
 from datetime    import datetime
+from collections import deque
 
 from project_paths import ProjectPaths
 from server_logger import ServerLogger
 
 
+class JobStream:
+
+    def __init__(self) -> None:
+        self.buffer      = deque(maxlen=4000)
+        self.subscribers = []
+        self.lock        = threading.Lock()
+
+    def publish(self, event: dict) -> None:
+        with self.lock:
+            self.buffer.append(event)
+            for subscriber in list(self.subscribers):
+                try:
+                    subscriber.put_nowait(event)
+                except queue.Full:
+                    pass
+
+    def subscribe(self) -> queue.Queue:
+        subscriber = queue.Queue(maxsize=8000)
+        with self.lock:
+            for event in self.buffer:
+                subscriber.put_nowait(event)
+            self.subscribers.append(subscriber)
+        return subscriber
+
+    def unsubscribe(self, subscriber: queue.Queue) -> None:
+        with self.lock:
+            if subscriber in self.subscribers:
+                self.subscribers.remove(subscriber)
+
+
 class ProcessManager:
 
     OVERRIDE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
-    TAIL_LIMIT    = 2000
+    TERMINAL_COLUMNS = 120
 
     def __init__(self, paths: ProjectPaths, logger: ServerLogger) -> None:
         self.paths     = paths
         self.logger    = logger
         self.processes = {}
+        self.streams   = {}
         self.lock      = threading.Lock()
-
-        self.paths.webui_logs_dir.mkdir(parents=True, exist_ok=True)
 
     def launch(self, script_key: str, overrides: dict | None, interpreter: str) -> dict:
         if not self._is_permitted_interpreter(interpreter):
@@ -39,15 +70,11 @@ class ProcessManager:
         argv              = self._build_argv(interpreter, entry, cleaned_overrides)
         environment       = self._runtime_environment(interpreter)
 
-        stamp     = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_path  = self.paths.webui_logs_dir / f"{script_key}_{stamp}.log"
-
         try:
-            log_handle = open(log_path, "wb")
-            process    = subprocess.Popen(
+            process = subprocess.Popen(
                 argv,
                 cwd               = str(self.paths.repo_root),
-                stdout            = log_handle,
+                stdout            = subprocess.PIPE,
                 stderr            = subprocess.STDOUT,
                 stdin             = subprocess.DEVNULL,
                 env               = environment,
@@ -65,20 +92,21 @@ class ProcessManager:
             "status"      : "running",
             "started"     : datetime.now().isoformat(timespec="seconds"),
             "exit_code"   : None,
-            "log_path"    : str(log_path),
             "process"     : process,
-            "log_handle"  : log_handle,
         }
+        stream = JobStream()
 
         with self.lock:
             self.processes[process.pid] = record
+            self.streams[process.pid]   = stream
 
         self.logger.ok(f"launched {script_key} as pid {process.pid}")
+        stream.publish({"type": "status", "status": "running", "pid": process.pid})
 
-        watcher = threading.Thread(target=self._watch, args=(process.pid,), daemon=True)
-        watcher.start()
+        pump = threading.Thread(target=self._pump, args=(process.pid, process, stream), daemon=True)
+        pump.start()
 
-        return {"ok": True, "pid": process.pid, "log_path": str(log_path)}
+        return {"ok": True, "pid": process.pid}
 
     def _is_permitted_interpreter(self, interpreter: str) -> bool:
         permitted = {candidate["path"] for candidate in self.paths.discover_interpreters()}
@@ -108,7 +136,8 @@ class ProcessManager:
         environment = dict(os.environ)
         environment["PYTHONUNBUFFERED"] = "1"
         environment["FORCE_COLOR"]      = "1"
-        environment["COLUMNS"]          = "160"
+        environment["COLUMNS"]          = str(self.TERMINAL_COLUMNS)
+        environment["LINES"]            = "32"
 
         library_directory = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(interpreter))), "lib")
         library_path      = environment.get("LD_LIBRARY_PATH", "")
@@ -117,24 +146,35 @@ class ProcessManager:
 
         return environment
 
-    def _watch(self, pid: int) -> None:
+    def _pump(self, pid: int, process: subprocess.Popen, stream: JobStream) -> None:
+        descriptor = process.stdout.fileno()
+        decoder    = codecs.getincrementaldecoder("utf-8")("replace")
+
+        while True:
+            chunk = os.read(descriptor, 4096)
+            if not chunk:
+                break
+            text = decoder.decode(chunk)
+            if text:
+                stream.publish({"type": "chunk", "data": text})
+
+        tail = decoder.decode(b"", final=True)
+        if tail:
+            stream.publish({"type": "chunk", "data": tail})
+
+        process.wait()
+        code = process.returncode
+
         with self.lock:
             record = self.processes.get(pid)
-        if record is None:
-            return
+            if record is not None:
+                record["status"]    = "finished" if code == 0 else "failed"
+                record["exit_code"] = code
+            status = record["status"] if record is not None else "finished"
 
-        process = record["process"]
-        process.wait()
-        code    = process.returncode
-
-        with self.lock:
-            record["status"]    = "finished" if code == 0 else "failed"
-            record["exit_code"] = code
-            handle = record.get("log_handle")
-            if handle is not None and not handle.closed:
-                handle.close()
-
-        self.logger.info(f"process {pid} ({record['script']}) exited with code {code}")
+        self.logger.info(f"process {pid} exited with code {code}")
+        stream.publish({"type": "status", "status": status, "code": code, "verdict": "ok" if code == 0 else "error"})
+        stream.publish({"type": "end"})
 
     def _view(self, record: dict) -> dict:
         return {
@@ -145,13 +185,16 @@ class ProcessManager:
             "status"      : record["status"],
             "started"     : record["started"],
             "exit_code"   : record["exit_code"],
-            "log_path"    : record["log_path"],
         }
 
     def list(self) -> list[dict]:
         with self.lock:
             records = list(self.processes.values())
         return [self._view(record) for record in sorted(records, key=lambda item: item["started"], reverse=True)]
+
+    def get_stream(self, pid: int) -> JobStream | None:
+        with self.lock:
+            return self.streams.get(pid)
 
     def kill(self, pid: int) -> dict:
         with self.lock:
@@ -178,29 +221,6 @@ class ProcessManager:
             os.kill(pid, requested_signal)
         except (ProcessLookupError, PermissionError):
             pass
-
-    def tail(self, pid: int, line_count: int) -> dict:
-        with self.lock:
-            record = self.processes.get(pid)
-
-        if record is None:
-            return {"ok": False, "error": "unknown process"}
-
-        requested = min(max(line_count, 1), self.TAIL_LIMIT)
-
-        try:
-            with open(record["log_path"], "r", encoding="utf-8", errors="replace") as handle:
-                lines = deque(handle, maxlen=requested)
-        except OSError as error:
-            return {"ok": False, "error": str(error)}
-
-        return {
-            "ok"        : True,
-            "pid"       : pid,
-            "status"    : record["status"],
-            "exit_code" : record["exit_code"],
-            "lines"     : [line.rstrip("\n") for line in lines],
-        }
 
     def stop_all(self, grace: float = 6.0) -> None:
         with self.lock:
