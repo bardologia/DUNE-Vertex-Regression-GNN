@@ -95,7 +95,7 @@ def test_cv_folds_are_group_aware_on_base_event(dataset_config, quiet_logger, tm
         covered_test_ids |= test_ids
 
     total_test_samples = sum(len(test_indices) for _, _, test_indices in pipeline.folds)
-    assert total_test_samples > len(covered_test_ids)
+    assert total_test_samples == len(covered_test_ids)
 
 
 def test_pipeline_runs_two_folds(dataset_config, quiet_logger):

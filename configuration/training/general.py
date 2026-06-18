@@ -94,6 +94,7 @@ class TrainingLoopConfig:
     use_amp                     : bool  = True
     gradient_accumulation_steps : int   = 1
     num_workers                 : int   = 4
+    prefetch_factor             : int   = 2
     pin_memory                  : bool  = True
     persistent_workers          : bool  = True
     verbose                     : bool  = True

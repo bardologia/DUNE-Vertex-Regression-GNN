@@ -217,7 +217,9 @@ class ParquetEventReader:
         self.octant_frame        = None
         self.octant_light_matrix = None
 
-    def load_store(self):
+    OCTANT_FRAME_COLUMNS = ["base_event_id", "octant", "sign_x", "sign_y", "sign_z", "target_x", "target_y", "target_z"]
+
+    def load_store(self, load_octant_light=True):
         self.geometry_frame = pa_parquet.read_table(self.geometry_path).to_pandas()
         channel_count       = len(self.geometry_frame)
 
@@ -231,11 +233,14 @@ class ParquetEventReader:
             events_table.column("target_z").to_numpy(),
         ])
 
-        octants_table            = pa_parquet.read_table(self.octants_path)
-        octant_count             = octants_table.num_rows
-        octant_flat_light        = octants_table.column("light").combine_chunks().values.to_numpy()
-        self.octant_light_matrix = octant_flat_light.reshape(octant_count, channel_count)
-        self.octant_frame        = octants_table.drop(["light"]).to_pandas()
+        if load_octant_light:
+            octants_table            = pa_parquet.read_table(self.octants_path)
+            octant_count             = octants_table.num_rows
+            octant_flat_light        = octants_table.column("light").combine_chunks().values.to_numpy()
+            self.octant_light_matrix = octant_flat_light.reshape(octant_count, channel_count)
+            self.octant_frame        = octants_table.drop(["light"]).to_pandas()
+        else:
+            self.octant_frame = pa_parquet.read_table(self.octants_path, columns=self.OCTANT_FRAME_COLUMNS).to_pandas()
         return self
 
     def _build_event_frame(self, light_vector, sign_x, sign_y, sign_z):
