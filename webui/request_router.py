@@ -139,7 +139,7 @@ class RequestRouter:
 
     def _serve_static(self, handler, relative: str) -> None:
         target = (self.paths.static_dir / relative).resolve()
-        if not str(target).startswith(str(self.paths.static_dir.resolve())):
+        if not target.is_relative_to(self.paths.static_dir.resolve()):
             self._send_json(handler, {"error": "forbidden"}, 403)
             return
         if not target.is_file():
