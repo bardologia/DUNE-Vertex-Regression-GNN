@@ -8,7 +8,10 @@ from models.blocks import GraphRegressor, MessagePassingEncoder
 
 class PNA(GraphRegressor):
     def __init__(self, config):
-        degree_histogram = torch.ones(config.max_degree + 1, dtype=torch.long)
+        if not config.degree_histogram:
+            raise ValueError("PNA requires a degree histogram computed from the training graphs; none was provided in the config.")
+
+        degree_histogram = torch.tensor(config.degree_histogram, dtype=torch.long)
 
         def convolution_factory(input_dim, output_dim, layer_index):
             return PNAConv(

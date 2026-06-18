@@ -1,29 +1,24 @@
-import sys
-from pathlib import Path
+from _bootstrap import EnvironmentPinner
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(PROJECT_ROOT))
+EnvironmentPinner.pin()
 
-from tools.monitoring.logger import Logger
-from pipelines.dataset import DatasetCorrector
+from configuration.entry      import DatasetEntryConfig
+from tools.monitoring.logger  import Logger
+from tools.runtime.config_cli import ConfigCli
+from pipelines.dataset        import DatasetCorrector
 
 
-class CorrectionEntryPoint:
-
+class CorrectionEntry:
     def __init__(self):
-        self.input_directory  = PROJECT_ROOT / "data"
-        self.output_directory = PROJECT_ROOT / "data_frames"
-        self.logger           = Logger(log_dir=str(PROJECT_ROOT / "logs"), name="coordinate_correction")
+        self.config = DatasetEntryConfig()
 
     def run(self):
-        corrector = DatasetCorrector(
-            input_directory  = self.input_directory,
-            output_directory = self.output_directory,
-            logger           = self.logger,
-        )
-        corrector.run()
-        self.logger.close()
+        self.config = ConfigCli(self.config, description="Correct raw CSV coordinates into the sensor frame").apply()
+
+        logger = Logger(log_dir="logs", name="coordinate_correction")
+        DatasetCorrector(self.config.raw_input_dir, self.config.output_dir, logger=logger).run()
+        logger.close()
 
 
 if __name__ == "__main__":
-    CorrectionEntryPoint().run()
+    CorrectionEntry().run()

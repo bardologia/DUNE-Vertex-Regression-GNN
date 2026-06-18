@@ -1,7 +1,8 @@
-from .general import CrossValidationEntryConfig, InferenceEntryConfig, TrainEntryConfig, TuneEntryConfig
+from .general import CrossValidationEntryConfig, DatasetEntryConfig, InferenceEntryConfig, TrainEntryConfig, TuneEntryConfig
 
 __all__ = [
     "CrossValidationEntryConfig",
+    "DatasetEntryConfig",
     "InferenceEntryConfig",
     "TrainEntryConfig",
     "TuneEntryConfig",

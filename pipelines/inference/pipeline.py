@@ -6,7 +6,7 @@ from pathlib import Path
 import torch
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
-from configuration.entry             import TrainEntryConfig
+from configuration.entry             import InferenceEntryConfig, TrainEntryConfig
 from models                          import get_model
 from tools.monitoring.logger         import Logger
 from tools.runtime.config_cli        import ConfigCli
@@ -21,12 +21,14 @@ from pipelines.inference.report     import AnalysisReport
 
 
 class InferencePipeline:
-    def __init__(self, run_directory, logger=None, device=None, splits=("test", "val", "train"), batch_size=16):
+    def __init__(self, run_directory, logger=None, device=None, splits=None, batch_size=None):
+        defaults = InferenceEntryConfig()
+
         self.run_directory   = Path(run_directory)
         self.logger          = logger if logger is not None else Logger(log_dir=str(self.run_directory / "logs"), name="inference")
         self.device          = device if device is not None else ("cuda" if torch.cuda.is_available() else "cpu")
-        self.splits          = splits
-        self.batch_size      = batch_size
+        self.splits          = splits if splits is not None else defaults.splits
+        self.batch_size      = batch_size if batch_size is not None else defaults.batch_size
         self.analysis_directory = self.run_directory / "analysis"
 
     def _load_run_config(self):
@@ -36,7 +38,7 @@ class InferencePipeline:
 
     def _prepare(self):
         self.stats                 = NormalizationStats.load(self.run_directory / "metadata")
-        self.dataset_splits, _     = DatasetPipeline(self.entry.dataset, self.logger, stats=self.stats).run()
+        self.dataset_splits, _     = DatasetPipeline(self.entry.dataset, self.logger, stats=self.stats, evaluation_mode=True).run()
 
         model, _       = get_model(self.entry.model_name, **self.entry.model_overrides)
         checkpoint_path = self.run_directory / "checkpoints" / self.entry.training.io.checkpoint_name

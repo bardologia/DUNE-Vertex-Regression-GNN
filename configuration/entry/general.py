@@ -15,11 +15,17 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 @dataclass
+class DatasetEntryConfig:
+    raw_input_dir : Path = field(default_factory=lambda: PROJECT_ROOT / "data")
+    output_dir    : Path = field(default_factory=lambda: PROJECT_ROOT / "data_frames")
+    worker_count  : int  = 10
+
+
+@dataclass
 class TrainEntryConfig:
     model_name      : str            = "gps"
     model_overrides : dict           = field(default_factory=dict)
     seed            : int            = 42
-    gpu             : int            = 0
     run_name        : str            = ""
     tensorboard     : bool           = False
     infer_after     : bool           = False
@@ -30,7 +36,6 @@ class TrainEntryConfig:
 @dataclass
 class InferenceEntryConfig:
     run_directory : Path  = field(default_factory=lambda: PROJECT_ROOT / "runs")
-    gpu           : int   = 0
     device        : str   = "cuda" if torch.cuda.is_available() else "cpu"
     splits        : tuple = ("test", "val", "train")
     batch_size    : int   = 16
@@ -40,7 +45,6 @@ class InferenceEntryConfig:
 class TuneEntryConfig:
     model_name : str            = "gps"
     seed       : int            = 42
-    gpu        : int            = 0
     dataset    : DatasetConfig  = field(default_factory=DatasetConfig)
     tuning     : TuningConfig   = field(default_factory=TuningConfig)
     training   : TrainingConfig = field(default_factory=TrainingConfig)

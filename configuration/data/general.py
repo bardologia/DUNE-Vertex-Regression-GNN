@@ -20,7 +20,6 @@ class DataConfig:
 
     coordinate_columns : tuple = ("event_x", "event_y", "event_z")
     position_columns   : tuple = ("x", "y", "z")
-    light_column       : str   = "light_amount"
 
 
 @dataclass
@@ -47,6 +46,7 @@ class SplitConfig:
 @dataclass
 class AugmentationConfig:
     enabled : bool = False
+    seed    : int  = 1234
 
     sensor_dropout_enabled     : bool  = True
     sensor_dropout_probability : float = 0.05

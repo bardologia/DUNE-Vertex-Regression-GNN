@@ -7,19 +7,21 @@ from torch_geometric.loader import DataLoader as GraphDataLoader
 from pipelines.dataset.augmentation         import Augmentation
 from pipelines.dataset.coordinate_correction import DatasetCorrector
 from pipelines.dataset.graph                import Graph
-from pipelines.dataset.graph_dataset        import GraphDataset, StatsEstimator
+from pipelines.dataset.graph_dataset        import DegreeHistogramEstimator, GraphDataset, StatsEstimator
 from pipelines.dataset.parquet_store        import ParquetDatasetWriter, ParquetEventReader
 from pipelines.dataset.splitting            import TargetBalancer
 
 
 class DatasetPipeline:
-    def __init__(self, dataset_config, logger, stats=None):
-        self.config = dataset_config
-        self.logger = logger
-        self.stats  = stats
+    def __init__(self, dataset_config, logger, stats=None, evaluation_mode=False):
+        self.config          = dataset_config
+        self.logger          = logger
+        self.stats           = stats
+        self.evaluation_mode = evaluation_mode
 
         self.geometry_positions = None
         self.light_matrix       = None
+        self.event_targets      = None
         self.samples            = None
         self.datasets           = None
 
@@ -39,20 +41,26 @@ class DatasetPipeline:
     def _load_store(self):
         reader                  = ParquetEventReader(self.config.data.parquet_store_dir).load_store()
         self.geometry_positions = reader.geometry_frame[["x", "y", "z"]].values.astype(np.float32)
-        self.light_matrix       = reader.light_matrix
+        self.event_targets      = reader.event_targets
         return reader
 
     def _build_samples(self, reader):
         if self.config.data.augment_octants:
-            frame   = reader.octant_frame
-            samples = np.column_stack([
-                frame["event_id"].values, frame["sign_x"].values, frame["sign_y"].values, frame["sign_z"].values,
-                frame["target_x"].values, frame["target_y"].values, frame["target_z"].values,
-            ]).astype(np.float32)
+            frame             = reader.octant_frame
+            self.light_matrix = reader.octant_light_matrix
+
+            light_index = np.arange(len(frame), dtype=np.float32)
+            signs       = frame[["sign_x", "sign_y", "sign_z"]].values.astype(np.float32)
+            targets     = frame[["target_x", "target_y", "target_z"]].values.astype(np.float32)
+            base_ids    = frame["base_event_id"].values.astype(np.float32)
+            samples     = np.column_stack([light_index, signs, targets, base_ids]).astype(np.float32)
         else:
-            count   = len(reader.light_matrix)
-            ones    = np.ones(count, dtype=np.float32)
-            samples = np.column_stack([np.arange(count, dtype=np.float32), ones, ones, ones, reader.event_targets]).astype(np.float32)
+            count             = len(reader.light_matrix)
+            self.light_matrix = reader.light_matrix
+
+            light_index = np.arange(count, dtype=np.float32)
+            ones        = np.ones(count, dtype=np.float32)
+            samples     = np.column_stack([light_index, ones, ones, ones, reader.event_targets, light_index]).astype(np.float32)
 
         subset_fraction = self.config.data.subset_fraction
         if 0.0 < subset_fraction < 1.0:
@@ -73,10 +81,23 @@ class DatasetPipeline:
         return self.samples
 
     def _split_samples(self, samples):
-        target_dataframe = pd.DataFrame(samples[:, 4:7], columns=list(self.config.data.coordinate_columns))
+        present_base_ids  = np.unique(samples[:, 7].astype(np.int64))
+        canonical_targets = self.event_targets[present_base_ids]
+
+        target_dataframe = pd.DataFrame(canonical_targets, columns=list(self.config.data.coordinate_columns))
         balancer         = TargetBalancer(self.logger, self.config.data.coordinate_columns, self.config.split)
-        train_indices, validation_indices, test_indices, _ = balancer.balance(target_dataframe)
-        return samples[train_indices], samples[validation_indices], samples[test_indices]
+        train_rows, validation_rows, test_rows, _ = balancer.balance(target_dataframe)
+
+        train_ids      = set(present_base_ids[train_rows].tolist())
+        validation_ids = set(present_base_ids[validation_rows].tolist())
+        test_ids       = set(present_base_ids[test_rows].tolist())
+
+        sample_base_ids = samples[:, 7].astype(np.int64)
+        train_mask      = np.fromiter((base_id in train_ids      for base_id in sample_base_ids), dtype=bool, count=len(sample_base_ids))
+        validation_mask = np.fromiter((base_id in validation_ids for base_id in sample_base_ids), dtype=bool, count=len(sample_base_ids))
+        test_mask       = np.fromiter((base_id in test_ids       for base_id in sample_base_ids), dtype=bool, count=len(sample_base_ids))
+
+        return samples[train_mask], samples[validation_mask], samples[test_mask]
 
     def _make_dataset(self, samples, augmentation, stats):
         graph_builder = Graph(self.config)
@@ -89,12 +110,25 @@ class DatasetPipeline:
         self.stats          = StatsEstimator(clean_train_dataset, self.config.data.stats_sample_size, self.logger).fit()
 
     def _build_datasets(self, train_samples, validation_samples, test_samples):
-        augmentation  = Augmentation(self.config.augmentation)
-        self.datasets = {
-            "train" : self._make_dataset(train_samples,      augmentation, self.stats),
-            "val"   : self._make_dataset(validation_samples, None,         self.stats),
-            "test"  : self._make_dataset(test_samples,       None,         self.stats),
+        train_augmentation = None if self.evaluation_mode else Augmentation(self.config.augmentation)
+        self.datasets      = {
+            "train" : self._make_dataset(train_samples,      train_augmentation, self.stats),
+            "val"   : self._make_dataset(validation_samples, None,               self.stats),
+            "test"  : self._make_dataset(test_samples,       None,               self.stats),
         }
+
+    @staticmethod
+    def build_loaders(datasets, batch_size, num_workers=0, pin_memory=False, persistent_workers=False):
+        persistent   = persistent_workers and num_workers > 0
+        train_loader = GraphDataLoader(datasets["train"], batch_size=batch_size, shuffle=True,  num_workers=num_workers, pin_memory=pin_memory, persistent_workers=persistent)
+        val_loader   = GraphDataLoader(datasets["val"],   batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory, persistent_workers=persistent)
+        test_loader  = GraphDataLoader(datasets["test"],  batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory, persistent_workers=persistent)
+        return train_loader, val_loader, test_loader
+
+    def pna_degree_histogram(self, model_name, dataset):
+        if model_name != "pna":
+            return None
+        return DegreeHistogramEstimator(dataset, self.config.data.stats_sample_size, self.logger).fit()
 
     def run_with_indices(self, train_indices, validation_indices, test_indices):
         self.logger.section("[Dataset Pipeline | Fold]")
@@ -117,11 +151,3 @@ class DatasetPipeline:
         self._fit_stats(train_samples)
         self._build_datasets(train_samples, validation_samples, test_samples)
         return self.datasets, self.stats
-
-    @staticmethod
-    def build_loaders(datasets, batch_size, num_workers=0, pin_memory=False, persistent_workers=False):
-        persistent   = persistent_workers and num_workers > 0
-        train_loader = GraphDataLoader(datasets["train"], batch_size=batch_size, shuffle=True,  num_workers=num_workers, pin_memory=pin_memory, persistent_workers=persistent)
-        val_loader   = GraphDataLoader(datasets["val"],   batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory, persistent_workers=persistent)
-        test_loader  = GraphDataLoader(datasets["test"],  batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory, persistent_workers=persistent)
-        return train_loader, val_loader, test_loader

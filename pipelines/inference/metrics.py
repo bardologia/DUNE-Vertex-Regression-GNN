@@ -59,7 +59,7 @@ class InferenceMetrics:
         absolute_difference = torch.abs(difference)
 
         residual_sum_of_squares = torch.sum(difference ** 2).item()
-        total_sum_of_squares    = torch.sum((targets - targets.mean()) ** 2).item()
+        total_sum_of_squares    = torch.sum((targets - targets.mean(dim=0, keepdim=True)) ** 2).item()
         r_squared               = 1 - (residual_sum_of_squares / total_sum_of_squares) if total_sum_of_squares > 0 else 0.0
 
         results = {

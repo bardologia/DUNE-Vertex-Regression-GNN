@@ -11,4 +11,3 @@ class TuningConfig:
     warmup_steps  : int  = 3
     batch_size    : int  = 128
     random_state  : int  = 42
-    final_epochs  : int  = 300

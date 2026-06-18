@@ -34,23 +34,23 @@ class Warmup:
         if self.current_step >= self.warmup_steps:
             return 1.0
 
-        progress = self.current_step / self.warmup_steps
-        s        = self.warmup_start_factor
+        progress     = self.current_step / self.warmup_steps
+        start_factor = self.warmup_start_factor
 
         if self.mode == "cosine":
-            cos_factor = (1.0 - math.cos(math.pi * progress)) / 2.0
-            return s + (1.0 - s) * cos_factor
+            cosine_factor = (1.0 - math.cos(math.pi * progress)) / 2.0
+            return start_factor + (1.0 - start_factor) * cosine_factor
 
         elif self.mode == "exponential":
-            if s <= 0:
+            if start_factor <= 0:
                 return progress
-            return s ** (1.0 - progress)
+            return start_factor ** (1.0 - progress)
 
         elif self.mode == "polynomial":
-            return s + (1.0 - s) * (progress ** self.poly_power)
+            return start_factor + (1.0 - start_factor) * (progress ** self.poly_power)
 
         else:
-            return s + (1.0 - s) * progress
+            return start_factor + (1.0 - start_factor) * progress
 
     def step(self) -> float:
         if not self.enabled or self.warmup_steps <= 0:
@@ -108,18 +108,17 @@ class Scheduler:
     def _resolved_t_max(self) -> int:
         return self._t_max_override if self._t_max_override is not None else self.config.scheduler.epochs
 
-    def _cosine_annealing(self, epoch: int) -> float:
-        T_max         = self._resolved_t_max()
-        eta_min       = float(self.config.scheduler.eta_min)
-        base_lr       = self.base_lrs[0]
-        eta_min_ratio = eta_min / max(base_lr, 1e-12)
-        progress      = min(1.0, epoch / max(1, T_max))
-        return eta_min_ratio + 0.5 * (1.0 - eta_min_ratio) * (1.0 + math.cos(math.pi * progress))
+    def _cosine_annealing(self, epoch: int) -> list[float]:
+        maximum_epochs = self._resolved_t_max()
+        eta_min        = float(self.config.scheduler.eta_min)
+        progress       = min(1.0, epoch / max(1, maximum_epochs))
+        cosine_factor  = 0.5 * (1.0 + math.cos(math.pi * progress))
+        return [eta_min + (base_learning_rate - eta_min) * cosine_factor for base_learning_rate in self.base_lrs]
 
-    def _constant(self) -> float:
-        return 1.0
+    def _constant(self) -> list[float]:
+        return list(self.base_lrs)
 
-    def _factor_for(self, epoch: int) -> float:
+    def _lrs_for(self, epoch: int) -> list[float]:
         if self.scheduler_type == "cosine_annealing":
             return self._cosine_annealing(epoch)
 
@@ -133,15 +132,13 @@ class Scheduler:
         self.current_lrs   = list(self.base_lrs)
 
     def step(self, epoch: int) -> list[float]:
-        factor           = self._factor_for(epoch - self._epoch_offset)
-        self.current_lrs = [lr * factor for lr in self.base_lrs]
-
+        self.current_lrs = self._lrs_for(epoch - self._epoch_offset)
         return list(self.current_lrs)
 
     def effective_lrs(self) -> list[float]:
         if self.warmup is not None and not self.warmup.is_finished():
-            f = self.warmup.factor()
-            return [lr * f for lr in self.current_lrs]
+            warmup_factor = self.warmup.factor()
+            return [learning_rate * warmup_factor for learning_rate in self.current_lrs]
 
         return list(self.current_lrs)
 

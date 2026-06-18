@@ -44,31 +44,31 @@ Pipeline: raw CSVs -> coordinate correction -> Parquet store (+ octant index) ->
 ### configuration/
 Dataclass config tree introspected by `ConfigCli`:
 - `data/` — `DataConfig` (parquet store path, optional store build, octant augmentation, subset, stats sampling), `GraphConfig`, `PhysicsConfig` (scale + detection efficiency), `SplitConfig`, `AugmentationConfig`, aggregated `DatasetConfig`.
-- `training/general.py` — `OptimizerConfig` (three learning-rate groups + `tunable_params()`), `SchedulerConfig`, `WarmupConfig`, `EarlyStoppingConfig`, `GradientClipperConfig`, `OverfitConfig`, `LossConfig` (weighted data/euclidean/containment/physics light-falloff terms), `TrainingLoopConfig`, aggregated `TrainingConfig`. Field names match the `tools/training` components. There is no EMA.
+- `training/general.py` — `OptimizerConfig` (three learning-rate groups + `tunable_params()`), `SchedulerConfig`, `WarmupConfig`, `EarlyStoppingConfig` (`patience`, `min_delta`, `restore_best` all honored), `GradientClipperConfig`, `LossConfig` (weighted data/euclidean/containment/physics light-falloff terms), `TrainingLoopConfig`, aggregated `TrainingConfig`. Field names match the `tools/training` components. There is no EMA.
 - `architectures/zoo.py` — `BaseGNNConfig` plus one config dataclass per model and `MODEL_CONFIG_REGISTRY`.
 - `tuning/` — `TuningConfig`.
 - `cross_validation/` — `CrossValidationConfig` (`n_folds`, `validation_fraction`, `stratified`, `shuffle`, `random_state`).
-- `entry/` — `DatasetEntryConfig`, `TrainEntryConfig`, `TuneEntryConfig`, `CrossValidationEntryConfig` (what the entry scripts and the webui edit).
+- `entry/` — `DatasetEntryConfig` (raw input / output dirs + worker count for the data-prep scripts), `TrainEntryConfig`, `TuneEntryConfig`, `CrossValidationEntryConfig` (what the entry scripts and the webui edit).
 
 ### models/
 `blocks.py` holds the shared parts (DropPath, FeedForward, GPS layer/encoder, generic `MessagePassingEncoder`, mean-max / multiscale-SAGPool / Set2Set pooling, FiLM hierarchical and MLP heads) and the `GraphRegressor` base, which wraps `encoder -> pool -> norm -> regression_head` and exposes those three submodules for the optimizer parameter groups. Each architecture is one file (`gps`, `gps_lite`, `gatv2`, `gine`, `graphsage`, `pna`, `gcn`, `transformer_conv`, `edgeconv`, `general_conv`, `res_gated`, `supergat`). `models/__init__.py` defines `MODEL_REGISTRY` and `get_model(name, config=None, **overrides)`.
 
 ### pipelines/
-- `dataset/` — `coordinate_correction.py` (`CoordinateTransform`, `DatasetCorrector`, `DatasetAugmentor`), `parquet_store.py` (`ParquetDatasetWriter`, `ParquetEventReader`), `graph.py` (`GraphAssembler`, `NodeFeatures`, `EdgeFeatures`, `Graph`), `augmentation.py` (`Augmentation`), `graph_dataset.py` (`GraphDataset`, `StatsEstimator`), `normalization.py` (`ChannelStrategySelector`, `FeatureGroupNormalizer`, `NormalizationStats`), `splitting.py` (`StratificationLabeller`, `TargetBalancer`, `CrossValidationSplitter`), `pipeline.py` (`DatasetPipeline`, the centralized orchestrator; `prepare_samples` loads the store once, `run` does a single stratified split, `run_with_indices` builds one fold's datasets and re-fits normalization on that fold's train indices).
+- `dataset/` — `coordinate_correction.py` (`CoordinateTransform`, `DatasetCorrector`, `DatasetAugmentor`), `parquet_store.py` (`ParquetDatasetWriter`, `ParquetEventReader`), `graph.py` (`GraphAssembler`, `NodeFeatures`, `EdgeFeatures`, `Graph`; the KNN is computed once per graph and shared by the node and edge builders), `augmentation.py` (`Augmentation`), `graph_dataset.py` (`GraphDataset`, `StatsEstimator`, `DegreeHistogramEstimator` for PNA), `normalization.py` (`ChannelStrategySelector`, `FeatureGroupNormalizer`, `NormalizationStats`), `splitting.py` (`StratificationLabeller`, `TargetBalancer`, `CrossValidationSplitter`), `pipeline.py` (`DatasetPipeline`, the centralized orchestrator; `prepare_samples` loads the store once, `run` does a single stratified split, `run_with_indices` builds one fold's datasets and re-fits normalization on that fold's train indices).
 - `shared/run_metadata.py` — `TrainingRunMetadata` (run directories, tensorboard writer, tracker).
 - `training/` — `Loss`, `Metrics`, `Trainer`, `TrainingPipeline`.
 - `tuning/` — `Tuner`.
 - `cross_validation/pipeline.py` — `CrossValidationPipeline` (stratified K-fold orchestrator: prepare samples once, build folds, train each fold under `runs/cv_<model>_<stamp>/`, evaluate held-out test metrics) and `CrossValidationReport` (aggregates per-fold test metrics into `cross_validation_metrics.json` + `cross_validation_report.md`).
 
 ### tools/
-Self-contained, copy-adapted from DLR-TomoSAR. `monitoring/` (`Logger`, `Tracker`, `ResourceMonitor`, `ShapeLogger`, `ModelSummary`), `training/` (`Warmup`, `Scheduler`, `EarlyStopping`, `GradientClipper`, `Checkpoint`, `MetricAggregator`), `runtime/` (`ConfigCli`, `Reproducibility`), `reporting/` (markdown, plotting). Always log through `tools.monitoring.Logger`.
+Self-contained, copy-adapted from DLR-TomoSAR. `monitoring/` (`Logger`, `Tracker`, `ResourceMonitor`, `ShapeLogger`, `ModelSummary`), `training/` (`Warmup`, `Scheduler`, `EarlyStopping`, `GradientClipper`, `Checkpoint`), `runtime/` (`ConfigCli`, `Reproducibility`), `reporting/` (markdown, plotting). Always log through `tools.monitoring.Logger`.
 
 ### webui/
 Stdlib `ThreadingHTTPServer` + `RequestRouter` over component libraries (scripts catalog, config registry, process manager, system + GPU monitor, tensorboard manager, results browser, model library) with a hash-routed vanilla-JS SPA. Control panel for launching the entry scripts and monitoring the server. No animations or documentation pages.
 
 ## Data substrate
 
-The Parquet store (`pipelines/dataset/parquet_store.py`) holds canonical sensor geometry once, per-event light vectors, and an octant index for full-volume reflection augmentation. `ParquetEventReader.iterate_corrected()` / `iterate_augmented()` yield event frames (`bin, x, y, z, ly_amount`) that the `Graph` builder consumes. Coordinate correction maps filename targets into the sensor frame.
+The Parquet store (`pipelines/dataset/parquet_store.py`) holds canonical sensor geometry once, per-event base light vectors (`events.parquet`), and a fully materialized octant table (`octants.parquet`) where each full-volume reflection is its own row carrying its own light vector plus a `base_event_id` for grouping. The split is group-aware on `base_event_id`, so every octant of an event stays in one split (no train/test leakage). `ParquetEventReader.iterate_corrected()` / `iterate_augmented()` yield event frames (`bin, x, y, z, ly_amount`) that the `Graph` builder consumes. Coordinate correction maps filename targets into the sensor frame.
 
 ## Node and edge features
 
