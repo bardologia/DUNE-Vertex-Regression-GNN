@@ -148,6 +148,8 @@ class CrossValidationPipeline:
         event_folds      = CrossValidationSplitter(self.logger, self.entry.dataset.data.coordinate_columns, self.cross_validation).split(target_dataframe)
         self.folds       = self._expand_event_folds(present_base_ids, event_folds)
 
+        self.logger.subsection(f"Samples: {len(self.samples)} | Base events: {len(present_base_ids)} | Folds: {len(self.folds)}")
+
     def _expand_event_folds(self, present_base_ids, event_folds):
         sample_base_ids = self.samples[:, 7].astype(np.int64)
 

@@ -46,6 +46,15 @@ class TrainingRunMetadata:
         self.logger          = logger if logger is not None else Logger(log_dir=str(self.logs_directory), name=model_name)
         self.tracker         = Tracker(writer=self.writer)
 
+        self.logger.section("[Run Setup]")
+        self.logger.kv_table({
+            "Model"         : model_name,
+            "Run directory" : str(self.run_directory),
+            "Logs"          : str(self.logs_directory),
+            "Tensorboard"   : str(self.tensorboard_dir),
+            "Checkpoint"    : str(self.checkpoint_path),
+        })
+
     def save_resolved_config(self, config) -> Path:
         return ConfigCli.save_resolved(config, self.metadata_directory / "resolved_config.json")
 

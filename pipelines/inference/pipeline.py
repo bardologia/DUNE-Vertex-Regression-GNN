@@ -38,13 +38,21 @@ class InferencePipeline:
 
         entry      = TrainEntryConfig()
         self.entry = ConfigCli.load_resolved(entry, resolved_path)
+        self.logger.subsection(f"Config loaded: model={self.entry.model_name} | run={self.run_directory.name}")
 
     def _prepare(self):
+        self.logger.kv_table({
+            "Run directory" : str(self.run_directory),
+            "Device"        : self.device,
+            "Batch size"    : self.batch_size,
+            "Splits"        : ", ".join(self.splits),
+        })
+
         self.stats          = NormalizationStats.load(self.run_directory / "metadata")
         split_base_ids      = json.loads((self.run_directory / "metadata" / "split_base_ids.json").read_text(encoding="utf-8"))
         self.dataset_splits, _ = DatasetPipeline(self.entry.dataset, self.logger, stats=self.stats, evaluation_mode=True).run_with_base_ids(split_base_ids)
 
-        model, _       = get_model(self.entry.model_name, **self.entry.model_overrides)
+        model, _        = get_model(self.entry.model_name, **self.entry.model_overrides)
         checkpoint_path = self.run_directory / "checkpoints" / self.entry.training.io.checkpoint_name
         self.predictor  = Predictor(model, checkpoint_path, self.stats, self.device, self.logger).prepare()
 

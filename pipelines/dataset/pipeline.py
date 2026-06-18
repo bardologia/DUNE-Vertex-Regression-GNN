@@ -21,6 +21,7 @@ class DatasetPipeline:
         self.geometry_positions = None
         self.light_matrix       = None
         self.event_targets      = None
+        self.octant_frame       = None
         self.samples            = None
         self.datasets           = None
         self.split_base_ids     = None
@@ -38,36 +39,21 @@ class DatasetPipeline:
         ParquetDatasetWriter(self.config.data.raw_input_dir, store_parent, worker_count=self.config.data.store_worker_count, logger=self.logger, hot_channels=self.config.data.hot_channels).run()
 
     def _load_store(self):
-        reader                  = ParquetEventReader(self.config.data.parquet_store_dir).load_store()
+        reader                  = ParquetEventReader(self.config.data.parquet_store_dir).load_store(load_octant_light=False)
         self.geometry_positions = reader.geometry_frame[["x", "y", "z"]].values.astype(np.float32)
         self.event_targets      = reader.event_targets
+        self.light_matrix       = reader.light_matrix
+        self.octant_frame       = reader.octant_frame
+        self.logger.subsection(f"Store loaded: {len(self.event_targets)} base events | {self.geometry_positions.shape[0]} channels | octant rows {len(self.octant_frame)}")
         return reader
 
-    def _build_samples(self, reader):
-        if self.config.data.augment_octants:
-            frame             = reader.octant_frame
-            self.light_matrix = reader.octant_light_matrix
+    def _build_samples(self):
+        count       = len(self.light_matrix)
+        base_ids    = np.arange(count, dtype=np.float32)
+        ones        = np.ones(count, dtype=np.float32)
+        samples     = np.column_stack([base_ids, ones, ones, ones, self.event_targets, base_ids]).astype(np.float32)
 
-            light_index = np.arange(len(frame), dtype=np.float32)
-            signs       = frame[["sign_x", "sign_y", "sign_z"]].values.astype(np.float32)
-            targets     = frame[["target_x", "target_y", "target_z"]].values.astype(np.float32)
-            base_ids    = frame["base_event_id"].values.astype(np.float32)
-            samples     = np.column_stack([light_index, signs, targets, base_ids]).astype(np.float32)
-        else:
-            count             = len(reader.light_matrix)
-            self.light_matrix = reader.light_matrix
-
-            light_index = np.arange(count, dtype=np.float32)
-            ones        = np.ones(count, dtype=np.float32)
-            samples     = np.column_stack([light_index, ones, ones, ones, reader.event_targets, light_index]).astype(np.float32)
-
-        subset_fraction = self.config.data.subset_fraction
-        if 0.0 < subset_fraction < 1.0:
-            generator = np.random.default_rng(self.config.split.random_state)
-            selection = np.sort(generator.choice(len(samples), size=max(1, int(len(samples) * subset_fraction)), replace=False))
-            samples   = samples[selection]
-
-        self.logger.subsection(f"Built {len(samples)} samples (augment_octants={self.config.data.augment_octants})")
+        self.logger.subsection(f"Built {len(samples)} base-event samples")
         return samples
 
     def prepare_samples(self):
@@ -75,9 +61,38 @@ class DatasetPipeline:
             return self.samples
 
         self._ensure_store()
-        reader       = self._load_store()
-        self.samples = self._build_samples(reader)
+        self._load_store()
+        self.samples = self._build_samples()
         return self.samples
+
+    def _octant_expand(self, base_samples):
+        present_ids = set(base_samples[:, 7].astype(np.int64).tolist())
+        member_mask = self.octant_frame["base_event_id"].isin(present_ids).values
+        member_rows = self.octant_frame.loc[member_mask]
+
+        light_index = np.nonzero(member_mask)[0].astype(np.float32)
+        signs       = member_rows[["sign_x", "sign_y", "sign_z"]].values.astype(np.float32)
+        targets     = member_rows[["target_x", "target_y", "target_z"]].values.astype(np.float32)
+        base_ids    = member_rows["base_event_id"].values.astype(np.float32)
+        return np.column_stack([light_index, signs, targets, base_ids]).astype(np.float32)
+
+    def _subsample(self, samples):
+        subset_fraction = self.config.data.subset_fraction
+        if not (0.0 < subset_fraction < 1.0):
+            return samples
+
+        generator = np.random.default_rng(self.config.split.random_state)
+        selection = np.sort(generator.choice(len(samples), size=max(1, int(len(samples) * subset_fraction)), replace=False))
+        return samples[selection]
+
+    def _prepare_train_samples(self, train_base_samples):
+        if self.evaluation_mode:
+            return train_base_samples
+
+        train_samples = self._octant_expand(train_base_samples) if self.config.data.augment_octants else train_base_samples
+        train_samples = self._subsample(train_samples)
+        self.logger.subsection(f"Train samples: {len(train_samples)} (octants={self.config.data.augment_octants}, subset_fraction={self.config.data.subset_fraction})")
+        return train_samples
 
     def _split_samples(self, samples):
         present_base_ids  = np.unique(samples[:, 7].astype(np.int64))
@@ -112,6 +127,7 @@ class DatasetPipeline:
 
     def _fit_stats(self, train_samples):
         if self.stats is not None:
+            self.logger.subsection("Normalization stats reused from caller (skipping fit)")
             return
         clean_train_dataset = self._make_dataset(train_samples, augmentation=None, stats=None)
         self.stats          = StatsEstimator(clean_train_dataset, self.config.data.stats_sample_size, self.logger).fit()
@@ -124,6 +140,13 @@ class DatasetPipeline:
         val_dataset   = self._make_dataset(validation_samples, None,               self.stats)
         test_dataset  = self._make_dataset(test_samples,       None,               self.stats)
 
+        self.logger.kv_table({
+            "Train samples" : len(train_samples),
+            "Val samples"   : len(validation_samples),
+            "Test samples"  : len(test_samples),
+            "Train caching" : "live (augmented)" if train_is_stochastic else "cached",
+        }, title="Dataset Splits")
+
         self.datasets = {
             "train" : train_dataset if train_is_stochastic else CachedGraphDataset(train_dataset, self.logger),
             "val"   : CachedGraphDataset(val_dataset,  self.logger),
@@ -131,11 +154,13 @@ class DatasetPipeline:
         }
 
     @staticmethod
-    def build_loaders(datasets, batch_size, num_workers=0, pin_memory=False, persistent_workers=False):
-        persistent   = persistent_workers and num_workers > 0
-        train_loader = GraphDataLoader(datasets["train"], batch_size=batch_size, shuffle=True,  num_workers=num_workers, pin_memory=pin_memory, persistent_workers=persistent)
-        val_loader   = GraphDataLoader(datasets["val"],   batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory, persistent_workers=persistent)
-        test_loader  = GraphDataLoader(datasets["test"],  batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory, persistent_workers=persistent)
+    def build_loaders(datasets, batch_size, num_workers=0, pin_memory=False, persistent_workers=False, prefetch_factor=2):
+        persistent    = persistent_workers and num_workers > 0
+        worker_options = {"prefetch_factor": prefetch_factor} if num_workers > 0 else {}
+
+        train_loader = GraphDataLoader(datasets["train"], batch_size=batch_size, shuffle=True,  num_workers=num_workers, pin_memory=pin_memory, persistent_workers=persistent, **worker_options)
+        val_loader   = GraphDataLoader(datasets["val"],   batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory, persistent_workers=persistent, **worker_options)
+        test_loader  = GraphDataLoader(datasets["test"],  batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory, persistent_workers=persistent, **worker_options)
         return train_loader, val_loader, test_loader
 
     @staticmethod
@@ -160,11 +185,12 @@ class DatasetPipeline:
         self.logger.section("[Dataset Pipeline | Fold]")
         self.prepare_samples()
 
-        train_samples      = self.samples[train_indices]
+        train_base         = self.samples[train_indices]
         validation_samples = self.samples[validation_indices]
         test_samples       = self.samples[test_indices]
 
-        self.stats = None
+        self.stats    = None
+        train_samples = self._prepare_train_samples(train_base)
         self._fit_stats(train_samples)
         self._build_datasets(train_samples, validation_samples, test_samples)
         return self.datasets, self.stats
@@ -173,7 +199,8 @@ class DatasetPipeline:
         self.logger.section("[Dataset Pipeline | Persisted Split]")
         self.prepare_samples()
 
-        train_samples, validation_samples, test_samples = self._partition_by_base_ids(self.samples, split_base_ids)
+        train_base, validation_samples, test_samples = self._partition_by_base_ids(self.samples, split_base_ids)
+        train_samples = self._prepare_train_samples(train_base)
         self._fit_stats(train_samples)
         self._build_datasets(train_samples, validation_samples, test_samples)
         return self.datasets, self.stats
@@ -182,7 +209,8 @@ class DatasetPipeline:
         self.logger.section("[Dataset Pipeline]")
         self.prepare_samples()
 
-        train_samples, validation_samples, test_samples = self._split_samples(self.samples)
+        train_base, validation_samples, test_samples = self._split_samples(self.samples)
+        train_samples = self._prepare_train_samples(train_base)
         self._fit_stats(train_samples)
         self._build_datasets(train_samples, validation_samples, test_samples)
         return self.datasets, self.stats

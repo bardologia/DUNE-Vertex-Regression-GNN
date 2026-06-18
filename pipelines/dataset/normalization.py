@@ -79,6 +79,10 @@ class FeatureGroupNormalizer:
         unscaled = values * scale + center
         return torch.where(log_mask, torch.expm1(unscaled), unscaled)
 
+    def strategy_counts(self):
+        from collections import Counter
+        return dict(Counter(self.methods))
+
     def to_dict(self):
         return {
             "methods"  : self.methods,
