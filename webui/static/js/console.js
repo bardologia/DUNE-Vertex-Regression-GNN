@@ -1,29 +1,186 @@
 "use strict";
 
+class ConsoleTile {
+  constructor(process, manager, host) {
+    this.process = process;
+    this.manager = manager;
+    this.pid = process.pid;
+    this.source = null;
+    this.opened = false;
+
+    this.root = document.createElement("div");
+    this.root.className = "console-tile";
+
+    const bar = document.createElement("div");
+    bar.className = "console-tile__bar";
+
+    const dots = document.createElement("span");
+    dots.className = "console-tile__dots";
+    dots.setAttribute("aria-hidden", "true");
+    dots.innerHTML = "<i></i><i></i><i></i>";
+
+    this.nameEl = document.createElement("span");
+    this.nameEl.className = "console-tile__name";
+    this.nameEl.textContent = process.script;
+    this.nameEl.title = process.command || process.script;
+
+    this.metaEl = document.createElement("span");
+    this.metaEl.className = "console-tile__meta";
+    this.metaEl.textContent = `pid ${process.pid}`;
+
+    this.badgeEl = document.createElement("span");
+    this.badgeEl.className = `badge badge--${process.status}`;
+    this.badgeEl.textContent = process.status;
+
+    this.stopBtn = document.createElement("button");
+    this.stopBtn.className = "btn btn--mini btn--danger";
+    this.stopBtn.textContent = "Stop";
+    this.stopBtn.addEventListener("click", () => this.manager.stop(this.pid));
+
+    this.closeBtn = document.createElement("button");
+    this.closeBtn.className = "btn btn--mini";
+    this.closeBtn.textContent = "Close";
+    this.closeBtn.addEventListener("click", () => this.manager.close(this.pid));
+
+    bar.append(dots, this.nameEl, this.metaEl, this.badgeEl, this.stopBtn, this.closeBtn);
+
+    this.outEl = document.createElement("div");
+    this.outEl.className = "console-tile__out";
+
+    this.root.append(bar, this.outEl);
+    host.appendChild(this.root);
+
+    this.term = new Terminal({
+      cols: 120,
+      rows: 24,
+      convertEol: true,
+      disableStdin: true,
+      cursorBlink: false,
+      cursorInactiveStyle: "none",
+      scrollback: 10000,
+      fontFamily: '"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace',
+      fontSize: 12,
+      lineHeight: 1.3,
+      theme: {
+        background: "#0e1216",
+        foreground: "#dde4e7",
+        cursor: "#0e1216",
+        selectionBackground: "#2a3a52",
+      },
+    });
+    this.fitAddon = new FitAddon.FitAddon();
+    this.term.loadAddon(this.fitAddon);
+
+    this.setStatus(process.status);
+    this._connect();
+  }
+
+  _connect() {
+    this.source = new EventSource(`/api/processes/${this.pid}/stream`);
+    this.source.onmessage = (event) => this._onEvent(event);
+    this.source.onerror = () => this._disconnect();
+  }
+
+  _disconnect() {
+    if (this.source) {
+      this.source.close();
+      this.source = null;
+    }
+  }
+
+  _onEvent(event) {
+    let data;
+    try {
+      data = JSON.parse(event.data);
+    } catch (error) {
+      return;
+    }
+
+    if (data.type === "chunk") {
+      this.term.write(data.data);
+    } else if (data.type === "status") {
+      if (data.status === "running") {
+        this.metaEl.textContent = `pid ${data.pid}`;
+        this.setStatus("running");
+      } else {
+        this._note(`process ${data.status} (exit ${data.code})`, data.code === 0 ? "36" : "31");
+        this.setStatus(data.status);
+        this.manager.refresh();
+      }
+    } else if (data.type === "end") {
+      this._disconnect();
+    }
+  }
+
+  _note(text, color) {
+    this.term.write(`\r\n\x1b[2;${color}m-- ${text} --\x1b[0m\r\n`);
+  }
+
+  setStatus(status) {
+    this.process.status = status;
+    this.badgeEl.className = `badge badge--${status}`;
+    this.badgeEl.textContent = status;
+    this.stopBtn.disabled = status !== "running";
+  }
+
+  fit() {
+    const width = this.outEl.clientWidth;
+    const height = this.outEl.clientHeight;
+    if (!width || !height) return;
+
+    if (!this.opened) {
+      this.term.open(this.outEl);
+      this.opened = true;
+    }
+
+    let font = Math.max(8, Math.min(16, (width - 16) / 72));
+    this.term.options.fontSize = font;
+
+    let dims = this.fitAddon.proposeDimensions();
+    if (dims && dims.cols && dims.cols < 120) {
+      font = Math.max(7, (font * dims.cols) / 120);
+      this.term.options.fontSize = font;
+      dims = this.fitAddon.proposeDimensions();
+    }
+    if (!dims || !dims.cols || !dims.rows) return;
+
+    this.term.resize(Math.min(120, dims.cols), Math.max(2, dims.rows));
+    this.term.scrollToBottom();
+  }
+
+  dispose() {
+    this._disconnect();
+    this.term.dispose();
+    this.root.remove();
+  }
+}
+
 class ConsolePanel {
   constructor(refs) {
     this.listElement = refs.list;
     this.countElement = refs.count;
     this.tilesElement = refs.tiles;
+    this.hintElement = document.getElementById("console-hint");
     this.processes = [];
-    this.selectedPid = null;
+    this.tiles = new Map();
+    this.dismissed = new Set();
     this.focusPid = null;
     this.listTimer = null;
-    this.logTimer = null;
-    this.outElement = null;
+    this._fitTimer = null;
+
+    window.addEventListener("resize", () => this._queueFit());
   }
 
   enter() {
     this.refresh();
     clearInterval(this.listTimer);
     this.listTimer = setInterval(() => this.refresh(), 3000);
+    this._queueFit();
   }
 
   leave() {
     clearInterval(this.listTimer);
-    clearInterval(this.logTimer);
     this.listTimer = null;
-    this.logTimer = null;
   }
 
   async refresh() {
@@ -32,14 +189,46 @@ class ConsolePanel {
     this.processes = data.processes || [];
 
     if (this.focusPid !== null) {
-      this.selectedPid = this.focusPid;
+      this.open(this.focusPid);
       this.focusPid = null;
-      this._attach(this.selectedPid);
-    } else if (this.selectedPid === null && this.processes.length) {
-      this._select(this.processes[0].pid);
-      return;
     }
+
+    this.processes
+      .filter((process) => process.status === "running" && !this.dismissed.has(process.pid) && !this.tiles.has(process.pid))
+      .forEach((process) => this.open(process.pid));
+
     this._renderList();
+  }
+
+  open(pid) {
+    if (this.tiles.has(pid)) return;
+    const process = this.processes.find((item) => item.pid === pid);
+    if (!process) return;
+    this.dismissed.delete(pid);
+    this.tiles.set(pid, new ConsoleTile(process, this, this.tilesElement));
+    this._layout();
+    this._renderList();
+  }
+
+  close(pid) {
+    const tile = this.tiles.get(pid);
+    if (!tile) return;
+    tile.dispose();
+    this.tiles.delete(pid);
+    this.dismissed.add(pid);
+    this._layout();
+    this._renderList();
+  }
+
+  toggle(pid) {
+    if (this.tiles.has(pid)) this.close(pid);
+    else this.open(pid);
+  }
+
+  async stop(pid) {
+    const result = await window.apiPost(`/api/processes/${pid}/kill`, {});
+    if (result.ok) window.toast(`Stop signal sent to pid ${pid}`, "ok");
+    else window.toast(result.error || "Could not stop", "error");
   }
 
   _renderList() {
@@ -53,7 +242,7 @@ class ConsolePanel {
 
     this.processes.forEach((process) => {
       const item = document.createElement("li");
-      item.className = "job-item" + (process.pid === this.selectedPid ? " is-active" : "");
+      item.className = "job-item" + (this.tiles.has(process.pid) ? " is-active" : "");
       const kill = process.status === "running"
         ? `<button class="btn btn--mini btn--danger job-item__kill" data-kill="${process.pid}">Stop</button>`
         : "";
@@ -62,78 +251,26 @@ class ConsolePanel {
         `<span class="badge badge--${process.status}">${process.status}</span></div>` +
         `<div class="job-item__meta">pid ${process.pid} &middot; ${window.escapeHtml(String(process.started || "").replace("T", " "))}</div>` +
         kill;
-      item.addEventListener("click", () => this._select(process.pid));
+      item.addEventListener("click", () => this.toggle(process.pid));
       const killBtn = item.querySelector("[data-kill]");
-      if (killBtn) killBtn.addEventListener("click", (event) => this._kill(process.pid, event));
+      if (killBtn) killBtn.addEventListener("click", (event) => { event.stopPropagation(); this.stop(process.pid); });
       this.listElement.appendChild(item);
     });
   }
 
-  _select(pid) {
-    this.selectedPid = pid;
-    this._attach(pid);
-    this._renderList();
+  _layout() {
+    const count = this.tiles.size;
+    if (this.hintElement) this.hintElement.style.display = count ? "none" : "flex";
+    const columns = count <= 1 ? 1 : count <= 4 ? 2 : 3;
+    const rows = Math.max(1, Math.ceil(count / columns));
+    this.tilesElement.style.gridTemplateColumns = `repeat(${columns}, minmax(0, 1fr))`;
+    this.tilesElement.style.gridTemplateRows = `repeat(${rows}, minmax(0, 1fr))`;
+    this._queueFit();
   }
 
-  async _kill(pid, event) {
-    event.stopPropagation();
-    const result = await window.apiPost(`/api/processes/${pid}/kill`, {});
-    if (result.ok) window.toast(`Stop signal sent to pid ${pid}`, "ok");
-    else window.toast(result.error || "Could not stop", "error");
-    this.refresh();
-  }
-
-  _attach(pid) {
-    const process = this.processes.find((p) => p.pid === pid) || { script: `pid ${pid}`, pid };
-    this.tilesElement.innerHTML =
-      `<div class="console-tile">` +
-      `<div class="console-tile__bar">` +
-      `<span class="console-tile__dots" aria-hidden="true"><i></i><i></i><i></i></span>` +
-      `<span class="console-tile__name">${window.escapeHtml(process.script)}</span>` +
-      `<span class="console-tile__meta" id="console-meta">pid ${pid}</span>` +
-      `<span class="badge badge--connecting" id="console-status">connecting</span>` +
-      `</div>` +
-      `<div class="console-tile__out" id="console-out"></div></div>`;
-
-    this.outElement = this.tilesElement.querySelector("#console-out");
-    this.statusElement = this.tilesElement.querySelector("#console-status");
-
-    clearInterval(this.logTimer);
-    this._poll();
-    this.logTimer = setInterval(() => this._poll(), 1500);
-  }
-
-  async _poll() {
-    if (this.selectedPid === null) return;
-    const data = await window.apiGet(`/api/processes/${this.selectedPid}/log?lines=800`);
-    if (!this.outElement) return;
-
-    if (!data.ok) {
-      this.statusElement.textContent = "error";
-      this.statusElement.className = "badge badge--failed";
-      this.outElement.textContent = data.error || "log unavailable";
-      clearInterval(this.logTimer);
-      return;
-    }
-
-    const atBottom = this.outElement.scrollHeight - this.outElement.scrollTop - this.outElement.clientHeight < 60;
-    this.outElement.innerHTML = (data.lines || []).map((line) => this._line(line)).join("");
-    if (atBottom) this.outElement.scrollTop = this.outElement.scrollHeight;
-
-    this.statusElement.textContent = data.status;
-    this.statusElement.className = `badge badge--${data.status}`;
-
-    if (data.status !== "running") clearInterval(this.logTimer);
-  }
-
-  _line(text) {
-    const safe = window.escapeHtml(text);
-    const lower = text.toLowerCase();
-    let cls = "";
-    if (/\b(error|traceback|failed|exception)\b/.test(lower)) cls = "ln-err";
-    else if (/\b(warn|warning)\b/.test(lower)) cls = "ln-warn";
-    else if (/\b(done|complete|saved|finished|success)\b/.test(lower)) cls = "ln-ok";
-    return cls ? `<span class="${cls}">${safe}</span>\n` : `${safe}\n`;
+  _queueFit() {
+    clearTimeout(this._fitTimer);
+    this._fitTimer = setTimeout(() => this.tiles.forEach((tile) => tile.fit()), 120);
   }
 }
 

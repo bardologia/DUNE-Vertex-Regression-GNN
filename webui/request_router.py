@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import queue
 from pathlib       import Path
 from urllib.parse  import parse_qs, urlparse
 
@@ -75,11 +76,9 @@ class RequestRouter:
         if path == "/api/processes":
             self._send_json(handler, {"processes": self.processes.list()})
             return
-        if path.startswith("/api/processes/") and path.endswith("/log"):
-            identifier = path[len("/api/processes/"):-len("/log")]
-            count      = int((parse_qs(urlparse(handler.path).query).get("lines") or ["200"])[0])
-            result     = self._with_pid(identifier, lambda pid: self.processes.tail(pid, count))
-            self._send_json(handler, result, 200 if result.get("ok") else 400)
+        if path.startswith("/api/processes/") and path.endswith("/stream"):
+            identifier = path[len("/api/processes/"):-len("/stream")]
+            self._stream_process(handler, identifier)
             return
         if path == "/api/tensorboard":
             self._send_json(handler, {"instances": self.tensorboard.list()})
@@ -146,6 +145,46 @@ class RequestRouter:
         handler.send_header("Cache-Control", "max-age=300")
         handler.end_headers()
         handler.wfile.write(data)
+
+    def _stream_process(self, handler, identifier: str) -> None:
+        try:
+            pid = int(identifier)
+        except ValueError:
+            self._send_json(handler, {"error": "invalid pid"}, 400)
+            return
+
+        stream = self.processes.get_stream(pid)
+        if stream is None:
+            self._send_json(handler, {"error": "unknown process"}, 404)
+            return
+
+        handler.send_response(200)
+        handler.send_header("Content-Type", "text/event-stream")
+        handler.send_header("Cache-Control", "no-cache")
+        handler.send_header("Connection", "keep-alive")
+        handler.send_header("Access-Control-Allow-Origin", "*")
+        handler.end_headers()
+
+        subscriber = stream.subscribe()
+        try:
+            while True:
+                try:
+                    event = subscriber.get(timeout=15)
+                except queue.Empty:
+                    handler.wfile.write(b": keepalive\n\n")
+                    handler.wfile.flush()
+                    continue
+
+                payload = json.dumps(event)
+                handler.wfile.write(f"data: {payload}\n\n".encode("utf-8"))
+                handler.wfile.flush()
+
+                if event.get("type") == "end":
+                    break
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            stream.unsubscribe(subscriber)
 
     def _with_pid(self, identifier: str, action):
         try:
