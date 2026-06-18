@@ -25,7 +25,7 @@ class Router {
     const raw = (window.location.hash || "").replace(/^#\/?/, "").trim();
     const [page, ...rest] = raw.split("/");
     if (this.pages[page]) return { page, param: rest.join("/") || null };
-    return { page: "scripts", param: null };
+    return { page: "system", param: null };
   }
 
   _sync() {
@@ -38,7 +38,8 @@ class Router {
       element.classList.toggle("is-active", id === page);
     });
 
-    this.links.forEach((link) => link.classList.toggle("is-current", link.dataset.route === page));
+    const navPage = page === "launch" ? "scripts" : page;
+    this.links.forEach((link) => link.classList.toggle("is-current", link.dataset.route === navPage));
     window.scrollTo({ top: 0 });
 
     if (this.onChange) this.onChange(page, param);
