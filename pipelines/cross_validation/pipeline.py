@@ -11,6 +11,7 @@ import torch
 from models                          import get_model
 from tools.monitoring.logger         import Logger
 from tools.reporting.markdown        import MarkdownDoc, MarkdownTable, ScalarFormatter
+from tools.runtime.reproducibility   import Reproducibility
 
 from pipelines.dataset.pipeline   import DatasetPipeline
 from pipelines.dataset.splitting  import CrossValidationSplitter
@@ -125,8 +126,7 @@ class CrossValidationPipeline:
         self.external_logger = logger
 
     def _prepare_run(self):
-        torch.manual_seed(self.entry.seed)
-        np.random.seed(self.entry.seed)
+        Reproducibility.seed_everything(self.entry.seed)
 
         stamp              = datetime.now().strftime("%Y%m%d-%H%M%S")
         resolved_name      = self.entry.run_name if self.entry.run_name else stamp
@@ -139,14 +139,29 @@ class CrossValidationPipeline:
 
     def _prepare_folds(self):
         self.dataset_pipeline = DatasetPipeline(self.entry.dataset, self.logger)
-        samples               = self.dataset_pipeline.prepare_samples()
+        self.samples          = self.dataset_pipeline.prepare_samples()
 
-        target_dataframe = pd.DataFrame(samples[:, 4:7], columns=list(self.entry.dataset.data.coordinate_columns))
-        self.folds       = CrossValidationSplitter(self.logger, self.entry.dataset.data.coordinate_columns, self.cross_validation).split(target_dataframe)
+        present_base_ids  = np.unique(self.samples[:, 7].astype(np.int64))
+        canonical_targets = self.dataset_pipeline.event_targets[present_base_ids]
+
+        target_dataframe = pd.DataFrame(canonical_targets, columns=list(self.entry.dataset.data.coordinate_columns))
+        event_folds      = CrossValidationSplitter(self.logger, self.entry.dataset.data.coordinate_columns, self.cross_validation).split(target_dataframe)
+        self.folds       = self._expand_event_folds(present_base_ids, event_folds)
+
+    def _expand_event_folds(self, present_base_ids, event_folds):
+        sample_base_ids = self.samples[:, 7].astype(np.int64)
+
+        expanded_folds = []
+        for train_positions, validation_positions, test_positions in event_folds:
+            train_indices      = np.where(np.isin(sample_base_ids, present_base_ids[train_positions]))[0]
+            validation_indices = np.where(np.isin(sample_base_ids, present_base_ids[validation_positions]))[0]
+            test_indices       = np.where(np.isin(sample_base_ids, present_base_ids[test_positions]))[0]
+            expanded_folds.append((train_indices, validation_indices, test_indices))
+
+        return expanded_folds
 
     def _train_fold(self, fold_index, train_indices, validation_indices, test_indices):
-        torch.manual_seed(self.entry.seed + fold_index)
-        np.random.seed(self.entry.seed + fold_index)
+        Reproducibility.seed_everything(self.entry.seed + fold_index)
 
         datasets, stats = self.dataset_pipeline.run_with_indices(train_indices, validation_indices, test_indices)
         loop            = self.training_config.loop
@@ -156,6 +171,7 @@ class CrossValidationPipeline:
         run_metadata = TrainingRunMetadata(self.training_config, self.entry.model_name, self.run_directory, run_name=f"fold_{fold_index}")
         run_metadata.save_resolved_config(self.entry)
         run_metadata.save_normalization_stats(stats)
+        run_metadata.save_split(self.dataset_pipeline.base_ids_for_indices(train_indices, validation_indices, test_indices))
 
         model, _ = get_model(self.entry.model_name, **self.entry.model_overrides)
         trainer  = Trainer(model, stats, self.training_config, run_metadata)

@@ -32,13 +32,17 @@ class InferencePipeline:
         self.analysis_directory = self.run_directory / "analysis"
 
     def _load_run_config(self):
-        entry          = TrainEntryConfig()
-        resolved_path  = self.run_directory / "metadata" / "resolved_config.json"
-        self.entry     = ConfigCli.load_resolved(entry, resolved_path)
+        resolved_path = self.run_directory / "metadata" / "resolved_config.json"
+        if not resolved_path.exists():
+            raise FileNotFoundError(f"No training run found at {self.run_directory}: expected {resolved_path}. Pass --run_directory pointing at a completed run (runs/<model>_<stamp>).")
+
+        entry      = TrainEntryConfig()
+        self.entry = ConfigCli.load_resolved(entry, resolved_path)
 
     def _prepare(self):
-        self.stats                 = NormalizationStats.load(self.run_directory / "metadata")
-        self.dataset_splits, _     = DatasetPipeline(self.entry.dataset, self.logger, stats=self.stats, evaluation_mode=True).run()
+        self.stats          = NormalizationStats.load(self.run_directory / "metadata")
+        split_base_ids      = json.loads((self.run_directory / "metadata" / "split_base_ids.json").read_text(encoding="utf-8"))
+        self.dataset_splits, _ = DatasetPipeline(self.entry.dataset, self.logger, stats=self.stats, evaluation_mode=True).run_with_base_ids(split_base_ids)
 
         model, _       = get_model(self.entry.model_name, **self.entry.model_overrides)
         checkpoint_path = self.run_directory / "checkpoints" / self.entry.training.io.checkpoint_name
@@ -56,9 +60,15 @@ class InferencePipeline:
 
         return {"metrics": metrics, "plots": plots, "animations": animations}
 
+    def _build_report(self, per_split_results):
+        AnalysisReport(self.analysis_directory, self.logger).build(per_split_results)
+
     def _write_metrics(self, per_split_results):
-        metrics_payload = {split_name: payload["metrics"] for split_name, payload in per_split_results.items()}
-        metrics_path    = self.run_directory / "metadata" / "metrics.json"
+        metrics_payload = {
+            "unit"   : "cm",
+            "splits" : {split_name: payload["metrics"] for split_name, payload in per_split_results.items()},
+        }
+        metrics_path = self.run_directory / "metadata" / "metrics.json"
         metrics_path.parent.mkdir(parents=True, exist_ok=True)
         metrics_path.write_text(json.dumps(metrics_payload, indent=2), encoding="utf-8")
         self.logger.subsection(f"Metrics written to {metrics_path}")
@@ -73,6 +83,6 @@ class InferencePipeline:
             if split_name in self.dataset_splits:
                 per_split_results[split_name] = self._analyze_split(split_name)
 
-        AnalysisReport(self.analysis_directory, self.logger).build(per_split_results)
+        self._build_report(per_split_results)
         self._write_metrics(per_split_results)
         return per_split_results

@@ -24,6 +24,7 @@ class DatasetPipeline:
         self.event_targets      = None
         self.samples            = None
         self.datasets           = None
+        self.split_base_ids     = None
 
     def _ensure_store(self):
         store_directory = self.config.data.parquet_store_dir
@@ -88,11 +89,19 @@ class DatasetPipeline:
         balancer         = TargetBalancer(self.logger, self.config.data.coordinate_columns, self.config.split)
         train_rows, validation_rows, test_rows, _ = balancer.balance(target_dataframe)
 
-        train_ids      = set(present_base_ids[train_rows].tolist())
-        validation_ids = set(present_base_ids[validation_rows].tolist())
-        test_ids       = set(present_base_ids[test_rows].tolist())
+        self.split_base_ids = {
+            "train"      : present_base_ids[train_rows].tolist(),
+            "validation" : present_base_ids[validation_rows].tolist(),
+            "test"       : present_base_ids[test_rows].tolist(),
+        }
+        return self._partition_by_base_ids(samples, self.split_base_ids)
 
+    def _partition_by_base_ids(self, samples, split_base_ids):
         sample_base_ids = samples[:, 7].astype(np.int64)
+        train_ids       = set(split_base_ids["train"])
+        validation_ids  = set(split_base_ids["validation"])
+        test_ids        = set(split_base_ids["test"])
+
         train_mask      = np.fromiter((base_id in train_ids      for base_id in sample_base_ids), dtype=bool, count=len(sample_base_ids))
         validation_mask = np.fromiter((base_id in validation_ids for base_id in sample_base_ids), dtype=bool, count=len(sample_base_ids))
         test_mask       = np.fromiter((base_id in test_ids       for base_id in sample_base_ids), dtype=bool, count=len(sample_base_ids))
@@ -130,6 +139,14 @@ class DatasetPipeline:
             return None
         return DegreeHistogramEstimator(dataset, self.config.data.stats_sample_size, self.logger).fit()
 
+    def base_ids_for_indices(self, train_indices, validation_indices, test_indices):
+        sample_base_ids = self.samples[:, 7].astype(np.int64)
+        return {
+            "train"      : np.unique(sample_base_ids[train_indices]).tolist(),
+            "validation" : np.unique(sample_base_ids[validation_indices]).tolist(),
+            "test"       : np.unique(sample_base_ids[test_indices]).tolist(),
+        }
+
     def run_with_indices(self, train_indices, validation_indices, test_indices):
         self.logger.section("[Dataset Pipeline | Fold]")
         self.prepare_samples()
@@ -139,6 +156,15 @@ class DatasetPipeline:
         test_samples       = self.samples[test_indices]
 
         self.stats = None
+        self._fit_stats(train_samples)
+        self._build_datasets(train_samples, validation_samples, test_samples)
+        return self.datasets, self.stats
+
+    def run_with_base_ids(self, split_base_ids):
+        self.logger.section("[Dataset Pipeline | Persisted Split]")
+        self.prepare_samples()
+
+        train_samples, validation_samples, test_samples = self._partition_by_base_ids(self.samples, split_base_ids)
         self._fit_stats(train_samples)
         self._build_datasets(train_samples, validation_samples, test_samples)
         return self.datasets, self.stats
