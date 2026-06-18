@@ -19,6 +19,11 @@ class ProjectPaths:
             "entry_config_module" : "configuration.entry.general",
             "entry_config_class"  : "TuneEntryConfig",
         },
+        "cross_validate": {
+            "file"                : "cross_validate.py",
+            "entry_config_module" : "configuration.entry.general",
+            "entry_config_class"  : "CrossValidationEntryConfig",
+        },
         "infer": {
             "file"                : "infer.py",
             "entry_config_module" : "configuration.entry.general",

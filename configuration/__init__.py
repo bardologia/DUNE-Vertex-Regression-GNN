@@ -1,6 +1,7 @@
-from .architectures import BaseGNNConfig, MODEL_CONFIG_REGISTRY
-from .data          import AugmentationConfig, DataConfig, DatasetConfig, GraphConfig, PhysicsConfig, SplitConfig
-from .entry         import InferenceEntryConfig, TrainEntryConfig, TuneEntryConfig
+from .architectures    import BaseGNNConfig, MODEL_CONFIG_REGISTRY
+from .cross_validation  import CrossValidationConfig
+from .data              import AugmentationConfig, DataConfig, DatasetConfig, GraphConfig, PhysicsConfig, SplitConfig
+from .entry             import CrossValidationEntryConfig, InferenceEntryConfig, TrainEntryConfig, TuneEntryConfig
 from .training      import (
     EarlyStoppingConfig,
     GradientClipperConfig,
@@ -18,12 +19,14 @@ from .tuning        import TuningConfig
 __all__ = [
     "BaseGNNConfig",
     "MODEL_CONFIG_REGISTRY",
+    "CrossValidationConfig",
     "AugmentationConfig",
     "DataConfig",
     "DatasetConfig",
     "GraphConfig",
     "PhysicsConfig",
     "SplitConfig",
+    "CrossValidationEntryConfig",
     "InferenceEntryConfig",
     "TrainEntryConfig",
     "TuneEntryConfig",

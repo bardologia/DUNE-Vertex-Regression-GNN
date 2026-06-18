@@ -20,6 +20,7 @@ class DatasetPipeline:
 
         self.geometry_positions = None
         self.light_matrix       = None
+        self.samples            = None
         self.datasets           = None
 
     def _ensure_store(self):
@@ -62,6 +63,15 @@ class DatasetPipeline:
         self.logger.subsection(f"Built {len(samples)} samples (augment_octants={self.config.data.augment_octants})")
         return samples
 
+    def prepare_samples(self):
+        if self.samples is not None:
+            return self.samples
+
+        self._ensure_store()
+        reader       = self._load_store()
+        self.samples = self._build_samples(reader)
+        return self.samples
+
     def _split_samples(self, samples):
         target_dataframe = pd.DataFrame(samples[:, 4:7], columns=list(self.config.data.coordinate_columns))
         balancer         = TargetBalancer(self.logger, self.config.data.coordinate_columns, self.config.split)
@@ -86,12 +96,24 @@ class DatasetPipeline:
             "test"  : self._make_dataset(test_samples,       None,         self.stats),
         }
 
+    def run_with_indices(self, train_indices, validation_indices, test_indices):
+        self.logger.section("[Dataset Pipeline | Fold]")
+        self.prepare_samples()
+
+        train_samples      = self.samples[train_indices]
+        validation_samples = self.samples[validation_indices]
+        test_samples       = self.samples[test_indices]
+
+        self.stats = None
+        self._fit_stats(train_samples)
+        self._build_datasets(train_samples, validation_samples, test_samples)
+        return self.datasets, self.stats
+
     def run(self):
         self.logger.section("[Dataset Pipeline]")
-        self._ensure_store()
-        reader                                          = self._load_store()
-        samples                                         = self._build_samples(reader)
-        train_samples, validation_samples, test_samples = self._split_samples(samples)
+        self.prepare_samples()
+
+        train_samples, validation_samples, test_samples = self._split_samples(self.samples)
         self._fit_stats(train_samples)
         self._build_datasets(train_samples, validation_samples, test_samples)
         return self.datasets, self.stats

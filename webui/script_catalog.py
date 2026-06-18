@@ -16,6 +16,11 @@ class ScriptCatalog:
             "category" : "Training",
             "purpose"  : "Run the Optuna hyperparameter search over the model and training configuration.",
         },
+        "cross_validate": {
+            "label"    : "Cross-Validate",
+            "category" : "Training",
+            "purpose"  : "Run stratified K-fold cross-validation, aggregating held-out test metrics across folds.",
+        },
         "correct_coordinates": {
             "label"    : "Correct Coordinates",
             "category" : "Data",
@@ -45,6 +50,7 @@ class ScriptCatalog:
         "train",
         "infer",
         "tune",
+        "cross_validate",
     ]
 
     def __init__(self, paths: ProjectPaths) -> None:
