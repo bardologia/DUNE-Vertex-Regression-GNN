@@ -11,12 +11,12 @@ from dataclasses import fields, is_dataclass
 from datetime    import datetime
 from pathlib     import Path
 
-_SUPPORTED_TYPES = (bool, int, float, str, Path, list, tuple, dict)
+SUPPORTED_TYPES = (bool, int, float, str, Path, list, tuple, dict)
 
 
 class Detacher:
 
-    ENV_FLAG = "TOMOSAR_DETACHED"
+    ENV_FLAG = "DUNE_GNN_DETACHED"
     FLAGS    = ("--detach", "--nohup")
 
     def __init__(self, log_dir: str = "logs") -> None:
@@ -74,12 +74,6 @@ class ConfigCli:
         "--help-config",
         "--detach", "--nohup",
         "--gpu",
-        "--mode",
-        "--trial", "--worker", "--resume",
-        "--model",
-        "--n-trials", "--study-name", "--storage-url",
-        "--run-tag", "--run-dir",
-        "--fold", "--split",
     )
 
     def __init__(self, config, description: str | None = None) -> None:
@@ -91,7 +85,7 @@ class ConfigCli:
         self.parser.add_argument("--detach", "--nohup", action="store_true", dest="_detach")
 
         for path, value in self._leaves(config):
-            if value is not None and not isinstance(value, _SUPPORTED_TYPES):
+            if value is not None and not isinstance(value, SUPPORTED_TYPES):
                 continue
 
             options = [f"--{path}"]
@@ -221,7 +215,7 @@ class ConfigCli:
                 mapping[path] = str(value)
             elif isinstance(value, tuple):
                 mapping[path] = list(value)
-            elif value is None or isinstance(value, _SUPPORTED_TYPES):
+            elif value is None or isinstance(value, SUPPORTED_TYPES):
                 mapping[path] = value
         return mapping
 
@@ -234,8 +228,9 @@ class ConfigCli:
 
     @classmethod
     def load_resolved(cls, config, path: Path):
-        if not Path(path).exists():
-            return config
+        path = Path(path)
+        if not path.exists():
+            raise FileNotFoundError(f"Resolved config not found at {path}. The run directory is missing metadata/resolved_config.json and cannot be evaluated.")
 
         with open(path, "r", encoding="utf-8") as f:
             mapping = json.load(f)
