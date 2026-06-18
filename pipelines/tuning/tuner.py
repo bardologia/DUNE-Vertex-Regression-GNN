@@ -33,9 +33,8 @@ class Tuner:
         self.study            = None
 
     def _prepare_data(self):
-        dataset_pipeline      = DatasetPipeline(self.entry.dataset_dir, self.logger, self.entry.split, subset_fraction=self.entry.subset_fraction)
-        splits, self.stats, _ = dataset_pipeline.run()
-        self.train_loader, self.val_loader, _ = DatasetPipeline.build_loaders(splits, self.tuning.batch_size, num_workers=0)
+        datasets, self.stats = DatasetPipeline(self.entry.dataset, self.logger).run()
+        self.train_loader, self.val_loader, _ = DatasetPipeline.build_loaders(datasets, self.tuning.batch_size, num_workers=0)
 
     def _suggest(self, trial):
         default_config = MODEL_CONFIG_REGISTRY[self.entry.model_name]()

@@ -6,13 +6,13 @@ import pytest
 import torch
 from torch_geometric.data import Data
 
-from configuration import DatasetConfig, SplitConfig
+from configuration import DatasetConfig
 from tools import Logger
-from pipelines.dataset import DatasetBuilder, ParquetDatasetWriter
+from pipelines.dataset import ParquetDatasetWriter
 
 
-PROJECT_ROOT  = Path(__file__).resolve().parents[1]
-RAW_DATA_DIR  = PROJECT_ROOT / "data"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+RAW_DATA_DIR = PROJECT_ROOT / "data"
 
 
 @pytest.fixture(scope="session")
@@ -38,7 +38,7 @@ def synthetic_batch():
 
 @pytest.fixture(scope="session")
 def sample_csv_dir(tmp_path_factory):
-    directory   = tmp_path_factory.mktemp("raw_csv")
+    directory    = tmp_path_factory.mktemp("raw_csv")
     source_files = sorted(glob.glob(str(RAW_DATA_DIR / "*.csv")))[:48]
     if not source_files:
         pytest.skip("No raw CSV data available")
@@ -54,18 +54,9 @@ def parquet_store(tmp_path_factory, sample_csv_dir, quiet_logger):
     return output_directory / "parquet"
 
 
-@pytest.fixture(scope="session")
-def tiny_dataset(tmp_path_factory, parquet_store, quiet_logger):
-    config = DatasetConfig()
-    config.data.source            = "parquet"
-    config.data.parquet_store_dir = parquet_store
-    config.ray.num_cpus           = 4
-
-    directory = tmp_path_factory.mktemp("dataset")
-    DatasetBuilder(directory, quiet_logger, config).run()
-    return directory
-
-
 @pytest.fixture()
-def split_config():
-    return SplitConfig()
+def dataset_config(parquet_store):
+    config = DatasetConfig()
+    config.data.parquet_store_dir = parquet_store
+    config.data.stats_sample_size = 32
+    return config

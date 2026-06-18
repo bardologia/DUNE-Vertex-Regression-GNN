@@ -6,11 +6,12 @@ from pathlib import Path
 import torch
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
-from configuration.entry          import TrainEntryConfig
-from models                       import get_model
-from tools.monitoring.logger      import Logger
-from tools.runtime.config_cli     import ConfigCli
-from pipelines.dataset.pipeline   import DatasetPipeline
+from configuration.entry             import TrainEntryConfig
+from models                          import get_model
+from tools.monitoring.logger         import Logger
+from tools.runtime.config_cli        import ConfigCli
+from pipelines.dataset.pipeline       import DatasetPipeline
+from pipelines.dataset.normalization import NormalizationStats
 
 from pipelines.inference.animations import AnalysisAnimations
 from pipelines.inference.metrics    import InferenceMetrics
@@ -34,8 +35,8 @@ class InferencePipeline:
         self.entry     = ConfigCli.load_resolved(entry, resolved_path)
 
     def _prepare(self):
-        dataset_pipeline                          = DatasetPipeline(self.entry.dataset_dir, self.logger, self.entry.split, subset_fraction=self.entry.subset_fraction)
-        self.dataset_splits, self.stats, _        = dataset_pipeline.run()
+        self.stats                 = NormalizationStats.load(self.run_directory / "metadata")
+        self.dataset_splits, _     = DatasetPipeline(self.entry.dataset, self.logger, stats=self.stats).run()
 
         model, _       = get_model(self.entry.model_name, **self.entry.model_overrides)
         checkpoint_path = self.run_directory / "checkpoints" / self.entry.training.io.checkpoint_name

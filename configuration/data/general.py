@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib     import Path
-from typing      import Optional
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -10,18 +9,18 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 @dataclass
 class DataConfig:
-    source                : str   = "parquet"
-    input_dir             : Path  = field(default_factory=lambda: PROJECT_ROOT / "data")
-    parquet_store_dir     : Path  = field(default_factory=lambda: PROJECT_ROOT / "data_frames" / "parquet")
-    augment_octants       : bool  = False
-    max_files             : int   = 500000
-    subset_fraction       : float = 1.0
-    coordinate_columns    : tuple = ("event_x", "event_y", "event_z")
-    feature_columns       : tuple = ("x", "y", "z")
-    position_columns      : tuple = ("x", "y", "z")
-    light_column          : str   = "light_amount"
-    header_rows_to_skip   : int   = 0
-    coordinate_line_index : int   = 2
+    parquet_store_dir  : Path  = field(default_factory=lambda: PROJECT_ROOT / "data_frames" / "parquet")
+    raw_input_dir      : Path  = field(default_factory=lambda: PROJECT_ROOT / "data")
+    build_store        : bool  = False
+    store_worker_count : int   = 10
+
+    augment_octants    : bool  = False
+    subset_fraction    : float = 1.0
+    stats_sample_size  : int   = 256
+
+    coordinate_columns : tuple = ("event_x", "event_y", "event_z")
+    position_columns   : tuple = ("x", "y", "z")
+    light_column       : str   = "light_amount"
 
 
 @dataclass
@@ -32,9 +31,7 @@ class GraphConfig:
 
 
 @dataclass
-class PreprocessingConfig:
-    zscore_threshold     : float = 9.0
-    radius               : float = 1.0
+class PhysicsConfig:
     scale_factor         : float = 0.1
     detection_efficiency : float = 0.02
     efficiency_seed      : int   = 42
@@ -48,20 +45,31 @@ class SplitConfig:
 
 
 @dataclass
-class RayConfig:
-    num_cpus                           : Optional[int] = 6
-    batch_tasks_per_cpu                : int           = 8
-    max_inflight_tasks_per_cpu         : int           = 1
-    max_batch_size                     : int           = 8
-    scaling_batch_tasks_per_cpu        : int           = 4
-    scaling_max_inflight_tasks_per_cpu : int           = 2
-    scaling_max_batch_size             : int           = 64
+class AugmentationConfig:
+    enabled : bool = False
+
+    sensor_dropout_enabled     : bool  = True
+    sensor_dropout_probability : float = 0.05
+
+    spurious_activation_enabled     : bool  = True
+    spurious_activation_probability : float = 0.01
+    spurious_activation_max_light   : float = 1.0
+
+    light_noise_enabled : bool  = True
+    light_noise_sigma   : float = 0.1
+    light_noise_mode    : str   = "multiplicative"
+
+    photon_thinning_enabled  : bool  = True
+    photon_thinning_survival : float = 0.9
+
+    gain_jitter_enabled : bool  = True
+    gain_jitter_sigma   : float = 0.05
 
 
 @dataclass
 class DatasetConfig:
-    data          : DataConfig          = field(default_factory=DataConfig)
-    graph         : GraphConfig         = field(default_factory=GraphConfig)
-    preprocessing : PreprocessingConfig = field(default_factory=PreprocessingConfig)
-    split         : SplitConfig         = field(default_factory=SplitConfig)
-    ray           : RayConfig           = field(default_factory=RayConfig)
+    data         : DataConfig         = field(default_factory=DataConfig)
+    graph        : GraphConfig        = field(default_factory=GraphConfig)
+    physics      : PhysicsConfig      = field(default_factory=PhysicsConfig)
+    split        : SplitConfig        = field(default_factory=SplitConfig)
+    augmentation : AugmentationConfig = field(default_factory=AugmentationConfig)

@@ -4,7 +4,7 @@ import numpy as np
 import torch
 
 from models import get_model
-from pipelines.dataset.pipeline import DatasetPipeline
+from pipelines.dataset.pipeline    import DatasetPipeline
 from pipelines.shared.run_metadata import TrainingRunMetadata
 
 from pipelines.training.trainer import Trainer
@@ -12,9 +12,9 @@ from pipelines.training.trainer import Trainer
 
 class TrainingPipeline:
     def __init__(self, entry_config, logger=None):
-        self.entry            = entry_config
-        self.training_config  = entry_config.training
-        self.external_logger  = logger
+        self.entry           = entry_config
+        self.training_config = entry_config.training
+        self.external_logger = logger
 
     def _prepare_run(self):
         torch.manual_seed(self.entry.seed)
@@ -30,11 +30,10 @@ class TrainingPipeline:
         self.logger = self.run_metadata.logger
 
     def _prepare_data(self):
-        dataset_pipeline                          = DatasetPipeline(self.entry.dataset_dir, self.logger, self.entry.split, subset_fraction=self.entry.subset_fraction)
-        self.splits, self.stats, self.saved_config = dataset_pipeline.run()
+        self.datasets, self.stats = DatasetPipeline(self.entry.dataset, self.logger).run()
 
-        loop          = self.training_config.loop
-        self.loaders  = DatasetPipeline.build_loaders(self.splits, loop.batch_size, num_workers=loop.num_workers, pin_memory=loop.pin_memory, persistent_workers=loop.persistent_workers)
+        loop         = self.training_config.loop
+        self.loaders = DatasetPipeline.build_loaders(self.datasets, loop.batch_size, num_workers=loop.num_workers, pin_memory=loop.pin_memory, persistent_workers=loop.persistent_workers)
 
     def _build_model(self):
         self.model, self.model_config = get_model(self.entry.model_name, **self.entry.model_overrides)

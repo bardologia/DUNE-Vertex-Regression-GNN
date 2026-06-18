@@ -6,11 +6,6 @@ from project_paths import ProjectPaths
 class ScriptCatalog:
 
     METADATA = {
-        "create_dataset": {
-            "label"    : "Create Dataset",
-            "category" : "Data",
-            "purpose"  : "Build the preprocessed KNN graph dataset from raw detector CSVs.",
-        },
         "train": {
             "label"    : "Train",
             "category" : "Training",
@@ -47,7 +42,6 @@ class ScriptCatalog:
         "correct_coordinates",
         "augment_octants",
         "build_parquet_store",
-        "create_dataset",
         "train",
         "infer",
         "tune",

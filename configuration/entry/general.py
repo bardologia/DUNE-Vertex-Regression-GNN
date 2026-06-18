@@ -5,20 +5,12 @@ from pathlib     import Path
 
 import torch
 
-from configuration.data.general     import DatasetConfig, SplitConfig
+from configuration.data.general     import DatasetConfig
 from configuration.training.general import TrainingConfig
 from configuration.tuning.general   import TuningConfig
 
 
-PROJECT_ROOT  = Path(__file__).resolve().parents[2]
-DEFAULT_DATASET_DIRECTORY = PROJECT_ROOT / "datasets" / "E_10.0MeV_K_4"
-
-
-@dataclass
-class DatasetEntryConfig:
-    dataset            : DatasetConfig = field(default_factory=DatasetConfig)
-    output_base_dir    : Path          = field(default_factory=lambda: PROJECT_ROOT / "datasets")
-    profile            : bool          = False
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 @dataclass
@@ -28,11 +20,9 @@ class TrainEntryConfig:
     seed            : int            = 42
     gpu             : int            = 0
     run_name        : str            = ""
-    dataset_dir     : Path           = field(default_factory=lambda: DEFAULT_DATASET_DIRECTORY)
-    subset_fraction : float          = 1.0
     tensorboard     : bool           = False
     infer_after     : bool           = False
-    split           : SplitConfig    = field(default_factory=SplitConfig)
+    dataset         : DatasetConfig  = field(default_factory=DatasetConfig)
     training        : TrainingConfig = field(default_factory=TrainingConfig)
 
 
@@ -47,11 +37,9 @@ class InferenceEntryConfig:
 
 @dataclass
 class TuneEntryConfig:
-    model_name      : str            = "gps"
-    seed            : int            = 42
-    gpu             : int            = 0
-    dataset_dir     : Path           = field(default_factory=lambda: DEFAULT_DATASET_DIRECTORY)
-    subset_fraction : float          = 1.0
-    tuning          : TuningConfig   = field(default_factory=TuningConfig)
-    split           : SplitConfig    = field(default_factory=SplitConfig)
-    training        : TrainingConfig = field(default_factory=TrainingConfig)
+    model_name : str            = "gps"
+    seed       : int            = 42
+    gpu        : int            = 0
+    dataset    : DatasetConfig  = field(default_factory=DatasetConfig)
+    tuning     : TuningConfig   = field(default_factory=TuningConfig)
+    training   : TrainingConfig = field(default_factory=TrainingConfig)

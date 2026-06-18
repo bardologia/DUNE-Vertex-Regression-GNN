@@ -1,17 +1,17 @@
 from .general import (
+    AugmentationConfig,
     DataConfig,
     DatasetConfig,
     GraphConfig,
-    PreprocessingConfig,
-    RayConfig,
+    PhysicsConfig,
     SplitConfig,
 )
 
 __all__ = [
+    "AugmentationConfig",
     "DataConfig",
     "DatasetConfig",
     "GraphConfig",
-    "PreprocessingConfig",
-    "RayConfig",
+    "PhysicsConfig",
     "SplitConfig",
 ]
