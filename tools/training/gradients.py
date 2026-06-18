@@ -9,13 +9,13 @@ class GradientClipper:
         self.logger  = logger
         self.tracker = tracker
 
-        self.mode       = config.gradient_clipper.clip_mode
-        self.threshold  = config.gradient_clipper.max_grad_norm if self.mode == "fixed" else None
-        self.window     = config.gradient_clipper.adaptive_window
-        self.percentile = config.gradient_clipper.adaptive_percentile
-        self.mean_std_k = config.gradient_clipper.adaptive_mean_std_k
-        self.epsilon    = config.gradient_clipper.clip_epsilon
-        self.hist_freq  = config.gradient_clipper.log_histogram_freq
+        self.mode                = config.gradient_clipper.clip_mode
+        self.threshold           = config.gradient_clipper.max_grad_norm if self.mode == "fixed" else None
+        self.window              = config.gradient_clipper.adaptive_window
+        self.percentile          = config.gradient_clipper.adaptive_percentile
+        self.adaptive_mean_std_k = config.gradient_clipper.adaptive_mean_std_k
+        self.epsilon             = config.gradient_clipper.clip_epsilon
+        self.log_histogram_freq  = config.gradient_clipper.log_histogram_freq
 
         self.history     : list[float] = []
 
@@ -31,25 +31,25 @@ class GradientClipper:
 
         elif self.mode == "adaptive_mean_std":
             self.logger.subsection(f"Window        : {self.window}")
-            self.logger.subsection(f"Mean+k*Std  k : {self.mean_std_k}")
+            self.logger.subsection(f"Mean+k*Std  k : {self.adaptive_mean_std_k}")
 
     @staticmethod
     def global_norm(model: torch.nn.Module) -> float:
-        grads = [p.grad.detach() for p in model.parameters() if p.grad is not None]
+        gradients = [parameter.grad.detach() for parameter in model.parameters() if parameter.grad is not None]
 
-        if not grads:
+        if not gradients:
             return 0.0
 
-        per_param_norms = torch._foreach_norm(grads, 2)
-        total_norm      = torch.norm(torch.stack(per_param_norms), 2)
+        per_parameter_norms = torch._foreach_norm(gradients, 2)
+        total_norm          = torch.norm(torch.stack(per_parameter_norms), 2)
 
         return total_norm.item()
 
     def _clip(self, model: torch.nn.Module, norm: float, max_norm: float) -> tuple[float, float]:
         scale = min(1.0, max_norm / (norm + self.epsilon))
-        for p in model.parameters():
-            if p.grad is not None:
-                p.grad.detach().mul_(scale)
+        for parameter in model.parameters():
+            if parameter.grad is not None:
+                parameter.grad.detach().mul_(scale)
 
         norm_after = norm * scale
         return norm, norm_after
@@ -64,7 +64,7 @@ class GradientClipper:
             return float(np.percentile(window_data, self.percentile))
 
         else:
-            return float(window_data.mean() + self.mean_std_k * window_data.std())
+            return float(window_data.mean() + self.adaptive_mean_std_k * window_data.std())
 
     def check_gradients(self, model: torch.nn.Module, global_step: int) -> bool:
         has_invalid = False
@@ -111,5 +111,5 @@ class GradientClipper:
     def record(self, grad_norm_value: float, global_step: int):
         self.history.append(float(grad_norm_value))
 
-        if global_step % self.hist_freq == 0 and len(self.history) >= self.hist_freq:
-            self.tracker.log_histogram("train/grad_norm_dist", np.asarray(self.history[-self.hist_freq:], dtype=np.float32), global_step)
+        if global_step % self.log_histogram_freq == 0 and len(self.history) >= self.log_histogram_freq:
+            self.tracker.log_histogram("train/grad_norm_dist", np.asarray(self.history[-self.log_histogram_freq:], dtype=np.float32), global_step)

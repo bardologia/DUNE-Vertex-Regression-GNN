@@ -233,11 +233,6 @@ class ConfigCli:
         return path
 
     @classmethod
-    def load_worker_config(cls, config, run_tag: str, run_dir: str | None):
-        base = Path(run_dir) if run_dir else Path(config.paths.log_base_dir) / run_tag
-        return cls.load_resolved(config, base / "pipeline" / "resolved_config.json")
-
-    @classmethod
     def load_resolved(cls, config, path: Path):
         if not Path(path).exists():
             return config

@@ -69,10 +69,10 @@ class ParquetDatasetWriter:
 
         return source_path.name, sensor_x, sensor_y, sensor_z, light_vector
 
-    def read_all_events(self, discovered_files, geometry_hash):
+    def read_all_events(self, discovered_files, geometry_hash, channel_count):
         source_names = [None] * len(discovered_files)
         target_array = np.zeros((len(discovered_files), 3), dtype=np.float32)
-        light_matrix = np.zeros((len(discovered_files), 6912), dtype=np.int32)
+        light_matrix = np.zeros((len(discovered_files), channel_count), dtype=np.int32)
 
         index_by_path = {str(path): position for position, path in enumerate(discovered_files)}
 
@@ -142,17 +142,23 @@ class ParquetDatasetWriter:
 
         octant_frame = pd.DataFrame(
             octant_rows,
-            columns=["event_id", "octant", "sign_x", "sign_y", "sign_z", "target_x", "target_y", "target_z"],
+            columns=["base_event_id", "octant", "sign_x", "sign_y", "sign_z", "target_x", "target_y", "target_z"],
         )
+
+        octant_light        = light_matrix[octant_frame["base_event_id"].values]
+        octant_light_values = pa.array(octant_light.reshape(-1), type=pa.int32())
+        octant_light_list   = pa.FixedSizeListArray.from_arrays(octant_light_values, channel_count)
+
         octants_table = pa.table({
-            "event_id" : pa.array(octant_frame["event_id"].values, type=pa.int32()),
-            "octant"   : pa.array(octant_frame["octant"].values, type=pa.string()),
-            "sign_x"   : pa.array(octant_frame["sign_x"].values, type=pa.int8()),
-            "sign_y"   : pa.array(octant_frame["sign_y"].values, type=pa.int8()),
-            "sign_z"   : pa.array(octant_frame["sign_z"].values, type=pa.int8()),
-            "target_x" : pa.array(octant_frame["target_x"].values, type=pa.float32()),
-            "target_y" : pa.array(octant_frame["target_y"].values, type=pa.float32()),
-            "target_z" : pa.array(octant_frame["target_z"].values, type=pa.float32()),
+            "base_event_id" : pa.array(octant_frame["base_event_id"].values, type=pa.int32()),
+            "octant"        : pa.array(octant_frame["octant"].values, type=pa.string()),
+            "sign_x"        : pa.array(octant_frame["sign_x"].values, type=pa.int8()),
+            "sign_y"        : pa.array(octant_frame["sign_y"].values, type=pa.int8()),
+            "sign_z"        : pa.array(octant_frame["sign_z"].values, type=pa.int8()),
+            "target_x"      : pa.array(octant_frame["target_x"].values, type=pa.float32()),
+            "target_y"      : pa.array(octant_frame["target_y"].values, type=pa.float32()),
+            "target_z"      : pa.array(octant_frame["target_z"].values, type=pa.float32()),
+            "light"         : octant_light_list,
         })
         pa_parquet.write_table(octants_table, self.octants_path, compression="zstd")
 
@@ -178,7 +184,7 @@ class ParquetDatasetWriter:
         discovered_files = self.discover_files()
 
         geometry_frame, geometry_hash = self.build_canonical_geometry(discovered_files[0])
-        source_names, target_array, light_matrix = self.read_all_events(discovered_files, geometry_hash)
+        source_names, target_array, light_matrix = self.read_all_events(discovered_files, geometry_hash, len(geometry_frame))
         octant_rows = self.build_octant_index(target_array)
 
         self.write_parquet(geometry_frame, source_names, target_array, light_matrix, octant_rows)
@@ -194,17 +200,18 @@ class ParquetEventReader:
         self.events_path     = self.store_directory / "events.parquet"
         self.octants_path    = self.store_directory / "octants.parquet"
 
-        self.geometry_frame = None
-        self.light_matrix   = None
-        self.event_targets  = None
-        self.octant_frame   = None
+        self.geometry_frame      = None
+        self.light_matrix        = None
+        self.event_targets       = None
+        self.octant_frame        = None
+        self.octant_light_matrix = None
 
     def load_store(self):
         self.geometry_frame = pa_parquet.read_table(self.geometry_path).to_pandas()
+        channel_count       = len(self.geometry_frame)
 
         events_table        = pa_parquet.read_table(self.events_path)
         event_count         = events_table.num_rows
-        channel_count       = len(self.geometry_frame)
         flat_light          = events_table.column("light").combine_chunks().values.to_numpy()
         self.light_matrix   = flat_light.reshape(event_count, channel_count)
         self.event_targets  = np.column_stack([
@@ -213,7 +220,11 @@ class ParquetEventReader:
             events_table.column("target_z").to_numpy(),
         ])
 
-        self.octant_frame   = pa_parquet.read_table(self.octants_path).to_pandas()
+        octants_table            = pa_parquet.read_table(self.octants_path)
+        octant_count             = octants_table.num_rows
+        octant_flat_light        = octants_table.column("light").combine_chunks().values.to_numpy()
+        self.octant_light_matrix = octant_flat_light.reshape(octant_count, channel_count)
+        self.octant_frame        = octants_table.drop(["light"]).to_pandas()
         return self
 
     def _build_event_frame(self, light_vector, sign_x, sign_y, sign_z):
@@ -234,8 +245,8 @@ class ParquetEventReader:
             yield event_frame, target
 
     def iterate_augmented(self):
-        for row in self.octant_frame.itertuples(index=False):
-            light_vector = self.light_matrix[row.event_id]
+        for row_index, row in enumerate(self.octant_frame.itertuples(index=False)):
+            light_vector = self.octant_light_matrix[row_index]
             event_frame  = self._build_event_frame(light_vector, row.sign_x, row.sign_y, row.sign_z)
             target       = (float(row.target_x), float(row.target_y), float(row.target_z))
             yield event_frame, target, row.octant

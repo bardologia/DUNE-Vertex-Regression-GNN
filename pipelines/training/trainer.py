@@ -26,7 +26,6 @@ class Trainer:
         self.stats  = stats
 
         self.epochs               = training_config.loop.epochs
-        self.validation_frequency = training_config.loop.validation_frequency
         self.accumulation_steps   = training_config.loop.gradient_accumulation_steps
         self.use_amp              = training_config.loop.use_amp and torch.cuda.is_available()
         self.scaler               = torch.amp.GradScaler("cuda") if self.use_amp else None
@@ -43,8 +42,6 @@ class Trainer:
 
         self.scheduler.set_total_epochs(self.epochs)
 
-        self.best_val_loss = float("inf")
-        self.best_epoch    = -1
         self.global_step   = 0
         self.train_losses  = []
         self.val_losses    = []
@@ -56,11 +53,11 @@ class Trainer:
 
     def _build_param_groups(self):
         regression_head_parameters = list(self.model.regression_head.parameters())
+        regression_head_parameters += list(self.model.norm.parameters())
         pool_parameters            = list(self.model.pool.parameters())
 
         pool_identifiers   = {id(parameter) for parameter in pool_parameters}
         encoder_parameters = [parameter for parameter in self.model.encoder.parameters() if id(parameter) not in pool_identifiers]
-        encoder_parameters += list(self.model.norm.parameters())
 
         optimizer_config = self.config.optimizer
         groups = [
@@ -169,6 +166,14 @@ class Trainer:
         self.tracker.log_scalar(f"{stage}/loss", average_loss, epoch)
         return {"avg_loss": average_loss}
 
+    def run_epoch(self, train_loader, val_loader, epoch):
+        self.scheduler.step(epoch)
+        self._apply_learning_rates()
+
+        train_loss      = self.train_epoch(train_loader, epoch)
+        validation_loss = self.evaluate(val_loader, epoch, stage="validation")["avg_loss"]
+        return train_loss, validation_loss
+
     def train(self, train_loader, val_loader, test_loader):
         self.logger.section("[Training Loop]")
         self.logger.subsection(f"train={len(train_loader)} | val={len(val_loader)} | test={len(test_loader)}")
@@ -178,11 +183,7 @@ class Trainer:
         self._apply_learning_rates()
 
         for epoch in range(self.epochs):
-            self.scheduler.step(epoch)
-            self._apply_learning_rates()
-
-            train_loss      = self.train_epoch(train_loader, epoch)
-            validation_loss = self.evaluate(val_loader, epoch, stage="validation")["avg_loss"]
+            train_loss, validation_loss = self.run_epoch(train_loader, val_loader, epoch)
 
             self.train_losses.append(train_loss)
             self.val_losses.append(validation_loss)
@@ -190,23 +191,22 @@ class Trainer:
             self.tracker.log_metrics("loss_comparison", {"train": train_loss, "val": validation_loss}, step=epoch)
             self.logger.subsection(f"Epoch {epoch + 1}: train_loss={train_loss:.4f} val_loss={validation_loss:.4f}")
 
-            if self.checkpoint.step(validation_loss, epoch, self):
-                self.best_val_loss = float(validation_loss)
-                self.best_epoch    = epoch
+            self.checkpoint.step(validation_loss, epoch, self)
 
             self._clear_memory()
 
             if self.early_stopping(validation_loss, epoch):
                 break
 
-        self.checkpoint.restore_best(self.model, self.device)
+        if self.config.early_stopping.restore_best:
+            self.checkpoint.restore_best(self.model, self.device)
 
         validation_loss = self.evaluate(val_loader, self.epochs, stage="final_validation")["avg_loss"]
         test_loss       = self.evaluate(test_loader, self.epochs, stage="final_test")["avg_loss"]
 
         return {
-            "best_val_loss"         : self.best_val_loss,
-            "best_epoch"            : self.best_epoch,
+            "best_val_loss"         : self.checkpoint.best_val_loss,
+            "best_epoch"            : self.checkpoint.best_epoch,
             "final_validation_loss" : validation_loss,
             "final_test_loss"       : test_loss,
             "checkpoint_path"       : str(self.run_metadata.checkpoint_path),

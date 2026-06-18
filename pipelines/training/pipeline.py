@@ -30,12 +30,17 @@ class TrainingPipeline:
         self.logger = self.run_metadata.logger
 
     def _prepare_data(self):
-        self.datasets, self.stats = DatasetPipeline(self.entry.dataset, self.logger).run()
+        self.dataset_pipeline     = DatasetPipeline(self.entry.dataset, self.logger)
+        self.datasets, self.stats = self.dataset_pipeline.run()
 
         loop         = self.training_config.loop
         self.loaders = DatasetPipeline.build_loaders(self.datasets, loop.batch_size, num_workers=loop.num_workers, pin_memory=loop.pin_memory, persistent_workers=loop.persistent_workers)
 
     def _build_model(self):
+        degree_histogram = self.dataset_pipeline.pna_degree_histogram(self.entry.model_name, self.datasets["train"])
+        if degree_histogram is not None:
+            self.entry.model_overrides = {**self.entry.model_overrides, "degree_histogram": degree_histogram}
+
         self.model, self.model_config = get_model(self.entry.model_name, **self.entry.model_overrides)
 
     def _train(self):

@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch.nn as nn
 from torch_geometric.nn import EdgeConv
 
-from models.blocks import GraphRegressor, MessagePassingEncoder
+from models.blocks import GraphRegressor, MessagePassingEncoder, build_activation
 
 
 class DynamicEdgeConv(GraphRegressor):
@@ -11,7 +11,7 @@ class DynamicEdgeConv(GraphRegressor):
         def convolution_factory(input_dim, output_dim, layer_index):
             multilayer_perceptron = nn.Sequential(
                 nn.Linear(2 * input_dim, config.edge_mlp_hidden),
-                nn.ReLU(),
+                build_activation(config.activation),
                 nn.Linear(config.edge_mlp_hidden, output_dim),
             )
             return EdgeConv(multilayer_perceptron, aggr=config.aggregator)

@@ -29,6 +29,29 @@ def test_dataset_pipeline_produces_splits(dataset_config, quiet_logger):
     assert len(stats.node.methods)   == 8
 
 
+def test_octant_split_has_no_base_event_leakage(parquet_store, quiet_logger):
+    config = DatasetConfig()
+    config.data.parquet_store_dir = parquet_store
+    config.data.stats_sample_size = 32
+    config.data.augment_octants   = True
+
+    datasets, _ = DatasetPipeline(config, quiet_logger).run()
+
+    def base_ids(dataset):
+        return set(int(sample[7]) for sample in dataset.samples)
+
+    train_ids = base_ids(datasets["train"])
+    val_ids   = base_ids(datasets["val"])
+    test_ids  = base_ids(datasets["test"])
+
+    assert train_ids.isdisjoint(val_ids)
+    assert train_ids.isdisjoint(test_ids)
+    assert val_ids.isdisjoint(test_ids)
+
+    total_samples = len(datasets["train"]) + len(datasets["val"]) + len(datasets["test"])
+    assert total_samples > len(train_ids | val_ids | test_ids)
+
+
 def test_missing_store_raises(quiet_logger, tmp_path):
     config = DatasetConfig()
     config.data.parquet_store_dir = tmp_path / "absent"

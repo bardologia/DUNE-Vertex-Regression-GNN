@@ -31,18 +31,18 @@ class ProjectPaths:
         },
         "correct_coordinates": {
             "file"                : "correct_coordinates.py",
-            "entry_config_module" : None,
-            "entry_config_class"  : None,
+            "entry_config_module" : "configuration.entry.general",
+            "entry_config_class"  : "DatasetEntryConfig",
         },
         "augment_octants": {
             "file"                : "augment_octants.py",
-            "entry_config_module" : None,
-            "entry_config_class"  : None,
+            "entry_config_module" : "configuration.entry.general",
+            "entry_config_class"  : "DatasetEntryConfig",
         },
         "build_parquet_store": {
             "file"                : "build_parquet_store.py",
-            "entry_config_module" : None,
-            "entry_config_class"  : None,
+            "entry_config_module" : "configuration.entry.general",
+            "entry_config_class"  : "DatasetEntryConfig",
         },
     }
 

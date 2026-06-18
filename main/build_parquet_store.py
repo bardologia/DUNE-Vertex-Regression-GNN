@@ -1,31 +1,24 @@
-import sys
-from pathlib import Path
+from _bootstrap import EnvironmentPinner
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(PROJECT_ROOT))
+EnvironmentPinner.pin()
 
-from tools.monitoring.logger import Logger
-from pipelines.dataset import ParquetDatasetWriter
+from configuration.entry      import DatasetEntryConfig
+from tools.monitoring.logger  import Logger
+from tools.runtime.config_cli import ConfigCli
+from pipelines.dataset        import ParquetDatasetWriter
 
 
-class ParquetStoreEntryPoint:
-
+class ParquetStoreEntry:
     def __init__(self):
-        self.input_directory  = PROJECT_ROOT / "data"
-        self.output_directory = PROJECT_ROOT / "data_frames"
-        self.worker_count     = 10
-        self.logger           = Logger(log_dir=str(PROJECT_ROOT / "logs"), name="parquet_store")
+        self.config = DatasetEntryConfig()
 
     def run(self):
-        writer = ParquetDatasetWriter(
-            input_directory  = self.input_directory,
-            output_directory = self.output_directory,
-            worker_count     = self.worker_count,
-            logger           = self.logger,
-        )
-        writer.run()
-        self.logger.close()
+        self.config = ConfigCli(self.config, description="Build the Parquet store from corrected CSVs").apply()
+
+        logger = Logger(log_dir="logs", name="parquet_store")
+        ParquetDatasetWriter(self.config.raw_input_dir, self.config.output_dir, worker_count=self.config.worker_count, logger=logger).run()
+        logger.close()
 
 
 if __name__ == "__main__":
-    ParquetStoreEntryPoint().run()
+    ParquetStoreEntry().run()

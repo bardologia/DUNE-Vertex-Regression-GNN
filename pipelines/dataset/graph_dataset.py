@@ -17,21 +17,22 @@ class GraphDataset(Dataset):
         self.scale_factor         = physics_config.scale_factor
         self.detection_efficiency = physics_config.detection_efficiency
         self.efficiency_seed      = physics_config.efficiency_seed
+        self.augmentation_seed    = augmentation.config.seed if augmentation is not None else 0
 
     def __len__(self):
         return len(self.samples)
 
-    def _base_light(self, raw_counts, event_id):
-        generator    = np.random.default_rng(self.efficiency_seed + int(event_id))
+    def _base_light(self, raw_counts, base_event_id):
+        generator     = np.random.default_rng(self.efficiency_seed + int(base_event_id))
         scaled_counts = np.maximum(np.round(raw_counts * self.scale_factor), 0).astype(np.int64)
         return generator.binomial(scaled_counts, self.detection_efficiency).astype(np.float32)
 
-    def _light_for_sample(self, event_id):
-        raw_counts = self.light_matrix[event_id].astype(np.float64)
-        light      = self._base_light(raw_counts, event_id)
+    def _light_for_sample(self, light_row, base_event_id):
+        raw_counts = self.light_matrix[light_row].astype(np.float64)
+        light      = self._base_light(raw_counts, base_event_id)
 
         if self.augmentation is not None and self.augmentation.active:
-            generator = np.random.default_rng()
+            generator = np.random.default_rng(self.augmentation_seed + int(light_row))
             light     = self.augmentation.apply_to_counts(light, generator)
             light     = self.augmentation.apply_to_light(light, generator)
 
@@ -44,13 +45,14 @@ class GraphDataset(Dataset):
         return data
 
     def __getitem__(self, index):
-        sample    = self.samples[index]
-        event_id  = int(sample[0])
-        signs     = sample[1:4].astype(np.float32)
-        target    = sample[4:7].astype(np.float32)
+        sample        = self.samples[index]
+        light_row     = int(sample[0])
+        signs         = sample[1:4].astype(np.float32)
+        target        = sample[4:7].astype(np.float32)
+        base_event_id = int(sample[7])
 
         positions = self.geometry_positions * signs[None, :]
-        light     = self._light_for_sample(event_id)
+        light     = self._light_for_sample(light_row, base_event_id)
 
         data   = self.graph_builder.build_from_arrays(positions, light)
         data.y = torch.tensor(target, dtype=torch.float32).unsqueeze(0)
@@ -93,3 +95,33 @@ class StatsEstimator:
 
         self.logger.subsection(f"Fitted normalization on {count} events")
         return NormalizationStats(node_group, edge_group, target_group)
+
+
+class DegreeHistogramEstimator:
+    def __init__(self, dataset, sample_size, logger):
+        self.dataset     = dataset
+        self.sample_size = sample_size
+        self.logger      = logger
+
+    def fit(self):
+        from torch_geometric.utils import degree
+
+        self.logger.section("[PNA Degree Histogram]")
+        count   = min(self.sample_size, len(self.dataset))
+        indices = np.linspace(0, len(self.dataset) - 1, count).astype(np.int64)
+
+        degree_counts = torch.zeros(1, dtype=torch.long)
+        for index in indices:
+            data           = self.dataset[int(index)]
+            node_in_degree = degree(data.edge_index[1], num_nodes=data.num_nodes, dtype=torch.long)
+            maximum_degree = int(node_in_degree.max().item()) if node_in_degree.numel() else 0
+
+            if maximum_degree + 1 > degree_counts.numel():
+                expanded                       = torch.zeros(maximum_degree + 1, dtype=torch.long)
+                expanded[: degree_counts.numel()] = degree_counts
+                degree_counts                  = expanded
+
+            degree_counts += torch.bincount(node_in_degree, minlength=degree_counts.numel())
+
+        self.logger.subsection(f"Degree histogram over {count} graphs: {degree_counts.tolist()}")
+        return tuple(int(value) for value in degree_counts.tolist())

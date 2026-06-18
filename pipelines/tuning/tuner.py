@@ -33,13 +33,15 @@ class Tuner:
         self.tuner_directory.mkdir(parents=True, exist_ok=True)
         self.study            = None
 
+        self.model_space     = MODEL_CONFIG_REGISTRY[entry_config.model_name].tunable_params()
+        self.optimizer_space = OptimizerConfig.tunable_params()
+
     def _prepare_data(self):
-        datasets, self.stats = DatasetPipeline(self.entry.dataset, self.logger).run()
-        self.train_loader, self.val_loader, _ = DatasetPipeline.build_loaders(datasets, self.tuning.batch_size, num_workers=0)
+        self.dataset_pipeline     = DatasetPipeline(self.entry.dataset, self.logger)
+        self.datasets, self.stats = self.dataset_pipeline.run()
+        self.train_loader, self.val_loader, _ = DatasetPipeline.build_loaders(self.datasets, self.tuning.batch_size, num_workers=0)
 
     def _suggest(self, trial):
-        self.model_space     = MODEL_CONFIG_REGISTRY[self.entry.model_name].tunable_params()
-        self.optimizer_space = OptimizerConfig.tunable_params()
         return self._sample(trial, self.model_space), self._sample(trial, self.optimizer_space)
 
     def _sample(self, trial, space):
@@ -62,11 +64,14 @@ class Tuner:
         training_config = deepcopy(self.training_config)
         for field_name, value in optimizer_overrides.items():
             setattr(training_config.optimizer, field_name, value)
-        training_config.loop.epochs               = self.tuning.epochs
-        training_config.loop.tuning_mode          = True
-        training_config.loop.verbose              = False
-        training_config.loop.batch_size           = self.tuning.batch_size
-        training_config.loop.validation_frequency = 1
+        training_config.loop.epochs      = self.tuning.epochs
+        training_config.loop.tuning_mode = True
+        training_config.loop.verbose     = False
+        training_config.loop.batch_size  = self.tuning.batch_size
+
+        degree_histogram = self.dataset_pipeline.pna_degree_histogram(self.entry.model_name, self.datasets["train"])
+        if degree_histogram is not None:
+            model_overrides = {**model_overrides, "degree_histogram": degree_histogram}
 
         model, _ = get_model(self.entry.model_name, **model_overrides)
         context  = TuningTrialContext(self.logger, self.tuner_directory / f"trial_{trial.number}.pt")
@@ -74,14 +79,10 @@ class Tuner:
 
         best_validation_loss = float("inf")
         for epoch in range(self.tuning.epochs):
-            trainer.scheduler.step(epoch)
-            trainer._apply_learning_rates()
-            trainer.train_epoch(self.train_loader, epoch)
+            _, validation_loss   = trainer.run_epoch(self.train_loader, self.val_loader, epoch)
+            best_validation_loss = min(best_validation_loss, validation_loss)
 
-            validation_results   = trainer.evaluate(self.val_loader, epoch, stage="validation")
-            best_validation_loss = min(best_validation_loss, validation_results["avg_loss"])
-
-            trial.report(validation_results["avg_loss"], epoch)
+            trial.report(validation_loss, epoch)
             if trial.should_prune():
                 raise optuna.TrialPruned()
 
@@ -89,7 +90,7 @@ class Tuner:
 
     def build_best_overrides(self):
         best_parameters     = self.study.best_params
-        optimizer_keys      = set(OptimizerConfig.tunable_params())
+        optimizer_keys      = set(self.optimizer_space)
         model_overrides     = {key: value for key, value in best_parameters.items() if key not in optimizer_keys}
         optimizer_overrides = {key: value for key, value in best_parameters.items() if key in optimizer_keys}
         return model_overrides, optimizer_overrides

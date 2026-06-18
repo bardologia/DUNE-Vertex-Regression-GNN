@@ -4,9 +4,15 @@ import torch
 from models import MODEL_REGISTRY, get_model
 
 
+def _overrides_for(model_name):
+    if model_name == "pna":
+        return {"degree_histogram": (0, 0, 0, 0, 40)}
+    return {}
+
+
 @pytest.mark.parametrize("model_name", list(MODEL_REGISTRY))
 def test_model_forward_shape(model_name, synthetic_batch):
-    model, config = get_model(model_name)
+    model, config = get_model(model_name, **_overrides_for(model_name))
     model.eval()
     with torch.no_grad():
         predictions = model(synthetic_batch)

@@ -33,14 +33,21 @@ class DropPath(nn.Module):
         super().__init__()
         self.drop_probability = drop_probability
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, batch: torch.Tensor = None) -> torch.Tensor:
         if not self.training or self.drop_probability == 0.0:
             return x
 
         keep_probability = 1.0 - self.drop_probability
-        shape            = (x.shape[0],) + (1,) * (x.ndim - 1)
-        bernoulli_mask   = (torch.rand(shape, dtype=x.dtype, device=x.device) < keep_probability).to(x.dtype)
-        return x * bernoulli_mask / keep_probability
+
+        if batch is None:
+            mask_shape     = (x.shape[0],) + (1,) * (x.ndim - 1)
+            bernoulli_mask = (torch.rand(mask_shape, dtype=x.dtype, device=x.device) < keep_probability).to(x.dtype)
+            return x * bernoulli_mask / keep_probability
+
+        number_of_graphs = int(batch.max().item()) + 1
+        graph_mask       = (torch.rand(number_of_graphs, dtype=x.dtype, device=x.device) < keep_probability).to(x.dtype)
+        node_mask        = graph_mask[batch].view((-1,) + (1,) * (x.ndim - 1))
+        return x * node_mask / keep_probability
 
 
 class FeedForward(nn.Module):
@@ -139,7 +146,7 @@ class GPSLayer(nn.Module):
 
         self.gate        = nn.Sequential(nn.Linear(hidden_dim * 2, hidden_dim), nn.Sigmoid())
         self.ffn         = FeedForward(hidden_dim, ffn_ratio, dropout)
-        self.drop_path   = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
+        self.drop_path   = DropPath(drop_path)
 
         self._initialize_weights()
 
@@ -181,9 +188,9 @@ class GPSLayer(nn.Module):
 
         gate_values          = self.gate(torch.cat([local_representation, global_representation], dim=-1))
         fused_representation  = gate_values * local_representation + (1.0 - gate_values) * global_representation
-        node_features         = node_features + self.drop_path(fused_representation)
+        node_features         = node_features + self.drop_path(fused_representation, batch)
 
-        node_features = node_features + self.drop_path(self.ffn(self.norm_ffn(node_features)))
+        node_features = node_features + self.drop_path(self.ffn(self.norm_ffn(node_features)), batch)
         return node_features
 
 
@@ -236,7 +243,7 @@ class MessagePassingEncoder(nn.Module):
         self.dropout      = nn.Dropout(config.dropout)
 
         drop_path_rates = [rate.item() for rate in torch.linspace(0, config.drop_path_rate, config.num_layers)]
-        self.drop_paths = nn.ModuleList([DropPath(rate) if rate > 0.0 else nn.Identity() for rate in drop_path_rates])
+        self.drop_paths = nn.ModuleList([DropPath(rate) for rate in drop_path_rates])
 
         self.out_dim = config.hidden_dim
         self._initialize_projection()
@@ -261,7 +268,7 @@ class MessagePassingEncoder(nn.Module):
         for convolution, norm, drop_path in zip(self.convolutions, self.norms, self.drop_paths):
             normalized = norm(node_features)
             updated    = self._apply_convolution(convolution, normalized, edge_index, edge_attr)
-            node_features = node_features + drop_path(self.dropout(self.activation(updated)))
+            node_features = node_features + drop_path(self.dropout(self.activation(updated)), batch)
 
         return node_features
 

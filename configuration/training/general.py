@@ -73,14 +73,6 @@ class GradientClipperConfig:
 
 
 @dataclass
-class OverfitConfig:
-    enabled        : bool  = False
-    max_steps      : int   = 2000
-    stop_threshold : float = 1e-4
-    batch_size     : int   = 8
-
-
-@dataclass
 class LossConfig:
     data_term   : str   = "mse"
     huber_delta : float = 1.0
@@ -105,7 +97,6 @@ class TrainingLoopConfig:
     num_workers                 : int   = 4
     pin_memory                  : bool  = True
     persistent_workers          : bool  = True
-    validation_frequency        : int   = 5
     verbose                     : bool  = True
     profile                     : bool  = False
     tuning_mode                 : bool  = False
@@ -119,6 +110,5 @@ class TrainingConfig:
     warmup           : WarmupConfig          = field(default_factory=WarmupConfig)
     early_stopping   : EarlyStoppingConfig   = field(default_factory=EarlyStoppingConfig)
     gradient_clipper : GradientClipperConfig = field(default_factory=GradientClipperConfig)
-    overfit          : OverfitConfig         = field(default_factory=OverfitConfig)
     loss             : LossConfig            = field(default_factory=LossConfig)
     loop             : TrainingLoopConfig    = field(default_factory=TrainingLoopConfig)

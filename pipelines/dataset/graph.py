@@ -13,7 +13,6 @@ class GraphAssembler:
         self.bidirectional    = config.graph.bidirectional
         self.k_neighbors      = config.graph.k_neighbors
         self.knn_algorithm    = config.graph.knn_algorithm
-        self.light_column     = config.data.light_column
         self.position_columns = config.data.position_columns
 
     def _effective_neighbors(self, number_of_nodes):
@@ -47,9 +46,8 @@ class NodeFeatures(GraphAssembler):
     def _local_light_density(self, light, neighbor_indices):
         return light[neighbor_indices[:, 1:]].sum(axis=1).astype(np.float32).reshape(-1, 1)
 
-    def build(self, positions, light):
-        total_light         = light.sum() + self.EPSILON
-        _, neighbor_indices = self._nearest_neighbors(positions)
+    def build(self, positions, light, neighbor_indices):
+        total_light = light.sum() + self.EPSILON
 
         node_features = np.column_stack([
             self._position(positions),
@@ -99,11 +97,10 @@ class EdgeFeatures(GraphAssembler):
         edge_attr  = torch.tensor(interleaved_features, dtype=torch.float32)
         return edge_index, edge_attr
 
-    def build(self, positions, light):
-        number_of_nodes                      = int(positions.shape[0])
-        neighbor_distances, neighbor_indices = self._nearest_neighbors(positions)
-        neighbor_indices_without_self        = neighbor_indices[:, 1:]
-        neighbor_distances_without_self      = neighbor_distances[:, 1:]
+    def build(self, positions, light, neighbor_distances, neighbor_indices):
+        number_of_nodes                 = int(positions.shape[0])
+        neighbor_indices_without_self   = neighbor_indices[:, 1:]
+        neighbor_distances_without_self = neighbor_distances[:, 1:]
 
         source_node_indices      = np.repeat(np.arange(number_of_nodes), neighbor_indices_without_self.shape[1])
         destination_node_indices = neighbor_indices_without_self.reshape(-1).astype(np.int64)
@@ -134,19 +131,16 @@ class EdgeFeatures(GraphAssembler):
 class Graph:
     def __init__(self, config):
         self.config           = config
-        self.light_column     = config.data.light_column
         self.position_columns = config.data.position_columns
         self.node_features    = NodeFeatures(config)
         self.edge_features    = EdgeFeatures(config)
 
     def build_from_arrays(self, positions, light):
-        positions             = np.asarray(positions, dtype=np.float32)
-        light                 = np.maximum(np.asarray(light, dtype=np.float32), 0.0)
-        node_features         = self.node_features.build(positions, light)
-        edge_index, edge_attr = self.edge_features.build(positions, light)
-        return Data(x=node_features, edge_index=edge_index, edge_attr=edge_attr)
+        positions = np.asarray(positions, dtype=np.float32)
+        light     = np.maximum(np.asarray(light, dtype=np.float32), 0.0)
 
-    def build_graph(self, event_dataframe):
-        positions = event_dataframe[list(self.position_columns)].values.astype(np.float32)
-        light     = event_dataframe[self.light_column].fillna(0.0).values.astype(np.float32)
-        return self.build_from_arrays(positions, light)
+        neighbor_distances, neighbor_indices = self.node_features._nearest_neighbors(positions)
+
+        node_features         = self.node_features.build(positions, light, neighbor_indices)
+        edge_index, edge_attr = self.edge_features.build(positions, light, neighbor_distances, neighbor_indices)
+        return Data(x=node_features, edge_index=edge_index, edge_attr=edge_attr)
