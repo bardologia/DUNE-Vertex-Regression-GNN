@@ -76,7 +76,9 @@ The Parquet store (`pipelines/dataset/parquet_store.py`) holds canonical sensor 
 
 ## Node and edge features
 
-8-D node features: sensor position $(x, y, z)$, light intensity, hit flag, light fraction, distance to the light-weighted centroid, local light density. 7-D edge features on the KNN graph: Euclidean distance, normalised 3-D displacement, inverse-square distance, light gradient, Sorensen-Dice light similarity. Targets are z-scored with training-split statistics; metrics are reported in physical units (MAE, RMSE, R^2, median AE, Euclidean error).
+Graphs are built only over active sensors. `ActiveNodeSelector` (`pipelines/dataset/graph.py`) keeps the nodes whose realized light is positive (`graph.active_only`, default on), optionally capping to the brightest `graph.max_active_nodes` (0 = uncapped), with a two-node floor so the KNN stays valid. On the real store this reduces each graph from the full 6912-channel grid to roughly 250 nodes, which is what makes a usable batch size possible (the GPS family attends over the dense `to_dense_batch`, so cost is quadratic in nodes). Pruning is applied to the post-physics, post-augmentation light, so spurious activations enter and dropped hits leave.
+
+7-D node features: sensor position $(x, y, z)$, light intensity, light fraction, distance to the light-weighted centroid, local light density. The hit flag was removed because, once only active sensors remain, it is constant. 7-D edge features on the KNN graph: Euclidean distance, normalised 3-D displacement, inverse-square distance, light gradient, Sorensen-Dice light similarity. Targets are z-scored with training-split statistics; metrics are reported in physical units (MAE, RMSE, R^2, median AE, Euclidean error).
 
 ## Code conventions (hard rules)
 
