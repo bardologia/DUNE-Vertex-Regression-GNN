@@ -5,9 +5,10 @@ from pathlib     import Path
 
 import torch
 
-from configuration.data.general     import DatasetConfig
-from configuration.training.general import TrainingConfig
-from configuration.tuning.general   import TuningConfig
+from configuration.cross_validation.general import CrossValidationConfig
+from configuration.data.general             import DatasetConfig
+from configuration.training.general         import TrainingConfig
+from configuration.tuning.general           import TuningConfig
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -43,3 +44,15 @@ class TuneEntryConfig:
     dataset    : DatasetConfig  = field(default_factory=DatasetConfig)
     tuning     : TuningConfig   = field(default_factory=TuningConfig)
     training   : TrainingConfig = field(default_factory=TrainingConfig)
+
+
+@dataclass
+class CrossValidationEntryConfig:
+    model_name       : str                   = "gps"
+    model_overrides  : dict                  = field(default_factory=dict)
+    seed             : int                   = 42
+    gpu              : int                   = 0
+    run_name         : str                   = ""
+    dataset          : DatasetConfig         = field(default_factory=DatasetConfig)
+    training         : TrainingConfig        = field(default_factory=TrainingConfig)
+    cross_validation : CrossValidationConfig = field(default_factory=CrossValidationConfig)
