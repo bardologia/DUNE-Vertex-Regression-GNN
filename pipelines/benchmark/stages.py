@@ -206,7 +206,7 @@ class TrainingStage(BenchmarkStage):
         return self.config.training.loop.batch_size
 
     def _compute(self, model_name):
-        record = {"model": model_name, "status": None, "best_val_loss": None, "best_epoch": None, "final_test_loss": None, "duration_s": None, "run_directory": None, "error": None}
+        record = {"model": model_name, "status": None, "best_val_loss": None, "best_epoch": None, "duration_s": None, "run_directory": None, "error": None}
 
         try:
             torch.manual_seed(self.config.seed)
@@ -215,8 +215,8 @@ class TrainingStage(BenchmarkStage):
             training_config.loop.epochs = self.config.benchmark_training.epochs
             batch_size                  = self._batch_size(model_name)
 
-            loaders                                       = DatasetPipeline.build_loaders(self.datasets, batch_size, num_workers=training_config.loop.num_workers, pin_memory=training_config.loop.pin_memory, persistent_workers=training_config.loop.persistent_workers)
-            train_loader, validation_loader, test_loader  = loaders
+            loaders                          = DatasetPipeline.build_loaders(self.datasets, batch_size, num_workers=training_config.loop.num_workers, pin_memory=training_config.loop.pin_memory, persistent_workers=training_config.loop.persistent_workers)
+            train_loader, validation_loader, _ = loaders
 
             run_metadata = TrainingRunMetadata(training_config, model_name, self.training_directory, run_name="run")
             run_metadata.save_normalization_stats(self.stats)
@@ -225,18 +225,17 @@ class TrainingStage(BenchmarkStage):
             trainer  = Trainer(model, self.stats, training_config, run_metadata)
 
             started = time.perf_counter()
-            summary = trainer.train(train_loader, validation_loader, test_loader)
+            summary = trainer.train(train_loader, validation_loader)
             elapsed = time.perf_counter() - started
 
             run_metadata.close()
 
             record.update({
-                "status"          : "DONE",
-                "best_val_loss"   : summary["best_val_loss"],
-                "best_epoch"      : summary["best_epoch"],
-                "final_test_loss" : summary["final_test_loss"],
-                "duration_s"      : float(elapsed),
-                "run_directory"   : summary["run_directory"],
+                "status"        : "DONE",
+                "best_val_loss" : summary["best_val_loss"],
+                "best_epoch"    : summary["best_epoch"],
+                "duration_s"    : float(elapsed),
+                "run_directory" : summary["run_directory"],
             })
             self.logger.subsection(f"{model_name}: best val loss {summary['best_val_loss']:.4f} in {elapsed:.1f} s")
         except Exception:

@@ -24,8 +24,7 @@ def test_training_pipeline_one_epoch(parquet_store, tmp_path):
     logger  = Logger(log_dir="", name="train_test", level="ERROR")
     summary = TrainingPipeline(entry, logger=logger).run()
 
-    assert torch.isfinite(torch.tensor(summary["final_test_loss"]))
-    assert torch.isfinite(torch.tensor(summary["final_validation_loss"]))
+    assert torch.isfinite(torch.tensor(summary["best_val_loss"]))
     assert len(list((tmp_path / "runs").rglob("best_model.pt"))) == 1
 
 

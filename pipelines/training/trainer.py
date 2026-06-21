@@ -37,7 +37,7 @@ class Trainer:
         self.scheduler        = Scheduler(base_lrs, self.warmup, training_config, self.logger, self.tracker)
         self.early_stopping   = EarlyStopping(training_config, self.logger, self.tracker)
         self.gradient_clipper = GradientClipper(training_config, self.logger, self.tracker)
-        self.criterion        = Loss(training_config.loss, self.stats, self.logger, self.tracker)
+        self.criterion        = Loss(training_config.loss, self.stats, self.logger)
         self.checkpoint       = Checkpoint(self.logger, self.tracker, str(run_metadata.checkpoint_path), min_delta=training_config.early_stopping.min_delta)
 
         self.scheduler.set_total_epochs(self.epochs)
@@ -94,6 +94,7 @@ class Trainer:
         effective_learning_rates = self.scheduler.effective_lrs()
         for group, learning_rate in zip(self.optimizer.param_groups, effective_learning_rates):
             group["lr"] = learning_rate
+            self.tracker.log_scalar(f"lr/{group['name']}", learning_rate, self.global_step)
 
     def capture_state(self, epoch) -> dict:
         return {
@@ -110,7 +111,7 @@ class Trainer:
     def forward(self, data):
         with torch.amp.autocast("cuda", enabled=self.use_amp):
             predictions = self.model(data)
-            loss_dict   = self.criterion(predictions, data, self.global_step)
+            loss_dict   = self.criterion(predictions, data)
         return predictions, loss_dict
 
     def backward(self, loss, do_step: bool):
@@ -161,7 +162,7 @@ class Trainer:
 
         return total_loss / max(1, number_of_batches)
 
-    def evaluate(self, loader, epoch, stage="validation"):
+    def evaluate(self, loader):
         self.model.eval()
 
         total_loss        = 0.0
@@ -169,13 +170,12 @@ class Trainer:
 
         with torch.no_grad():
             for data in loader:
-                data            = data.to(self.device, non_blocking=True)
-                _, loss_dict    = self.forward(data)
-                total_loss     += loss_dict["total_loss"].item()
+                data              = data.to(self.device, non_blocking=True)
+                _, loss_dict      = self.forward(data)
+                total_loss       += loss_dict["total_loss"].item()
                 number_of_batches += 1
 
         average_loss = total_loss / max(1, number_of_batches)
-        self.tracker.log_scalar(f"{stage}/loss", average_loss, epoch)
         return {"avg_loss": average_loss}
 
     def run_epoch(self, train_loader, val_loader, epoch):
@@ -184,12 +184,12 @@ class Trainer:
         train_loader.dataset.set_epoch(epoch)
 
         train_loss      = self.train_epoch(train_loader, epoch)
-        validation_loss = self.evaluate(val_loader, epoch, stage="validation")["avg_loss"]
+        validation_loss = self.evaluate(val_loader)["avg_loss"]
         return train_loss, validation_loss
 
-    def train(self, train_loader, val_loader, test_loader):
+    def train(self, train_loader, val_loader):
         self.logger.section("[Training Loop]")
-        self.logger.subsection(f"train={len(train_loader)} | val={len(val_loader)} | test={len(test_loader)}")
+        self.logger.subsection(f"train={len(train_loader)} | val={len(val_loader)}")
 
         self._clear_memory()
         self.optimizer.zero_grad()
@@ -201,7 +201,8 @@ class Trainer:
             self.train_losses.append(train_loss)
             self.val_losses.append(validation_loss)
 
-            self.tracker.log_metrics("loss_comparison", {"train": train_loss, "val": validation_loss}, step=epoch)
+            self.tracker.log_scalar("loss/train", train_loss,      epoch)
+            self.tracker.log_scalar("loss/val",   validation_loss, epoch)
             self.logger.subsection(f"Epoch {epoch + 1}: train_loss={train_loss:.4f} val_loss={validation_loss:.4f}")
 
             self.checkpoint.step(validation_loss, epoch, self)
@@ -214,26 +215,19 @@ class Trainer:
         if self.config.early_stopping.restore_best:
             self.checkpoint.restore_best(self.model, self.device)
 
-        validation_loss = self.evaluate(val_loader, self.epochs, stage="final_validation")["avg_loss"]
-        test_loss       = self.evaluate(test_loader, self.epochs, stage="final_test")["avg_loss"]
-
         self.logger.section("[Training Complete]")
         self.logger.kv_table({
-            "Best val loss"   : self.checkpoint.best_val_loss,
-            "Best epoch"      : self.checkpoint.best_epoch + 1,
-            "Final val loss"  : validation_loss,
-            "Final test loss" : test_loss,
-            "Epochs run"      : len(self.train_losses),
-            "Checkpoint"      : str(self.run_metadata.checkpoint_path),
+            "Best val loss" : self.checkpoint.best_val_loss,
+            "Best epoch"    : self.checkpoint.best_epoch + 1,
+            "Epochs run"    : len(self.train_losses),
+            "Checkpoint"    : str(self.run_metadata.checkpoint_path),
         })
 
         return {
-            "best_val_loss"         : self.checkpoint.best_val_loss,
-            "best_epoch"            : self.checkpoint.best_epoch,
-            "final_validation_loss" : validation_loss,
-            "final_test_loss"       : test_loss,
-            "checkpoint_path"       : str(self.run_metadata.checkpoint_path),
-            "run_directory"         : str(self.run_metadata.run_directory),
-            "train_losses"          : self.train_losses,
-            "val_losses"            : self.val_losses,
+            "best_val_loss"   : self.checkpoint.best_val_loss,
+            "best_epoch"      : self.checkpoint.best_epoch,
+            "checkpoint_path" : str(self.run_metadata.checkpoint_path),
+            "run_directory"   : str(self.run_metadata.run_directory),
+            "train_losses"    : self.train_losses,
+            "val_losses"      : self.val_losses,
         }

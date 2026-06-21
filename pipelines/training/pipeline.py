@@ -77,9 +77,9 @@ class TrainingPipeline:
         self.run_metadata.save_normalization_stats(self.stats)
         self.run_metadata.save_split(self.dataset_pipeline.split_base_ids)
 
-        trainer                              = Trainer(self.model, self.stats, self.training_config, self.run_metadata)
-        train_loader, val_loader, test_loader = self.loaders
-        return trainer.train(train_loader, val_loader, test_loader)
+        trainer                     = Trainer(self.model, self.stats, self.training_config, self.run_metadata)
+        train_loader, val_loader, _ = self.loaders
+        return trainer.train(train_loader, val_loader)
 
     def _infer(self, summary):
         from pipelines.inference import InferencePipeline
