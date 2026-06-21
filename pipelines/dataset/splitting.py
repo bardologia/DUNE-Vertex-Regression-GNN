@@ -29,8 +29,8 @@ class StratificationLabeller:
             binned_coordinates.append(binned)
 
         binned_coordinates = np.array(binned_coordinates).T
-        actual_bins        = max(len(np.unique(column)) for column in binned_coordinates.T)
-        labels             = binned_coordinates[:, 0] * actual_bins ** 2 + binned_coordinates[:, 1] * actual_bins + binned_coordinates[:, 2]
+        radices            = binned_coordinates.max(axis=0) + 1
+        labels             = binned_coordinates[:, 0] * radices[1] * radices[2] + binned_coordinates[:, 1] * radices[2] + binned_coordinates[:, 2]
         return labels.astype(np.int64)
 
 
