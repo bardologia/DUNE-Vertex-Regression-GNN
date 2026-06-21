@@ -580,7 +580,20 @@ main { margin-left: var(--navw); }
 .ev-run__name { font-family: var(--mono); font-size: 12.5px; color: var(--ink); }
 .ev-run__model { font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); }
 
+.ev-sources { display: flex; gap: 8px; flex-wrap: wrap; }
+.ev-source {
+  display: inline-flex; flex-direction: column; gap: 2px;
+  padding: 7px 13px;
+  background: var(--surface); border: 1px dashed var(--line-strong); border-radius: var(--r-pill);
+  cursor: pointer; text-align: left;
+  transition: border-color 0.2s var(--ease), color 0.2s var(--ease);
+}
+.ev-source:hover { border-color: var(--accent); }
+.ev-source.is-active { border-style: solid; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.ev-source .ev-run__name { color: var(--ink); }
+
 .ev-splits { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r-pill); overflow: hidden; }
+.ev-splits[hidden] { display: none; }
 .ev-split { padding: 7px 16px; background: var(--surface); border: 0; border-left: 1px solid var(--line); font-family: var(--mono); font-size: 12.5px; color: var(--ink-dim); cursor: pointer; }
 .ev-split:first-child { border-left: 0; }
 .ev-split.is-active { background: var(--accent); color: #fff; }

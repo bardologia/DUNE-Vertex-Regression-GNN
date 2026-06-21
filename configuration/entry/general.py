@@ -35,6 +35,13 @@ class TrainEntryConfig:
 
 
 @dataclass
+class DatasetExplorerEntryConfig:
+    kind      : str           = "raw"
+    cache_dir : Path          = field(default_factory=lambda: PROJECT_ROOT / "data_frames" / "event_explorer")
+    dataset   : DatasetConfig = field(default_factory=DatasetConfig)
+
+
+@dataclass
 class InferenceEntryConfig:
     run_directory : Path  = field(default_factory=lambda: PROJECT_ROOT / "runs")
     device        : str   = "cuda" if torch.cuda.is_available() else "cpu"

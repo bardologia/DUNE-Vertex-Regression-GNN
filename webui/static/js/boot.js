@@ -81,8 +81,10 @@ class Application {
     this.tensorboardView = new window.TensorboardView();
 
     this.eventExplorerPanel = new window.EventExplorerPanel({
+      sources: document.getElementById("ev-sources"),
       runs: document.getElementById("ev-runs"),
       splits: document.getElementById("ev-splits"),
+      legendPred: document.getElementById("ev-legend-pred"),
       hint: document.getElementById("ev-hint"),
       progress: document.getElementById("ev-progress"),
       progressFill: document.getElementById("ev-progress-fill"),

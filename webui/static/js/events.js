@@ -125,11 +125,11 @@ class EventViewer {
     return [a[0] + (b[0] - a[0]) * frac, a[1] + (b[1] - a[1]) * frac, a[2] + (b[2] - a[2]) * frac];
   }
 
-  setEvent(detail) {
+  setEvent(detail, hasPrediction) {
     const positions = detail.sensors.positions;
     const light = detail.sensors.light;
     const gt = detail.gt;
-    const pred = detail.pred;
+    const pred = hasPrediction ? detail.pred : null;
 
     const min = [Infinity, Infinity, Infinity];
     const max = [-Infinity, -Infinity, -Infinity];
@@ -141,7 +141,7 @@ class EventViewer {
     };
     positions.forEach(include);
     include(gt);
-    include(pred);
+    if (hasPrediction) include(pred);
     if (!positions.length) { include([0, 0, 0]); }
 
     const center = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];
@@ -185,15 +185,20 @@ class EventViewer {
     this.gtMarker.position.set(gt[0], gt[1], gt[2]);
     this.gtMarker.visible = true;
 
-    this.predMarker.scale.setScalar(markerRadius);
-    this.predMarker.position.set(pred[0], pred[1], pred[2]);
-    this.predMarker.visible = true;
+    if (hasPrediction) {
+      this.predMarker.scale.setScalar(markerRadius);
+      this.predMarker.position.set(pred[0], pred[1], pred[2]);
+      this.predMarker.visible = true;
 
-    const linePositions = this.errorLine.geometry.getAttribute("position");
-    linePositions.setXYZ(0, gt[0], gt[1], gt[2]);
-    linePositions.setXYZ(1, pred[0], pred[1], pred[2]);
-    linePositions.needsUpdate = true;
-    this.errorLine.visible = true;
+      const linePositions = this.errorLine.geometry.getAttribute("position");
+      linePositions.setXYZ(0, gt[0], gt[1], gt[2]);
+      linePositions.setXYZ(1, pred[0], pred[1], pred[2]);
+      linePositions.needsUpdate = true;
+      this.errorLine.visible = true;
+    } else {
+      this.predMarker.visible = false;
+      this.errorLine.visible = false;
+    }
 
     this._buildBox(min, max);
   }
@@ -248,9 +253,12 @@ class EventViewer {
 class EventExplorerPanel {
   constructor(refs) {
     this.refs = refs;
+    this.datasets = [];
     this.runs = [];
-    this.currentRun = null;
+    this.currentKind = null;
+    this.currentName = null;
     this.currentSplit = "test";
+    this.hasPrediction = false;
     this.meta = null;
     this.gt = [];
     this.error = [];
@@ -273,7 +281,7 @@ class EventExplorerPanel {
 
     if (!this.entered) {
       this.entered = true;
-      await this._loadRuns();
+      await this._loadSources();
     }
   }
 
@@ -281,24 +289,33 @@ class EventExplorerPanel {
     if (this.viewer) this.viewer.stop();
   }
 
-  async _loadRuns() {
-    const data = await window.apiGet("/api/events/runs");
+  async _loadSources() {
+    const data = await window.apiGet("/api/events/sources");
+    this.datasets = (data && data.datasets) || [];
     this.runs = (data && data.runs) || [];
-    this._renderRuns();
-
-    if (!this.runs.length) {
-      this.refs.hint.hidden = false;
-      this.refs.hint.textContent = "No runs with a saved checkpoint under runs/. Train a model first.";
-      this.refs.stage.hidden = true;
-    }
+    this._renderSources();
   }
 
-  _renderRuns() {
-    this.refs.runs.innerHTML = "";
-    this.runs.forEach((run) => {
+  _renderSources() {
+    this.refs.sources.innerHTML = "";
+    this.datasets.forEach((dataset) => {
+      const isActive = this.currentKind === "dataset" && this.currentName === dataset.name;
       const pill = document.createElement("button");
       pill.type = "button";
-      pill.className = "ev-run" + (run.run === this.currentRun ? " is-active" : "");
+      pill.className = "ev-source" + (isActive ? " is-active" : "");
+      pill.innerHTML =
+        `<span class="ev-run__name">${window.escapeHtml(dataset.label)}</span>` +
+        `<span class="ev-run__model">${dataset.cached ? "cached" : "build on open"}</span>`;
+      pill.addEventListener("click", () => this._selectDataset(dataset.name));
+      this.refs.sources.appendChild(pill);
+    });
+
+    this.refs.runs.innerHTML = "";
+    this.runs.forEach((run) => {
+      const isActive = this.currentKind === "run" && this.currentName === run.run;
+      const pill = document.createElement("button");
+      pill.type = "button";
+      pill.className = "ev-run" + (isActive ? " is-active" : "");
       pill.innerHTML =
         `<span class="ev-run__name">${window.escapeHtml(run.run)}</span>` +
         `<span class="ev-run__model">${window.escapeHtml(run.model)}</span>`;
@@ -307,31 +324,44 @@ class EventExplorerPanel {
     });
   }
 
+  _selectDataset(name) {
+    if (this.polling) { window.toast("A source is still loading.", "warn"); return; }
+    this.currentKind = "dataset";
+    this.currentName = name;
+    this.currentSplit = "all";
+    this.refs.splits.hidden = true;
+    this._renderSources();
+    this._load();
+  }
+
   _selectRun(run) {
-    if (this.polling) { window.toast("A split is still loading.", "warn"); return; }
-    this.currentRun = run;
-    this._renderRuns();
+    if (this.polling) { window.toast("A source is still loading.", "warn"); return; }
+    this.currentKind = "run";
+    this.currentName = run;
+    if (this.currentSplit === "all") this.currentSplit = "test";
+    this.refs.splits.hidden = false;
+    this._renderSources();
     this._load();
   }
 
   _setSplit(split) {
-    if (split === this.currentSplit) return;
+    if (this.currentKind !== "run" || split === this.currentSplit) return;
     this.currentSplit = split;
     this.refs.splits.querySelectorAll(".ev-split").forEach((button) => {
       button.classList.toggle("is-active", button.dataset.split === split);
     });
-    if (this.currentRun && !this.polling) this._load();
+    if (!this.polling) this._load();
   }
 
   async _load() {
-    if (!this.currentRun) return;
+    if (!this.currentName) return;
 
     this.refs.stage.hidden = true;
     this.refs.hint.hidden = true;
     this.refs.progress.hidden = false;
     this._setProgress("requesting load");
 
-    const result = await window.apiPost("/api/events/load", { run: this.currentRun, split: this.currentSplit });
+    const result = await window.apiPost("/api/events/load", { kind: this.currentKind, name: this.currentName, split: this.currentSplit });
     if (!result.ok) {
       this.refs.progress.hidden = true;
       this.refs.hint.hidden = false;
@@ -348,7 +378,8 @@ class EventExplorerPanel {
 
   async _poll() {
     this.polling = true;
-    const run = this.currentRun;
+    const kind = this.currentKind;
+    const name = this.currentName;
     const split = this.currentSplit;
 
     while (true) {
@@ -360,7 +391,7 @@ class EventExplorerPanel {
         break;
       }
 
-      if (status.run !== run || status.split !== split) {
+      if (status.kind !== kind || status.name !== name || status.split !== split) {
         this.refs.progress.hidden = true;
         break;
       }
@@ -373,7 +404,7 @@ class EventExplorerPanel {
 
       if (status.state === "ready") {
         this.refs.progress.hidden = true;
-        await this._fetchList(run, split);
+        await this._fetchList(kind, name, split);
         break;
       }
 
@@ -390,14 +421,16 @@ class EventExplorerPanel {
     this.refs.hint.textContent = message;
   }
 
-  async _fetchList(run, split) {
-    const data = await window.apiGet(`/api/events/list?run=${encodeURIComponent(run)}&split=${encodeURIComponent(split)}`);
+  async _fetchList(kind, name, split) {
+    const data = await window.apiGet(`/api/events/list?kind=${encodeURIComponent(kind)}&name=${encodeURIComponent(name)}&split=${encodeURIComponent(split)}`);
     if (!data || !data.ok) { this._failLoad((data && data.error) || "Could not read events."); return; }
 
     this.meta = data.meta;
     this.gt = data.gt;
-    this.error = data.error;
+    this.error = data.error || [];
     this.nActive = data.n_active;
+    this.hasPrediction = !!data.has_prediction;
+    if (this.refs.legendPred) this.refs.legendPred.hidden = !this.hasPrediction;
 
     this.refs.stage.hidden = false;
     this._buildSliders();
@@ -488,13 +521,14 @@ class EventExplorerPanel {
   }
 
   async _fetchDetail(index) {
-    const run = this.currentRun;
+    const kind = this.currentKind;
+    const name = this.currentName;
     const split = this.currentSplit;
-    const data = await window.apiGet(`/api/events/detail?run=${encodeURIComponent(run)}&split=${encodeURIComponent(split)}&index=${index}`);
+    const data = await window.apiGet(`/api/events/detail?kind=${encodeURIComponent(kind)}&name=${encodeURIComponent(name)}&split=${encodeURIComponent(split)}&index=${index}`);
     if (!data || !data.ok) return;
-    if (run !== this.currentRun || split !== this.currentSplit) return;
+    if (kind !== this.currentKind || name !== this.currentName || split !== this.currentSplit) return;
 
-    if (this.viewer) this.viewer.setEvent(data);
+    if (this.viewer) this.viewer.setEvent(data, data.has_prediction);
     this._renderStats(data);
   }
 
@@ -502,24 +536,36 @@ class EventExplorerPanel {
     const vector = (point) => `<span class="ev-vec">${point.map((value) => this._fmt(value)).join(" &middot; ")}</span>`;
     const octant = detail.signs.map((sign) => (sign < 0 ? "−" : "+")).join("");
 
-    const rows = [
-      ["true vertex (x y z)", vector(detail.gt)],
-      ["prediction (x y z)", vector(detail.pred)],
-      ["abs error (x y z)", vector(detail.error_xyz)],
-      ["3D error", `<span class="ev-strong">${this._fmt(detail.error)} cm</span>`],
-      ["error percentile", `${(detail.error_rank * 100).toFixed(1)} % of split below`],
-      ["active sensors", String(detail.n_active)],
-      ["total light", this._fmt(detail.total_light)],
-      ["base event id", String(detail.base_event_id)],
-      ["octant", octant],
-      ["split error mean / median", `${this._fmt(this.meta.error_mean)} / ${this._fmt(this.meta.error_median)} cm`],
-    ];
+    let rows;
+    if (detail.has_prediction) {
+      rows = [
+        ["true vertex (x y z)", vector(detail.gt)],
+        ["prediction (x y z)", vector(detail.pred)],
+        ["abs error (x y z)", vector(detail.error_xyz)],
+        ["3D error", `<span class="ev-strong">${this._fmt(detail.error)} cm</span>`],
+        ["error percentile", `${(detail.error_rank * 100).toFixed(1)} % of split below`],
+        ["active sensors", String(detail.n_active)],
+        ["total light", this._fmt(detail.total_light)],
+        ["base event id", String(detail.base_event_id)],
+        ["octant", octant],
+        ["split error mean / median", `${this._fmt(this.meta.error_mean)} / ${this._fmt(this.meta.error_median)} cm`],
+      ];
+    } else {
+      rows = [
+        ["true vertex (x y z)", vector(detail.gt)],
+        ["active sensors", String(detail.n_active)],
+        ["total light", this._fmt(detail.total_light)],
+        ["base event id", String(detail.base_event_id)],
+        ["octant", octant],
+      ];
+    }
 
     this.refs.stats.innerHTML = rows
       .map(([key, value]) => `<tr><th>${window.escapeHtml(key)}</th><td>${value}</td></tr>`)
       .join("");
 
-    this.refs.readout.textContent = `event ${detail.index + 1} / ${this.meta.count} · ${this.currentRun} · ${this.currentSplit}`;
+    const label = this.currentKind === "dataset" ? this.currentName : `${this.currentName} · ${this.currentSplit}`;
+    this.refs.readout.textContent = `event ${detail.index + 1} / ${this.meta.count} · ${label}`;
   }
 
   _fmt(value) {
