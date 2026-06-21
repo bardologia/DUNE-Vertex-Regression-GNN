@@ -8,11 +8,10 @@
 
 <br>
 
-![Python](https://img.shields.io/badge/python-≥3.10-3776AB?logo=python&logoColor=white)
+![Python](https://img.shields.io/badge/python-≥3.11-3776AB?logo=python&logoColor=white)
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.x-EE4C2C?logo=pytorch&logoColor=white)
 ![PyG](https://img.shields.io/badge/PyTorch_Geometric-graph_learning-3C2179)
 ![Optuna](https://img.shields.io/badge/Optuna-hyperparameter_search-0E4C92)
-![Ray](https://img.shields.io/badge/Ray-parallel_I%2FO-028CF0)
 ![Domain](https://img.shields.io/badge/domain-neutrino_physics-6A1B9A)
 
 </div>
@@ -45,7 +44,7 @@ $$
 
 that regresses the interaction vertex. The model is optimised by minimising the mean squared error between predictions and ground-truth vertices in a normalised coordinate space, while all reported performance metrics are expressed in physical units.
 
-Ground-truth coordinates are derived from the simulation file naming convention `pmod3_{x}_{y}_{z}_..._N.csv`, allowing the supervised target to be recovered directly from the dataset without an auxiliary label store.
+Ground-truth coordinates are derived from the simulation file naming convention `pmod3_{x}_{y}_{z}_..._N.csv`, allowing the supervised target to be recovered directly from the dataset without an auxiliary label store. The parsed vertex is then mapped from the simulation frame into the sensor frame via a fixed `CoordinateTransform`, so that targets and sensor positions share a single coordinate system.
 
 ---
 
@@ -60,7 +59,7 @@ The end-to-end pipeline is summarised as:
   preprocessing            outlier rejection · intensity scaling · detection-efficiency simulation · log(1+x)
         │
         ▼
-  graph construction       active-sensor pruning · k-nearest-neighbour graph · 7-D node features · 7-D edge features
+  graph construction       active-sensor pruning · k-nearest-neighbour graph · 17-D node features · 23-D edge features
         │
         ▼
   GPS backbone             stacked local (GATv2) + global (self-attention) layers with gated fusion
@@ -79,8 +78,8 @@ The end-to-end pipeline is summarised as:
 
 Each event is materialised as a PyTorch Geometric `Data` object on a $k$-nearest-neighbour topology over sensor positions. Only active sensors (positive realized light) enter the graph, with an optional cap on the brightest sensors, so a full 6912-channel detector collapses to roughly 250 nodes per event and a usable batch size becomes possible:
 
-- **Node features (7-dimensional):** sensor position, measured light intensity, the per-sensor light fraction, the distance to the light-weighted centroid of the event, and a measure of local light density.
-- **Edge features (7-dimensional):** Euclidean separation, normalised displacement vector, inverse-square distance, light gradient along the edge, and a Sørensen–Dice photometric similarity.
+- **Node features (17-dimensional at default settings):** sensor position, measured light intensity, the per-sensor light fraction, the distance to the light-weighted centroid of the event, a measure of local light density, the normalised direction to the centroid, and per-node inertia and light-rank descriptors. The exact dimensionality follows `BaseGNNConfig.input_dim` and the `GraphConfig` feature toggles (`direction_features`, `inertia_features`, `rank_features`).
+- **Edge features (23-dimensional at default settings):** Euclidean separation, normalised displacement vector, inverse-square distance, light gradient along the edge, a Sørensen–Dice photometric similarity, and a 16-bin radial-basis expansion of the edge distance (`GraphConfig.edge_rbf_count`). The exact dimensionality follows `BaseGNNConfig.edge_dim`.
 
 This explicitly injects the detector geometry and the photometric structure of the flash into the learned representation.
 
@@ -111,23 +110,44 @@ Training uses **AdamW** with three discriminative parameter groups (regression h
 
 ```
 DUNE-GNN/
-├── main/
-│   ├── create_dataset.py     # build the preprocessed graph dataset from raw CSVs
-│   ├── train.py              # training entry point (logs + checkpoints → runs/)
-│   └── tune.py               # Optuna hyperparameter search
-├── core/
-│   ├── config.py             # nested dataclass configuration (GlobalConfig)
-│   ├── data.py               # CSV discovery, label extraction, Ray-parallel I/O
-│   ├── dataset.py            # PyG dataset, normalisation (train-split statistics only)
-│   ├── model.py              # GPS backbone, multi-scale pooling, hierarchical head
-│   ├── trainer.py            # training loop, scheduling, AMP, EMA, metrics
-│   ├── tuner.py              # Optuna TPE + MedianPruner search space
-│   ├── runtime.py            # runtime / device orchestration
-│   └── logger.py             # centralised rich-based structured logging
-├── notebooks/                # pipeline inspection and sensitivity analyses
-├── agents/                   # project engineering conventions and contracts
+├── main/                     # thin entry points (config → pipeline); only place that touches sys.path
+│   ├── build_parquet_store.py  # build the geometry-once parquet store from raw CSVs
+│   ├── train.py                # training entry point (logs + checkpoints → runs/)
+│   ├── infer.py                # inference / evaluation on a trained checkpoint
+│   ├── cross_validate.py       # k-fold cross-validation
+│   ├── tune.py                 # Optuna hyperparameter search
+│   ├── benchmark.py            # throughput / batch-size benchmarking
+│   ├── export_events.py        # export raw/preprocessed events
+│   ├── export_dataset_events.py
+│   └── _bootstrap.py           # environment pinning (GPU, sys.path)
+├── configuration/            # nested dataclass configuration, composed into per-entry configs
+│   ├── data/                   # DataConfig, GraphConfig, PhysicsConfig, SplitConfig, HotChannelConfig
+│   ├── architectures/          # per-model config dataclasses + MODEL_CONFIG_REGISTRY (zoo)
+│   ├── training/               # TrainingLoopConfig, OptimizerConfig, SchedulerConfig, LossConfig, ...
+│   ├── tuning/                 # TuningConfig (Optuna search budget)
+│   ├── cross_validation/       # cross-validation config
+│   ├── benchmark/              # benchmark config
+│   └── entry/                  # TrainEntryConfig, InferEntryConfig, TuneEntryConfig, ...
+├── models/                   # GraphRegressor, shared blocks, GPS backbone + the conv zoo
+├── pipelines/                # the actual logic
+│   ├── dataset/                # parquet store, PyG dataset, normalisation (train-split stats only), graph build, augmentation
+│   ├── training/               # training loop, loss, pipeline orchestration
+│   ├── inference/              # predictor, metrics, plots, animations, reporting
+│   ├── cross_validation/       # k-fold orchestration
+│   ├── tuning/                 # Optuna TPE + MedianPruner search
+│   ├── benchmark/              # benchmark stages, sizing, batch probe
+│   └── shared/                 # run metadata / run paths
+├── tools/                    # reusable components (Logger, monitors, training utilities, runtime/config CLI)
+│   ├── monitoring/             # logger, resource monitor, tracker, inspection
+│   ├── training/               # scheduling, checkpoint, gradients, early stopping
+│   ├── reporting/              # markdown reporting
+│   └── runtime/                # ConfigCli, reproducibility
+├── webui/                    # local web UI for launching/monitoring runs and browsing results
+├── tests/                    # pytest suite (driven by the Dune conda env)
 ├── data/                     # raw simulated events (pmod3_*.csv)
-└── requirements.txt
+├── data_frames/              # generated parquet store (gitignored)
+├── runs/                     # training/inference run outputs (gitignored)
+└── pyproject.toml
 ```
 
 ---
@@ -138,53 +158,68 @@ DUNE-GNN/
 pip install -r requirements.txt
 ```
 
-**Requirements.** Python ≥ 3.10 and a CUDA-capable GPU (recommended). Core dependencies include PyTorch, PyTorch Geometric, scikit-learn, NumPy/SciPy/pandas, Ray (parallel file ingestion), Optuna (hyperparameter optimisation), TensorBoard, and `rich`.
+**Requirements.** Python ≥ 3.11 and a CUDA-capable GPU (recommended). Core dependencies (pinned in `pyproject.toml`) include PyTorch, PyTorch Geometric, scikit-learn, NumPy/SciPy/pandas, PyArrow, Optuna (hyperparameter optimisation), TensorBoard, and `rich`. Raw-CSV ingestion is parallelised with the standard-library `ProcessPoolExecutor` (worker count via `DataConfig.store_worker_count`).
 
 ---
 
 ## 6. Usage
 
 ```bash
-# 1. Build the preprocessed graph dataset from the raw CSV events
-python main/create_dataset.py
+# 1. Build the geometry-once parquet store from the raw CSV events
+python main/build_parquet_store.py
 
 # 2. Train the model (checkpoints and logs are written under runs/)
 python main/train.py
 
-# 3. Run a hyperparameter search with Optuna
+# 3. Run inference / evaluation on a trained checkpoint
+python main/infer.py
+
+# 4. Run k-fold cross-validation
+python main/cross_validate.py
+
+# 5. Run a hyperparameter search with Optuna
 python main/tune.py
 
-# 4. Monitor training in real time
+# 6. Monitor training in real time
 tensorboard --logdir=runs/
+```
+
+Every entry point wraps its configuration in a `ConfigCli`, so any nested config field can be overridden from the command line without editing source — for example:
+
+```bash
+python main/train.py --model_name gps --training.loop.epochs 50 --training.loop.batch_size 32
+python main/tune.py   --model_name pna --tuning.n_trials 50
 ```
 
 ---
 
 ## 7. Configuration
 
-The project is **entirely configuration-driven**: there are no command-line flags. All hyperparameters are declared as nested `dataclass` objects under `GlobalConfig` in `core/config.py` and are edited directly prior to a run. The principal groups are:
+The project is **configuration-driven**: every hyperparameter is declared as a field on a nested `dataclass` under `configuration/`, composed into a per-entry config (`TrainEntryConfig`, `InferenceEntryConfig`, `TuneEntryConfig`, `CrossValidationEntryConfig`, ...) in `configuration/entry/general.py`. Defaults can be edited in source, but each entry point also exposes the full nested tree through a `ConfigCli`, so any leaf can be overridden from the command line as `--<dotted.path> <value>` (run any entry with `--help-config` to list every overridable leaf). The principal groups are:
 
-| Group | Representative fields |
+| Group (module) | Representative fields |
 |---|---|
-| `DataConfig` | `input_dir`, `max_files` |
-| `GraphConfig` | `k_neighbors`, `bidirectional` |
-| `PreprocessingConfig` | `zscore_threshold`, `scale_factor`, `detection_efficiency` |
-| `ModelConfig` | `gps_hidden_dim`, `gps_num_layers`, `gps_heads` |
-| `TrainingConfig` | `epochs`, `batch_size`, `use_amp` |
-| `EarlyStoppingConfig` | `patience` |
-| `TuningConfig` | `n_trials` |
+| `DataConfig` (`configuration/data`) | `raw_input_dir`, `parquet_store_dir`, `augment_octants`, `subset_fraction`, `stats_sample_size` |
+| `GraphConfig` (`configuration/data`) | `k_neighbors`, `bidirectional`, `edge_rbf_count`, `direction_features` |
+| `PhysicsConfig` (`configuration/data`) | `scale_factor`, `detection_efficiency`, `efficiency_seed` |
+| `HotChannelConfig` (`configuration/data`) | `active_fraction`, `median_factor`, `neighbor_count` |
+| Model config (`configuration/architectures`, per model in `MODEL_CONFIG_REGISTRY`) | `hidden_dim`, `num_layers`, `heads`, `pooling`, `head_type` |
+| `TrainingLoopConfig` (`configuration/training`) | `epochs`, `batch_size`, `use_amp`, `gradient_accumulation_steps` |
+| `OptimizerConfig` / `SchedulerConfig` / `WarmupConfig` | discriminative learning rates, `eta_min`, warmup schedule |
+| `EarlyStoppingConfig` | `patience`, `min_delta`, `restore_best` |
+| `TuningConfig` (`configuration/tuning`) | `n_trials`, `startup_trials`, `warmup_trials` |
 
-Hyperparameter search (`core/tuner.py`) employs the Optuna **Tree-structured Parzen Estimator** with a **median pruner**, exploring a large joint space spanning model, optimiser, and training configuration.
+Hyperparameter search (`pipelines/tuning/tuner.py`) employs the Optuna **Tree-structured Parzen Estimator** with a **median pruner**, exploring a joint space spanning model, optimiser, and training configuration. The best trial is written to `<tuner_dir>/<model>/best_trial.json`.
 
 ---
 
 ## 8. Engineering Principles
 
-This repository adheres to a strict, contractually-enforced engineering standard (see `agents/general_rules.md`), reflecting the reproducibility requirements of scientific software:
+This repository adheres to a strict engineering standard, reflecting the reproducibility requirements of scientific software:
 
-- **Class-based, single-responsibility design** throughout the core library.
+- **Class-based, single-responsibility design** throughout the library, with each process orchestrated by a scheduler method that sequences its steps.
 - **Fully spelled, semantically descriptive identifiers** — abbreviations are prohibited except for standard mathematical symbols in self-contained formulae.
-- **Centralised structured logging** via `core/logger.py`, with `rich` instrumentation mandatory for every long-running loop.
+- **Centralised structured logging** via `tools/monitoring/logger.py`, with `rich` instrumentation mandatory for every long-running loop.
 - **Train-split-only normalisation statistics**, eliminating information leakage between data splits.
 - An **academic, formal, and impersonal** tone across all code artefacts and documentation.
 
