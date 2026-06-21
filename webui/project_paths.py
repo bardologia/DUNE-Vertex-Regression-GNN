@@ -48,7 +48,8 @@ class ProjectPaths:
         self.static_dir = self.webui_root / "static"
         self.runs_dir   = self.repo_root / "runs"
         self.logs_dir   = self.repo_root / "logs"
-        self.webui_logs_dir = self.logs_dir / "webui"
+        self.webui_logs_dir      = self.logs_dir / "webui"
+        self.explorer_cache_dir  = self.repo_root / "data_frames" / "event_explorer"
 
     def script_keys(self) -> list[str]:
         return list(self.SCRIPTS.keys())

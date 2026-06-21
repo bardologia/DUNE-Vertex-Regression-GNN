@@ -81,6 +81,7 @@ class EventExportPipeline:
         sensor_light     = np.concatenate(light_chunks,    axis=0) if light_chunks    else np.zeros((0,),    dtype=np.float32)
 
         return {
+            "has_prediction"   : np.array(True),
             "gt"               : targets,
             "pred"             : predictions,
             "error"            : error,

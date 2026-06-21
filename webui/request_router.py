@@ -90,15 +90,15 @@ class RequestRouter:
         if path == "/api/tensorboard":
             self._send_json(handler, {"instances": self.tensorboard.list_instances()})
             return
-        if path == "/api/events/runs":
-            self._send_json(handler, self.events.list_runs())
+        if path == "/api/events/sources":
+            self._send_json(handler, self.events.list_sources())
             return
         if path == "/api/events/status":
             self._send_json(handler, self.events.load_status())
             return
         if path == "/api/events/list":
-            query = parse_qs(urlparse(handler.path).query)
-            result = self.events.events((query.get("run") or [""])[0], (query.get("split") or [""])[0])
+            query  = parse_qs(urlparse(handler.path).query)
+            result = self.events.events((query.get("kind") or [""])[0], (query.get("name") or [""])[0], (query.get("split") or [""])[0])
             self._send_json(handler, result, 200 if result.get("ok") else 400)
             return
         if path == "/api/events/detail":
@@ -107,7 +107,7 @@ class RequestRouter:
                 index = int((query.get("index") or ["-1"])[0])
             except ValueError:
                 index = -1
-            result = self.events.detail((query.get("run") or [""])[0], (query.get("split") or [""])[0], index)
+            result = self.events.detail((query.get("kind") or [""])[0], (query.get("name") or [""])[0], (query.get("split") or [""])[0], index)
             self._send_json(handler, result, 200 if result.get("ok") else 400)
             return
 
@@ -160,7 +160,7 @@ class RequestRouter:
             return
 
         if path == "/api/events/load":
-            result = self.events.start_load(body.get("run", ""), body.get("split", "test"))
+            result = self.events.start_load(body.get("kind", "run"), body.get("name", ""), body.get("split", "test"))
             self._send_json(handler, result, 200 if result.get("ok") else 400)
             return
 

@@ -113,15 +113,16 @@
     </div>
 
     <div class="ev-bar">
+      <div class="ev-sources" id="ev-sources" aria-label="Dataset"></div>
       <div class="ev-runs" id="ev-runs" aria-label="Runs"></div>
-      <div class="ev-splits" id="ev-splits" role="tablist" aria-label="Split">
+      <div class="ev-splits" id="ev-splits" role="tablist" aria-label="Split" hidden>
         <button class="ev-split is-active" data-split="test" role="tab">test</button>
         <button class="ev-split" data-split="val" role="tab">val</button>
         <button class="ev-split" data-split="train" role="tab">train</button>
       </div>
     </div>
 
-    <div class="ev-hint" id="ev-hint">Select a run to load its events.</div>
+    <div class="ev-hint" id="ev-hint">Pick raw events, the octant-augmented set, or a run to load.</div>
 
     <div class="ev-progress" id="ev-progress" hidden>
       <div class="ev-progress__bar"><span class="ev-progress__fill" id="ev-progress-fill"></span></div>
@@ -134,7 +135,7 @@
         <div class="ev-legend">
           <span class="ev-key"><i class="ev-dot ev-dot--sensor"></i>active sensor</span>
           <span class="ev-key"><i class="ev-dot ev-dot--gt"></i>true vertex</span>
-          <span class="ev-key"><i class="ev-dot ev-dot--pred"></i>prediction</span>
+          <span class="ev-key" id="ev-legend-pred"><i class="ev-dot ev-dot--pred"></i>prediction</span>
           <span class="ev-key ev-key--hint">drag to rotate &middot; scroll to zoom</span>
         </div>
         <div class="ev-readout" id="ev-readout"></div>
