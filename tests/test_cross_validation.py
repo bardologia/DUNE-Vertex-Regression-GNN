@@ -127,3 +127,31 @@ def test_pipeline_runs_two_folds(dataset_config, quiet_logger):
         assert "euclidean_mean" in summary["aggregate"]
         assert Path(summary["report_path"]).exists()
         assert Path(summary["metrics_path"]).exists()
+
+
+def test_pna_pipeline_injects_degree_histogram_per_fold(dataset_config, quiet_logger):
+    entry                  = CrossValidationEntryConfig(model_name="pna")
+    entry.dataset          = dataset_config
+    entry.dataset.data.subset_fraction = 0.5
+    entry.dataset.data.stats_sample_size = 16
+
+    entry.cross_validation = CrossValidationConfig(n_folds=2, validation_fraction=0.2)
+
+    entry.training.loop.epochs               = 1
+    entry.training.loop.batch_size           = 8
+    entry.training.loop.num_workers          = 0
+    entry.training.loop.use_amp              = False
+    entry.training.loop.pin_memory           = False
+    entry.training.loop.persistent_workers   = False
+    entry.training.loop.device               = "cpu"
+    entry.training.loop.validation_frequency = 1
+
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        entry.training.io.log_base_dir = Path(temporary_directory)
+        summary = CrossValidationPipeline(entry, logger=quiet_logger).run()
+
+        assert len(summary["folds"]) == 2
+        assert entry.model_overrides.get("degree_histogram")
