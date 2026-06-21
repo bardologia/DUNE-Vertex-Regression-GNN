@@ -9,7 +9,32 @@ class LaunchPanel {
     this.values = new Map();
     this.bools = new Set();
     this.currentKey = null;
+    this.runs = [];
+    this.models = [];
+    this.dynamicLoaded = false;
   }
+
+  static FIELD_SPEC = {
+    run_directory      : { kind: "runpick" },
+    model_name         : { kind: "model" },
+    device             : { kind: "segmented", options: ["cuda", "cpu"] },
+    splits             : { kind: "multi", options: ["train", "val", "test"] },
+    data_term          : { kind: "segmented", options: ["mse", "huber"] },
+    type               : { kind: "segmented", options: ["cosine_annealing", "constant"] },
+    warmup_mode        : { kind: "select", options: ["linear", "cosine", "exponential", "polynomial"] },
+    clip_mode          : { kind: "select", options: ["fixed", "adaptive_percentile", "adaptive_mean_std", "disabled"] },
+    light_noise_mode   : { kind: "segmented", options: ["multiplicative", "additive"] },
+
+    batch_size         : { presets: [8, 16, 32, 64, 128, 256] },
+    epochs             : { presets: [25, 50, 100, 200, 300] },
+    k_neighbors        : { presets: [4, 8, 16, 32] },
+    num_workers        : { presets: [0, 2, 4, 8] },
+    seed               : { presets: [0, 42, 1234] },
+    patience           : { presets: [5, 10, 15, 25] },
+    edge_rbf_count     : { presets: [8, 16, 32] },
+    worker_count       : { presets: [4, 8, 10, 16] },
+    store_worker_count : { presets: [4, 8, 10, 16] },
+  };
 
   async enter(key) {
     if (!key) { window.router.go("scripts"); return; }
@@ -25,12 +50,19 @@ class LaunchPanel {
     this.refs.config.innerHTML = `<div class="launch-skeleton"><div class="launch-skeleton__panel"></div><div class="launch-skeleton__panel"></div></div>`;
     this.refs.rail.innerHTML = "";
 
+    const schemaPromise = script.has_config
+      ? window.apiGet(`/api/scripts/${key}/config`)
+      : Promise.resolve({ ok: true, leaves: [] });
+
+    await this._loadDynamic();
+    if (this.currentKey !== key) return;
+
     if (!script.has_config) {
       this._setup([]);
       return;
     }
 
-    const schema = await window.apiGet(`/api/scripts/${key}/config`);
+    const schema = await schemaPromise;
     if (this.currentKey !== key) return;
     if (!schema.ok) {
       this.refs.config.innerHTML = `<div class="launch-error"><p class="launch-error__text">${window.escapeHtml(schema.error || "configuration could not be resolved")}</p></div>`;
@@ -47,6 +79,26 @@ class LaunchPanel {
       if (window.scriptCatalog && window.scriptCatalog.loaded) return;
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
+  }
+
+  async _loadDynamic() {
+    if (this.dynamicLoaded) return;
+    const [runs, models] = await Promise.all([
+      window.apiGet("/api/runs").catch(() => ({})),
+      window.apiGet("/api/models").catch(() => ({})),
+    ]);
+    this.runs = (runs.runs || []).map((run) => ({ ...run, ready: this._runReady(run) }));
+    this.models = (models.models || []).map((model) => model.name);
+    this.dynamicLoaded = true;
+  }
+
+  _runReady(run) {
+    if (run.best_metric) return true;
+    const hasCheckpoint = (node) => {
+      if ((node.files || []).some((file) => /\.pt$/i.test(file.name))) return true;
+      return (node.children || []).some(hasCheckpoint);
+    };
+    return run.tree ? hasCheckpoint(run.tree) : false;
   }
 
   _renderHeader(script) {
@@ -72,8 +124,30 @@ class LaunchPanel {
       if (isBool) this.bools.add(leaf.path);
     });
 
+    this._autoSelectRun();
     this._renderConfig();
     this._renderRail();
+  }
+
+  _autoSelectRun() {
+    const runLeaf = this.leaves.find((leaf) => this._spec(leaf).kind === "runpick");
+    if (!runLeaf) return;
+    const candidate = this.runs.find((run) => run.ready) || this.runs[0];
+    if (candidate) this.values.set(runLeaf.path, candidate.path);
+  }
+
+  _spec(leaf) {
+    const name = this._leafName(leaf);
+    const override = LaunchPanel.FIELD_SPEC[name] || {};
+    let kind = override.kind;
+    if (!kind) {
+      if (leaf.type === "bool") kind = "toggle";
+      else if (leaf.type === "int") kind = "int";
+      else if (leaf.type === "float") kind = "float";
+      else if (leaf.type === "PosixPath" || leaf.type === "Path") kind = "path";
+      else kind = "text";
+    }
+    return { ...override, kind };
   }
 
   _groups() {
@@ -130,9 +204,8 @@ class LaunchPanel {
         return `<div class="band-subgroup">${heading}<div class="band-fields">${fields}</div></div>`;
       }).join("");
 
-      const open = " is-open";
       return (
-        `<section class="launch-band${open}" data-section="${window.escapeHtml(section)}">` +
+        `<section class="launch-band is-open" data-section="${window.escapeHtml(section)}">` +
         `<header class="band-head"><i class="band-head__chev" aria-hidden="true"></i>` +
         `<h3 class="band-head__name">${window.escapeHtml(this._humanize(section))}</h3>` +
         `<span class="band-head__count">${leaves.length} field${leaves.length === 1 ? "" : "s"}</span></header>` +
@@ -142,54 +215,216 @@ class LaunchPanel {
     }).join("");
 
     this.refs.config.innerHTML = `<div class="launch-bands">${bands}</div>`;
-
-    this.refs.config.querySelectorAll(".band-head").forEach((head) => {
-      head.addEventListener("click", () => head.parentElement.classList.toggle("is-open"));
-    });
-    this.refs.config.querySelectorAll(".cfg-edit__input").forEach((input) => {
-      input.addEventListener("input", () => this._onInput(input));
-    });
-    this.refs.config.querySelectorAll(".switch").forEach((sw) => {
-      sw.addEventListener("click", () => this._onToggle(sw));
-    });
+    this._wireConfig();
   }
 
   _fieldHtml(leaf) {
     const path  = window.escapeHtml(leaf.path);
     const label = window.escapeHtml(this._leafName(leaf));
-    const name  = `${label}<span>${window.escapeHtml(leaf.type)}</span>`;
-    const disabled = leaf.editable ? "" : " disabled";
+    const spec  = this._spec(leaf);
+    const dirty = this.values.get(leaf.path) !== this.defaults.get(leaf.path);
+    const wide  = spec.kind === "runpick";
 
-    if (leaf.type === "bool") {
-      const on = this.values.get(leaf.path) === "true";
+    const cls   = `cfg-field${dirty ? " is-dirty" : ""}${wide ? " cfg-field--wide" : ""}`;
+    const name  = `<span class="cfg-field__name" title="${path}">${label}<span class="cfg-field__type">${window.escapeHtml(leaf.type)}</span></span>`;
+    const ctrl  = `<div class="cfg-field__ctrl">${this._controlHtml(leaf, spec)}</div>`;
+
+    return `<div class="${cls}" data-field="${path}">${name}${ctrl}</div>`;
+  }
+
+  _controlHtml(leaf, spec) {
+    const path     = window.escapeHtml(leaf.path);
+    const value    = this.values.get(leaf.path);
+    const editable = leaf.editable;
+    const disabled = editable ? "" : " disabled";
+
+    if (!editable) {
+      return `<input class="cfg-input" type="text" value="${window.escapeHtml(value)}" disabled />`;
+    }
+
+    if (spec.kind === "toggle") {
+      const on = value === "true";
+      return `<button type="button" class="switch${on ? " is-on" : ""}" data-toggle="${path}" aria-pressed="${on}"><span class="switch__knob"></span></button>`;
+    }
+
+    if (spec.kind === "segmented") {
+      const opts = spec.options.map((opt) =>
+        `<button type="button" class="cfg-seg__opt${String(opt) === value ? " is-active" : ""}" data-seg="${path}" data-value="${window.escapeHtml(opt)}">${window.escapeHtml(opt)}</button>`
+      ).join("");
+      return `<div class="cfg-seg" role="group">${opts}</div>`;
+    }
+
+    if (spec.kind === "select" || spec.kind === "model") {
+      const options = spec.kind === "model" ? this.models : spec.options;
+      const list = (options.length ? options : [value]).map((opt) =>
+        `<option value="${window.escapeHtml(opt)}"${String(opt) === value ? " selected" : ""}>${window.escapeHtml(opt)}</option>`
+      ).join("");
+      return `<div class="cfg-selectwrap"><select class="cfg-select" data-select="${path}">${list}</select></div>`;
+    }
+
+    if (spec.kind === "multi") {
+      const chosen = this._parseList(value);
+      const opts = spec.options.map((opt) =>
+        `<button type="button" class="cfg-multi__opt${chosen.includes(opt) ? " is-active" : ""}" data-multi="${path}" data-value="${window.escapeHtml(opt)}">${window.escapeHtml(opt)}</button>`
+      ).join("");
+      return `<div class="cfg-multi" role="group">${opts}</div>`;
+    }
+
+    if (spec.kind === "runpick") {
+      return this._runPickHtml(leaf);
+    }
+
+    if (spec.kind === "int" || spec.kind === "float") {
+      const step = spec.kind === "int" ? `step="1"` : `step="any"`;
+      const stepper = spec.kind === "int"
+        ? `<button type="button" class="cfg-num__step" data-step="${path}" data-delta="-1" aria-label="decrease">&minus;</button>`
+        : "";
+      const stepperUp = spec.kind === "int"
+        ? `<button type="button" class="cfg-num__step" data-step="${path}" data-delta="1" aria-label="increase">+</button>`
+        : "";
+      const presets = (spec.presets || []).length
+        ? `<div class="cfg-presets">${spec.presets.map((preset) =>
+            `<button type="button" class="cfg-preset${String(preset) === value ? " is-active" : ""}" data-preset="${path}" data-value="${preset}">${preset}</button>`
+          ).join("")}</div>`
+        : "";
       return (
-        `<div class="cfg-edit__row" title="${path}"><span class="cfg-edit__name">${name}</span>` +
-        `<button type="button" class="switch${on ? " is-on" : ""}" data-path="${path}"${disabled ? " disabled" : ""} aria-pressed="${on}"><span class="switch__knob"></span></button></div>`
+        `<div class="cfg-num">${stepper}` +
+        `<input class="cfg-num__input" type="number" ${step} data-num="${path}" value="${window.escapeHtml(value)}" />` +
+        `${stepperUp}</div>${presets}`
       );
     }
-    const value = window.escapeHtml(this.values.get(leaf.path));
-    return (
-      `<div class="cfg-edit__row" title="${path}"><span class="cfg-edit__name">${name}</span>` +
-      `<input class="cfg-edit__input" type="text" data-path="${path}" value="${value}"${disabled} /></div>`
-    );
+
+    return `<input class="cfg-input" type="text" data-text="${path}" value="${window.escapeHtml(value)}"${disabled} />`;
   }
 
-  _onInput(input) {
-    const path = input.dataset.path;
-    this.values.set(path, input.value);
-    input.classList.toggle("is-dirty", input.value !== this.defaults.get(path));
+  _runPickHtml(leaf) {
+    const path = window.escapeHtml(leaf.path);
+    const selected = this.values.get(leaf.path);
+
+    if (!this.runs.length) {
+      return `<div class="cfg-runs-empty">No runs found under <code>runs/</code>. Train a model first.</div>`;
+    }
+
+    const cards = this.runs.map((run) => {
+      const active = run.path === selected;
+      const metric = run.best_metric
+        ? `<span class="cfg-run__metric">${window.escapeHtml(String(run.best_metric.value))}${run.best_metric.unit ? " " + window.escapeHtml(run.best_metric.unit) : ""}</span>`
+        : `<span class="cfg-run__metric cfg-run__metric--none">${run.ready ? "ready" : "no checkpoint"}</span>`;
+      return (
+        `<button type="button" class="cfg-run${active ? " is-active" : ""}${run.ready ? "" : " is-stale"}" data-run="${path}" data-value="${window.escapeHtml(run.path)}">` +
+        `<span class="cfg-run__top"><span class="cfg-run__name">${window.escapeHtml(run.name)}</span>${metric}</span>` +
+        `<span class="cfg-run__meta"><span>${window.escapeHtml(run.model)}</span><span>${window.escapeHtml(run.timestamp.replace("T", " "))}</span></span>` +
+        `</button>`
+      );
+    }).join("");
+
+    return `<div class="cfg-runs">${cards}</div>`;
+  }
+
+  _parseList(value) {
+    try {
+      const parsed = JSON.parse(value.replace(/'/g, '"'));
+      return Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch (error) {
+      return value.split(",").map((token) => token.trim().replace(/['"\[\]]/g, "")).filter(Boolean);
+    }
+  }
+
+  _serializeList(items) {
+    return "[" + items.map((item) => `'${item}'`).join(", ") + "]";
+  }
+
+  _wireConfig() {
+    const root = this.refs.config;
+
+    root.querySelectorAll(".band-head").forEach((head) => {
+      head.addEventListener("click", () => head.parentElement.classList.toggle("is-open"));
+    });
+
+    root.addEventListener("click", (event) => {
+      const seg = event.target.closest("[data-seg]");
+      if (seg) { this._set(seg.dataset.seg, seg.dataset.value); return; }
+
+      const multi = event.target.closest("[data-multi]");
+      if (multi) { this._toggleMulti(multi.dataset.multi, multi.dataset.value); return; }
+
+      const run = event.target.closest("[data-run]");
+      if (run) { this._set(run.dataset.run, run.dataset.value); return; }
+
+      const preset = event.target.closest("[data-preset]");
+      if (preset) { this._set(preset.dataset.preset, preset.dataset.value); return; }
+
+      const step = event.target.closest("[data-step]");
+      if (step) { this._step(step.dataset.step, Number(step.dataset.delta)); return; }
+
+      const toggle = event.target.closest("[data-toggle]");
+      if (toggle) { this._toggleBool(toggle.dataset.toggle); return; }
+    });
+
+    root.addEventListener("input", (event) => {
+      const target = event.target;
+      if (target.dataset.num !== undefined) { this._set(target.dataset.num, target.value, true); return; }
+      if (target.dataset.text !== undefined) { this._set(target.dataset.text, target.value, true); return; }
+    });
+
+    root.addEventListener("change", (event) => {
+      const select = event.target.closest("[data-select]");
+      if (select) this._set(select.dataset.select, select.value);
+    });
+  }
+
+  _set(path, value, fromInput) {
+    this.values.set(path, String(value));
+    this._refreshField(path, fromInput);
     this._renderRail();
   }
 
-  _onToggle(sw) {
-    if (sw.disabled) return;
-    const path = sw.dataset.path;
+  _toggleBool(path) {
     const on = !(this.values.get(path) === "true");
     this.values.set(path, on ? "true" : "false");
-    sw.classList.toggle("is-on", on);
-    sw.setAttribute("aria-pressed", String(on));
-    sw.classList.toggle("is-dirty", (on ? "true" : "false") !== this.defaults.get(path));
+    this._refreshField(path, false);
     this._renderRail();
+  }
+
+  _toggleMulti(path, option) {
+    const items = this._parseList(this.values.get(path));
+    const index = items.indexOf(option);
+    if (index >= 0) items.splice(index, 1);
+    else items.push(option);
+    this.values.set(path, this._serializeList(items));
+    this._refreshField(path, false);
+    this._renderRail();
+  }
+
+  _step(path, delta) {
+    const current = Number(this.values.get(path));
+    const next = (Number.isFinite(current) ? current : 0) + delta;
+    this.values.set(path, String(next < 0 ? 0 : next));
+    this._refreshField(path, false);
+    this._renderRail();
+  }
+
+  _refreshField(path, fromInput) {
+    const leaf = this.leaves.find((item) => item.path === path);
+    if (!leaf) return;
+
+    const wrapper = this.refs.config.querySelector(`.cfg-field[data-field="${CSS.escape(path)}"]`);
+    if (!wrapper) return;
+
+    wrapper.classList.toggle("is-dirty", this.values.get(path) !== this.defaults.get(path));
+
+    const spec = this._spec(leaf);
+
+    if (spec.kind === "runpick") {
+      const value = this.values.get(path);
+      wrapper.querySelectorAll(".cfg-run").forEach((card) => card.classList.toggle("is-active", card.dataset.value === value));
+    } else if (!fromInput) {
+      const ctrl = wrapper.querySelector(".cfg-field__ctrl");
+      ctrl.innerHTML = this._controlHtml(leaf, spec);
+    } else {
+      const value = this.values.get(path);
+      wrapper.querySelectorAll(".cfg-preset").forEach((chip) => chip.classList.toggle("is-active", chip.dataset.value === value));
+    }
   }
 
   _overrides() {
@@ -226,7 +461,7 @@ class LaunchPanel {
 
     this.refs.rail.innerHTML =
       `<div class="rail-block"><span class="rail-block__label">Interpreter</span>` +
-      `<select class="run-select" id="launch-interpreter">${options}</select></div>` +
+      `<div class="cfg-selectwrap"><select class="cfg-select" id="launch-interpreter">${options}</select></div></div>` +
       `<div class="rail-block"><span class="rail-block__label">Overrides &middot; ${overrides.length}</span>` +
       `<div class="rail-manifest">${manifest}</div></div>` +
       `<div class="rail-block"><span class="rail-block__label">Command</span>` +
@@ -242,18 +477,7 @@ class LaunchPanel {
 
   _reset(path) {
     this.values.set(path, this.defaults.get(path));
-    const control = this.refs.config.querySelector(`[data-path="${CSS.escape(path)}"]`);
-    if (control) {
-      if (this.bools.has(path)) {
-        const on = this.defaults.get(path) === "true";
-        control.classList.toggle("is-on", on);
-        control.classList.remove("is-dirty");
-        control.setAttribute("aria-pressed", String(on));
-      } else {
-        control.value = this.defaults.get(path);
-        control.classList.remove("is-dirty");
-      }
-    }
+    this._refreshField(path, false);
     this._renderRail();
   }
 
