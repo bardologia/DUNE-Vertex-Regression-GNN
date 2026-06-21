@@ -172,6 +172,10 @@ class CrossValidationPipeline:
 
         self.entry.model_overrides = DatasetPipeline.inject_feature_dimensions(self.entry.model_overrides, self.entry.dataset)
 
+        degree_histogram = self.dataset_pipeline.pna_degree_histogram(self.entry.model_name, datasets["train"])
+        if degree_histogram is not None:
+            self.entry.model_overrides = {**self.entry.model_overrides, "degree_histogram": degree_histogram}
+
         run_metadata = TrainingRunMetadata(self.training_config, self.entry.model_name, self.run_directory, run_name=f"fold_{fold_index}")
         run_metadata.save_resolved_config(self.entry)
         run_metadata.save_normalization_stats(stats)
