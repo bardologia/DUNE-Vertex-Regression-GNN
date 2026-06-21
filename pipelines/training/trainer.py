@@ -150,7 +150,10 @@ class Trainer:
             for batch_index, data in enumerate(loader):
                 data         = data.to(self.device, non_blocking=True)
                 _, loss_dict = self.forward(data)
-                loss         = loss_dict["total_loss"] / self.accumulation_steps
+
+                group_start  = (batch_index // self.accumulation_steps) * self.accumulation_steps
+                group_size   = min(self.accumulation_steps, number_of_batches - group_start)
+                loss         = loss_dict["total_loss"] / group_size
 
                 if not torch.isfinite(loss):
                     raise RuntimeError(f"Non-finite loss at batch {batch_index}, step {self.global_step}.")
