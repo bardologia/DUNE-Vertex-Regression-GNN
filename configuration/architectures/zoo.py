@@ -160,14 +160,6 @@ class ResGatedConfig(BaseGNNConfig):
 
 
 @dataclass
-class SuperGATConfig(BaseGNNConfig):
-    name              : str   = "supergat"
-    heads             : int   = 4
-    attention_dropout : float = 0.1
-    attention_type    : str   = "MX"
-
-
-@dataclass
 class GPSCascadeConfig(GPSConfig):
     name      : str = "gps_cascade"
     head_type : str = "cascade"
@@ -200,5 +192,4 @@ MODEL_CONFIG_REGISTRY: dict[str, type] = {
     "edgeconv"      : EdgeConvConfig,
     "general_conv"  : GeneralConvConfig,
     "res_gated"     : ResGatedConfig,
-    "supergat"      : SuperGATConfig,
 }

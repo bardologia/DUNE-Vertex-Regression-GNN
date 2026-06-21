@@ -13,7 +13,6 @@ from .gps_lite        import GPSLite
 from .graphsage       import GraphSAGE
 from .pna             import PNA
 from .res_gated       import ResGatedGNN
-from .supergat        import SuperGAT
 from .transformer_conv import GraphTransformer
 
 MODEL_REGISTRY: dict[str, type] = {
@@ -31,7 +30,6 @@ MODEL_REGISTRY: dict[str, type] = {
     "edgeconv"      : DynamicEdgeConv,
     "general_conv"  : GeneralGNN,
     "res_gated"     : ResGatedGNN,
-    "supergat"      : SuperGAT,
 }
 
 
@@ -70,7 +68,6 @@ __all__ = [
     "GraphSAGE",
     "PNA",
     "ResGatedGNN",
-    "SuperGAT",
     "GraphTransformer",
     "MODEL_REGISTRY",
     "MODEL_CONFIG_REGISTRY",

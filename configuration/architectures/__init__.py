@@ -14,7 +14,6 @@ from .zoo import (
     MODEL_CONFIG_REGISTRY,
     PNAConfig,
     ResGatedConfig,
-    SuperGATConfig,
     TransformerConvConfig,
 )
 
@@ -34,6 +33,5 @@ __all__ = [
     "MODEL_CONFIG_REGISTRY",
     "PNAConfig",
     "ResGatedConfig",
-    "SuperGATConfig",
     "TransformerConvConfig",
 ]

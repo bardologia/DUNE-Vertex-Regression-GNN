@@ -6,7 +6,7 @@ from tools import ConfigCli
 def test_model_config_registry_complete():
     expected = {
         "gps", "gps_lite", "gps_cascade", "gatv2", "gatv2_cascade", "gine", "gine_cascade",
-        "graphsage", "pna", "gcn", "transformer", "edgeconv", "general_conv", "res_gated", "supergat",
+        "graphsage", "pna", "gcn", "transformer", "edgeconv", "general_conv", "res_gated",
     }
     assert set(MODEL_CONFIG_REGISTRY) == expected
 
