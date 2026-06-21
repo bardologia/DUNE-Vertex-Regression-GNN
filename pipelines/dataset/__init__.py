@@ -1,5 +1,5 @@
 from .augmentation         import Augmentation
-from .coordinate_correction import CoordinateTransform
+from .coordinate_correction import CoordinateTransform, EndcapFaceCorrector
 from .graph                import ActiveNodeSelector, EdgeFeatures, FeatureSchema, Graph, GraphAssembler, NodeFeatures
 from .graph_dataset        import GraphDataset, StatsEstimator
 from .hot_channels         import HotChannelCorrector
@@ -11,6 +11,7 @@ from .splitting            import CrossValidationSplitter, StratificationLabelle
 __all__ = [
     "Augmentation",
     "CoordinateTransform",
+    "EndcapFaceCorrector",
     "DatasetPipeline",
     "ActiveNodeSelector",
     "EdgeFeatures",
