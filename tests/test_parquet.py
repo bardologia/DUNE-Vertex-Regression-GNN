@@ -10,15 +10,23 @@ class _SilentLogger:
         return None
 
 
-def test_endcap_face_corrector_flips_only_extreme_planes():
+def test_endcap_face_corrector_rotates_only_extreme_planes():
     z_values = np.array([0.0, 10.0, -10.0, 29.25, -29.25, 29.926, -29.926], dtype=np.float64)
-    frame    = pd.DataFrame({"bin": np.arange(len(z_values)), "x": 0.0, "y": 0.0, "z": z_values})
+    y_values = np.array([1.0,  2.0,   3.0,  4.00,   5.00,   6.000,   7.000], dtype=np.float64)
+    x_values = np.array([1.0,  2.0,   3.0,  4.00,   5.00,   6.000,   7.000], dtype=np.float64)
+    frame    = pd.DataFrame({"bin": np.arange(len(z_values)), "x": x_values, "y": y_values, "z": z_values})
 
     corrected = EndcapFaceCorrector(logger=_SilentLogger()).apply(frame)
 
-    flipped = corrected["z"].to_numpy()
-    assert flipped[5] == -29.926 and flipped[6] == 29.926
-    assert np.array_equal(flipped[:5], z_values[:5])
+    flipped_z = corrected["z"].to_numpy()
+    flipped_y = corrected["y"].to_numpy()
+    flipped_x = corrected["x"].to_numpy()
+
+    assert flipped_z[5] == -29.926 and flipped_z[6] == 29.926
+    assert flipped_y[5] == -6.000  and flipped_y[6] == -7.000
+    assert np.array_equal(flipped_z[:5], z_values[:5])
+    assert np.array_equal(flipped_y[:5], y_values[:5])
+    assert np.array_equal(flipped_x, x_values)
 
 
 def _hot_channel_setup():
