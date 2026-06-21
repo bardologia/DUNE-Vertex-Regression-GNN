@@ -25,13 +25,15 @@ class EndcapFaceCorrector:
 
     def apply(self, geometry_frame):
         z_values           = geometry_frame["z"].to_numpy(dtype=np.float64)
+        y_values           = geometry_frame["y"].to_numpy(dtype=np.float64)
         face_mask, extreme = self._face_mask(z_values)
 
-        corrected_frame                    = geometry_frame.copy()
+        corrected_frame                     = geometry_frame.copy()
+        corrected_frame.loc[face_mask, "y"] = -y_values[face_mask]
         corrected_frame.loc[face_mask, "z"] = -z_values[face_mask]
 
         if self.logger is not None:
-            self.logger.subsection(f"Endcap-face z correction: flipped {int(face_mask.sum())} channels at |z|={extreme:.3f}")
+            self.logger.subsection(f"Endcap-face frame correction (180 deg about x, y and z negated): {int(face_mask.sum())} channels at |z|={extreme:.3f}")
         return corrected_frame
 
 
