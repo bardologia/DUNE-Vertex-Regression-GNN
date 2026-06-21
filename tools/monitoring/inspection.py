@@ -116,12 +116,14 @@ class ModelSummary:
 
     def run(self):
         self.logger.section("[Model Summary]")
-        self.total_params = 0
+        self.total_params = self.count_parameters(self.model)
 
         for name, module in self.model.named_modules():
             if name == "":
                 continue
 
-            parameters         = self.count_parameters(module)
-            self.total_params += parameters
+            parameters = sum(parameter.numel() for parameter in module.parameters(recurse=False))
+            if parameters == 0:
+                continue
+
             self.rows.append((name, module.__class__.__name__, parameters))
