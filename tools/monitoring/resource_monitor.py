@@ -286,16 +286,13 @@ class ResourceMonitor:
             return
 
         self.logger.section("[Resource Monitor]")
-        self.logger.subsection("Enabled        : True")
-        self.logger.subsection(f"Poll interval  : {self.interval:.1f} s")
-        self.logger.subsection(f"NVML available : {self._nvml_ok} ({len(self._gpu_handles)} GPUs)")
-        self.logger.subsection(f"TB logging     : {self.log_to_tb}")
-        self.logger.subsection(
-            f"Warn thresholds: RAM>={self.warn_ram_pct:.0f}%  "
-            f"VRAM>={self.warn_vram_pct:.0f}%  "
-            f"SWAP>={self.warn_swap_pct:.0f}%  "
-            f"SHM>={self.warn_shm_pct:.0f}% \n"
-        )
+        self.logger.kv_table({
+            "Enabled"         : True,
+            "Poll interval"   : f"{self.interval:.1f} s",
+            "NVML available"  : f"{self._nvml_ok} ({len(self._gpu_handles)} GPUs)",
+            "TB logging"      : self.log_to_tb,
+            "Warn thresholds" : f"RAM>={self.warn_ram_pct:.0f}%  VRAM>={self.warn_vram_pct:.0f}%  SWAP>={self.warn_swap_pct:.0f}%  SHM>={self.warn_shm_pct:.0f}%",
+        })
 
     def start(self):
         if not self.enabled:
@@ -316,11 +313,14 @@ class ResourceMonitor:
         if self.logger is None:
             return
         
+        peaks = {}
+        for key, value in self.peak.items():
+            unit                 = "%" if key.endswith("_pct") else "GB"
+            peaks[f"peak {key}"] = f"{value:.2f} {unit}"
+        peaks["Total samples"] = self._sample_idx
+
         self.logger.section("[Resource Monitor - Peaks]")
-        for k, v in self.peak.items():
-            unit = "%" if k.endswith("_pct") else "GB"
-            self.logger.subsection(f"peak {k:<16}: {v:.2f} {unit}")
-        self.logger.subsection(f"Total samples  : {self._sample_idx} \n")
+        self.logger.kv_table(peaks)
 
     def _stop_thread(self):
         if self._thread is None:
