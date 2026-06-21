@@ -161,20 +161,21 @@ class Logger:
             self.logger.addHandler(file_handler)
             self._file_handler = file_handler
 
+    def _to_file(self, message: str, level: int = logging.INFO) -> None:
+        if self._file_handler is None:
+            return
+        self._file_handler.handle(self.logger.makeRecord(self.name, level, "", 0, message, None, None))
+
     def section(self, title: str) -> None:
         text = str(title).upper()
         self.console.print()
         self.console.print(Rule(Text(text, style="section"), style="cyan"))
-        if self._file_handler is not None:
-            self._file_handler.handle(self.logger.makeRecord(
-                self.name, logging.INFO, "", 0, f">>> {text}", None, None,
-            ))
+        self._to_file(f">>> {text}")
 
     def subsection(self, title: str) -> None:
         line = f"  [cyan]>[/cyan] {title}"
         self.console.print(line, style="bold white")
-        if self._file_handler is not None:
-            self._file_handler.handle(self.logger.makeRecord(self.name, logging.INFO, "", 0, f"  > {title}", None, None,))
+        self._to_file(f"  > {title}")
 
     def debug(self, message: str) -> None:    
         self.logger.debug(message)
@@ -193,8 +194,7 @@ class Logger:
 
     def ok(self, message: str) -> None:
         self.console.print(f"  [ok]+[/ok] {message}")
-        if self._file_handler is not None:
-            self._file_handler.handle(self.logger.makeRecord(self.name, logging.INFO, "", 0, f"  + {message}", None, None,))
+        self._to_file(f"  + {message}")
 
     @staticmethod
     def _fmt(value: Any) -> str:
@@ -221,6 +221,16 @@ class Logger:
 
         self.console.print(tbl)
 
+        if not data:
+            return
+
+        if title:
+            self._to_file(f"  > {title}")
+
+        key_width = max(len(str(k)) for k in data)
+        for k, v in data.items():
+            self._to_file(f"      {str(k):<{key_width}} : {self._fmt(v)}")
+
     def metrics_table(self, rows: Sequence[Mapping[str, Any]], columns: Sequence[str], title: Optional[str] = None, column_styles: Optional[Mapping[str, str]] = None,) -> None:
         styles = column_styles or {}
         tbl    = Table(title=title, show_header=True, header_style="bold cyan", expand=False)
@@ -232,6 +242,16 @@ class Logger:
             tbl.add_row(*[self._fmt(row.get(c, "")) for c in columns])
 
         self.console.print(tbl)
+
+        if title:
+            self._to_file(f"  > {title}")
+
+        cells  = [[self._fmt(row.get(column, "")) for column in columns] for row in rows]
+        widths = [max(len(str(columns[index])), *(len(row[index]) for row in cells)) if cells else len(str(columns[index])) for index in range(len(columns))]
+
+        self._to_file("      " + "  ".join(str(columns[index]).ljust(widths[index]) for index in range(len(columns))))
+        for row in cells:
+            self._to_file("      " + "  ".join(row[index].ljust(widths[index]) for index in range(len(columns))))
 
     @contextmanager
     def timer(self, label: str):
