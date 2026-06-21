@@ -110,7 +110,7 @@ class Scheduler:
     def _cosine_annealing(self, epoch: int) -> list[float]:
         maximum_epochs = self._resolved_t_max()
         eta_min        = float(self.config.scheduler.eta_min)
-        progress       = min(1.0, epoch / max(1, maximum_epochs))
+        progress       = min(1.0, epoch / max(1, maximum_epochs - 1))
         cosine_factor  = 0.5 * (1.0 + math.cos(math.pi * progress))
         return [eta_min + (base_learning_rate - eta_min) * cosine_factor for base_learning_rate in self.base_lrs]
 
