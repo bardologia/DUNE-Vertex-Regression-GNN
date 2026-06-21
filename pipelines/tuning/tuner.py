@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from copy    import deepcopy
 from pathlib import Path
 
@@ -92,15 +94,36 @@ class Tuner:
         optimizer_overrides = {key: value for key, value in best_parameters.items() if key in optimizer_keys}
         return model_overrides, optimizer_overrides
 
+    def _persist_results(self):
+        model_overrides, optimizer_overrides = self.build_best_overrides()
+
+        record = {
+            "model_name"          : self.entry.model_name,
+            "best_value"          : self.study.best_value,
+            "best_trial_number"   : self.study.best_trial.number,
+            "random_state"        : self.tuning.random_state,
+            "n_trials"            : self.tuning.n_trials,
+            "best_params"         : self.study.best_params,
+            "model_overrides"     : model_overrides,
+            "optimizer_overrides" : optimizer_overrides,
+        }
+
+        results_path = self.tuner_directory / "best_trial.json"
+        results_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+        self.logger.subsection(f"Best hyperparameters saved to {results_path}")
+
     def optimize(self):
         self.logger.section("[Hyperparameter Tuning]")
 
         if self.tuning.warmup_trials >= self.tuning.n_trials:
             raise ValueError(f"warmup_trials ({self.tuning.warmup_trials}) must be smaller than n_trials ({self.tuning.n_trials}) for the median pruner to ever activate.")
 
+        if self.tuning.startup_trials >= self.tuning.n_trials:
+            raise ValueError(f"startup_trials ({self.tuning.startup_trials}) must be smaller than n_trials ({self.tuning.n_trials}) for the TPE sampler to ever model the objective; otherwise every trial is random search.")
+
         self._prepare_data()
 
-        sampler = TPESampler(seed=self.tuning.random_state)
+        sampler = TPESampler(seed=self.tuning.random_state, n_startup_trials=self.tuning.startup_trials)
         pruner  = MedianPruner(n_startup_trials=self.tuning.warmup_trials, n_warmup_steps=self.tuning.warmup_steps)
         self.study = optuna.create_study(direction="minimize", sampler=sampler, pruner=pruner)
 
@@ -108,4 +131,5 @@ class Tuner:
 
         self.logger.subsection(f"Best value: {self.study.best_value:.4f}")
         self.logger.kv_table(self.study.best_params, title="Best Hyperparameters")
+        self._persist_results()
         return self.study

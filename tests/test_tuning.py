@@ -13,6 +13,7 @@ def test_tuner_runs_two_trials(parquet_store, tmp_path):
     entry.training.loop.num_workers      = 0
     entry.training.warmup.warmup_steps   = 2
     entry.tuning.n_trials                = 2
+    entry.tuning.startup_trials          = 1
     entry.tuning.epochs                  = 1
     entry.tuning.batch_size              = 8
     entry.tuning.warmup_trials           = 0
@@ -22,6 +23,9 @@ def test_tuner_runs_two_trials(parquet_store, tmp_path):
     study = tuner.optimize()
 
     assert len(study.trials) == 2
+
+    results_path = tmp_path / "tuning" / entry.model_name / "best_trial.json"
+    assert results_path.exists()
 
     model_overrides, optimizer_overrides = tuner.build_best_overrides()
     assert isinstance(model_overrides, dict)
