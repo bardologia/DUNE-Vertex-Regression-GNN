@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import numpy as np
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
