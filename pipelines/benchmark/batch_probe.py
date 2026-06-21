@@ -5,9 +5,8 @@ import traceback
 import torch
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
-from models                   import get_model
-from tools.monitoring.tracker import NullTracker
-from pipelines.training.loss  import Loss
+from models                  import get_model
+from pipelines.training.loss import Loss
 
 
 class MaxBatchProbe:
@@ -36,7 +35,7 @@ class MaxBatchProbe:
         model, _  = get_model(self.model_name, **self.overrides)
         model     = model.to(self.device)
         optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
-        criterion = Loss(self.config.training.loss, self.stats, self.logger, NullTracker())
+        criterion = Loss(self.config.training.loss, self.stats, self.logger)
         return model, optimizer, criterion
 
     def _measure(self, model, optimizer, criterion, batch_size):
@@ -52,7 +51,7 @@ class MaxBatchProbe:
             optimizer.zero_grad(set_to_none=True)
             with torch.amp.autocast("cuda", enabled=self.use_amp):
                 predictions = model(data)
-                loss_dict   = criterion(predictions, data, 0)
+                loss_dict   = criterion(predictions, data)
 
             loss_dict["total_loss"].backward()
             optimizer.step()

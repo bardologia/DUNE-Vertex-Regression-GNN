@@ -1,17 +1,15 @@
 from __future__ import annotations
 
-import numpy as np
 import torch
 import torch.nn.functional as F
 from torch_geometric.utils import scatter
 
 
 class Loss:
-    def __init__(self, loss_config, stats, logger, tracker):
+    def __init__(self, loss_config, stats, logger):
         self.config  = loss_config
         self.stats   = stats
         self.logger  = logger
-        self.tracker = tracker
 
         self.logger.section("[Loss Function]")
         self.logger.kv_table({
@@ -57,35 +55,26 @@ class Loss:
         correlation = covariance / torch.sqrt(light_variance * intensity_var + 1e-12)
         return (1.0 - correlation).mean()
 
-    def __call__(self, predictions, data, step):
-        targets    = data.y
-        components = {}
+    def __call__(self, predictions, data):
+        targets = data.y
 
-        data_term          = self._data_term(predictions, targets)
-        total_loss         = self.config.data_weight * data_term
-        components["data"] = float(data_term.item())
+        data_term  = self._data_term(predictions, targets)
+        total_loss = self.config.data_weight * data_term
 
         if self.config.euclidean_weight > 0.0 or self.config.containment_weight > 0.0:
             physical_predictions = self.stats.target.inverse_torch(predictions, predictions.device)
             physical_targets     = self.stats.target.inverse_torch(targets, predictions.device)
 
         if self.config.euclidean_weight > 0.0:
-            euclidean              = self._euclidean_term(physical_predictions, physical_targets)
-            total_loss             = total_loss + self.config.euclidean_weight * euclidean
-            components["euclidean"] = float(euclidean.item())
+            euclidean  = self._euclidean_term(physical_predictions, physical_targets)
+            total_loss = total_loss + self.config.euclidean_weight * euclidean
 
         if self.config.containment_weight > 0.0:
-            containment              = self._containment_term(physical_predictions)
-            total_loss               = total_loss + self.config.containment_weight * containment
-            components["containment"] = float(containment.item())
+            containment = self._containment_term(physical_predictions)
+            total_loss  = total_loss + self.config.containment_weight * containment
 
         if self.config.light_falloff_weight > 0.0 and hasattr(data, "batch") and data.batch is not None:
-            light_falloff               = self._light_falloff_term(predictions, data)
-            total_loss                  = total_loss + self.config.light_falloff_weight * light_falloff
-            components["light_falloff"] = float(light_falloff.item())
-
-        components["total"]     = float(total_loss.item())
-        components["log_total"] = float(np.log1p(total_loss.item()))
-        self.tracker.log_metrics("loss", components, step)
+            light_falloff = self._light_falloff_term(predictions, data)
+            total_loss    = total_loss + self.config.light_falloff_weight * light_falloff
 
         return {"total_loss": total_loss}

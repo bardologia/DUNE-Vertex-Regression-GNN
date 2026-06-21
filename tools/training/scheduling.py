@@ -62,7 +62,6 @@ class Warmup:
 
         self.current_step += 1
         factor             = self.factor()
-        self.tracker.log_scalar("lr/warmup_factor", factor, self.current_step)
 
         if self.current_step >= self.warmup_steps and not self.warmup_finished:
             self.warmup_finished = True

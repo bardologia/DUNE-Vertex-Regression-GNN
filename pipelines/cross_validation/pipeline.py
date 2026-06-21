@@ -179,7 +179,7 @@ class CrossValidationPipeline:
 
         model, _ = get_model(self.entry.model_name, **self.entry.model_overrides)
         trainer  = Trainer(model, stats, self.training_config, run_metadata)
-        summary  = trainer.train(train_loader, validation_loader, test_loader)
+        summary  = trainer.train(train_loader, validation_loader)
 
         metrics = self._evaluate_fold(trainer.model, run_metadata, stats, test_loader)
         run_metadata.close()

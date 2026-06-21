@@ -37,8 +37,8 @@ def test_model_sizer_produces_head_divisible_width(quiet_logger):
 
 def test_comparison_report_ranks_and_writes(quiet_logger, tmp_path):
     records = [
-        {"model": "a", "parameters": 100, "width": 64, "size_deviation_pct": 1.0, "size_flags": [], "overfit_status": "PASS", "overfit_loss": 0.01, "max_batch": 64, "max_batch_peak_gb": 2.0, "max_batch_status": "PASS", "train_status": "DONE", "best_val_loss": 0.5, "final_test_loss": 0.6, "duration_s": 10.0, "run_directory": "x", "metrics": {"euclidean_mean": 7.0, "mae": 3.0, "rmse": 4.0, "r2": 0.7, "median_error": 2.0, "euclidean_median": 6.0}},
-        {"model": "b", "parameters": 110, "width": 70, "size_deviation_pct": -1.0, "size_flags": [], "overfit_status": "PASS", "overfit_loss": 0.02, "max_batch": 32, "max_batch_peak_gb": 2.5, "max_batch_status": "PASS", "train_status": "DONE", "best_val_loss": 0.4, "final_test_loss": 0.5, "duration_s": 11.0, "run_directory": "y", "metrics": {"euclidean_mean": 5.0, "mae": 2.0, "rmse": 3.0, "r2": 0.8, "median_error": 1.0, "euclidean_median": 4.0}},
+        {"model": "a", "parameters": 100, "width": 64, "size_deviation_pct": 1.0, "size_flags": [], "overfit_status": "PASS", "overfit_loss": 0.01, "max_batch": 64, "max_batch_peak_gb": 2.0, "max_batch_status": "PASS", "train_status": "DONE", "best_val_loss": 0.5, "duration_s": 10.0, "run_directory": "x", "metrics": {"euclidean_mean": 7.0, "mae": 3.0, "rmse": 4.0, "r2": 0.7, "median_error": 2.0, "euclidean_median": 6.0}},
+        {"model": "b", "parameters": 110, "width": 70, "size_deviation_pct": -1.0, "size_flags": [], "overfit_status": "PASS", "overfit_loss": 0.02, "max_batch": 32, "max_batch_peak_gb": 2.5, "max_batch_status": "PASS", "train_status": "DONE", "best_val_loss": 0.4, "duration_s": 11.0, "run_directory": "y", "metrics": {"euclidean_mean": 5.0, "mae": 2.0, "rmse": 3.0, "r2": 0.8, "median_error": 1.0, "euclidean_median": 4.0}},
     ]
 
     config  = BenchmarkConfig()

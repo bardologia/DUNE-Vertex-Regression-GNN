@@ -6,7 +6,7 @@ from torch_geometric.loader import DataLoader
 from configuration import LossConfig
 from pipelines.dataset.normalization import FeatureGroupNormalizer, NormalizationStats
 from pipelines.training.loss import Loss
-from tools import Logger, NullTracker
+from tools import Logger
 
 
 def _stats():
@@ -31,7 +31,7 @@ def _batch():
 
 
 def _loss(config):
-    return Loss(config, _stats(), Logger(log_dir="", name="loss", level="ERROR"), NullTracker())
+    return Loss(config, _stats(), Logger(log_dir="", name="loss", level="ERROR"))
 
 
 def test_physics_loss_is_finite_and_differentiable():
@@ -39,7 +39,7 @@ def test_physics_loss_is_finite_and_differentiable():
     predictions = torch.randn(3, 3, requires_grad=True)
     config      = LossConfig(euclidean_weight=0.5, containment_weight=0.1, light_falloff_weight=0.5)
 
-    result = _loss(config)(predictions, batch, step=0)
+    result = _loss(config)(predictions, batch)
     result["total_loss"].backward()
 
     assert torch.isfinite(result["total_loss"])
@@ -50,6 +50,6 @@ def test_physics_loss_is_finite_and_differentiable():
 def test_data_only_loss_matches_mse():
     batch       = _batch()
     predictions = torch.randn(3, 3)
-    result      = _loss(LossConfig())(predictions, batch, step=0)
+    result      = _loss(LossConfig())(predictions, batch)
     expected    = torch.nn.functional.mse_loss(predictions, batch.y)
     assert abs(result["total_loss"].item() - expected.item()) < 1e-5

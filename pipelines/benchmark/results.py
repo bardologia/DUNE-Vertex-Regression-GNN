@@ -45,7 +45,6 @@ class TrialCollector:
             "max_batch_status"    : max_batch_entry.get("status"),
             "train_status"        : training_entry.get("status"),
             "best_val_loss"       : training_entry.get("best_val_loss"),
-            "final_test_loss"     : training_entry.get("final_test_loss"),
             "duration_s"          : training_entry.get("duration_s"),
             "run_directory"       : training_entry.get("run_directory"),
             "metrics"             : metrics,
@@ -89,13 +88,12 @@ class ComparisonReport:
         return table
 
     def _training_table(self):
-        table = MarkdownTable(["Model", "Status", "Best val loss", "Final test loss", "Duration (s)"], align=["left", "left", "right", "right", "right"])
+        table = MarkdownTable(["Model", "Status", "Best val loss", "Duration (s)"], align=["left", "left", "right", "right"])
         for record in self.records:
             table.add_row(
                 record["model"],
                 record.get("train_status") or "—",
                 ScalarFormatter.format_scalar(record.get("best_val_loss")),
-                ScalarFormatter.format_scalar(record.get("final_test_loss")),
                 ScalarFormatter.format_scalar(record.get("duration_s")),
             )
         return table
