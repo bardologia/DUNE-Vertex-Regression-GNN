@@ -19,19 +19,23 @@ class GradientClipper:
 
         self.history     : list[float] = []
 
-        self.logger.section("[Gradient Clipper]")
-        self.logger.subsection(f"Mode : {self.mode}")
+        fields = {"Mode": self.mode}
 
         if self.mode == "fixed":
-            self.logger.subsection(f"Threshold     : {self.threshold}")
+            fields["Threshold"] = self.threshold
 
         elif self.mode == "adaptive_percentile":
-            self.logger.subsection(f"Window        : {self.window}")
-            self.logger.subsection(f"Percentile    : {self.percentile}")
+            fields["Window"]     = self.window
+            fields["Percentile"] = self.percentile
 
         elif self.mode == "adaptive_mean_std":
-            self.logger.subsection(f"Window        : {self.window}")
-            self.logger.subsection(f"Mean+k*Std  k : {self.adaptive_mean_std_k}")
+            fields["Window"]       = self.window
+            fields["Mean+k*Std k"] = self.adaptive_mean_std_k
+
+        fields["Histogram every"] = self.log_histogram_freq
+
+        self.logger.section("[Gradient Clipper]")
+        self.logger.kv_table(fields)
 
     @staticmethod
     def global_norm(model: torch.nn.Module) -> float:

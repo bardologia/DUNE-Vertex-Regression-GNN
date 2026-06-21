@@ -103,8 +103,14 @@ class TargetBalancer:
         train_indices      = train_validation_indices[train_indices]
         validation_indices = train_validation_indices[validation_indices]
 
-        self.logger.subsection(f"Binning into {number_of_bins} bins per dimension | {len(np.unique(stratification_labels))} stratification groups")
-        self.logger.subsection(f"Split sizes: train={len(train_indices)} | val={len(validation_indices)} | test={len(test_indices)}")
+        total_events = len(train_indices) + len(validation_indices) + len(test_indices)
+        self.logger.kv_table({
+            "Bins per dimension"    : number_of_bins,
+            "Stratification groups" : len(np.unique(stratification_labels)),
+            "Train"                 : f"{len(train_indices)} ({len(train_indices) / total_events:.1%})",
+            "Validation"            : f"{len(validation_indices)} ({len(validation_indices) / total_events:.1%})",
+            "Test"                  : f"{len(test_indices)} ({len(test_indices) / total_events:.1%})",
+        })
 
         self._log_distribution(
             "Target Distribution After Balancing",
@@ -178,7 +184,12 @@ class CrossValidationSplitter:
         labels, number_of_bins = self._build_labels(targets)
         splitter, is_stratified = self._outer_splitter(labels)
 
-        self.logger.subsection(f"{self.config.n_folds}-fold split | stratified={is_stratified} | bins={number_of_bins} | groups={len(np.unique(labels))}")
+        self.logger.kv_table({
+            "Folds"      : self.config.n_folds,
+            "Stratified" : is_stratified,
+            "Bins"       : number_of_bins,
+            "Groups"     : len(np.unique(labels)),
+        })
 
         folds = []
         for fold_index, (train_validation_indices, test_indices) in enumerate(splitter.split(np.arange(len(targets)), labels)):
