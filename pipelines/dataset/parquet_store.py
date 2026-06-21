@@ -10,7 +10,7 @@ import pyarrow as pa
 import pyarrow.parquet as pa_parquet
 
 from tools.monitoring.logger import Logger
-from pipelines.dataset.coordinate_correction import CoordinateTransform
+from pipelines.dataset.coordinate_correction import CoordinateTransform, EndcapFaceCorrector
 from pipelines.dataset.hot_channels          import HotChannelCorrector
 
 
@@ -29,10 +29,11 @@ class ParquetDatasetWriter:
             from configuration.data.general import HotChannelConfig
             hot_channels = HotChannelConfig()
 
-        self.worker_count = worker_count
-        self.logger       = logger
-        self.hot_channels = hot_channels
-        self.transform    = CoordinateTransform()
+        self.worker_count      = worker_count
+        self.logger            = logger
+        self.hot_channels      = hot_channels
+        self.transform         = CoordinateTransform()
+        self.geometry_corrector = EndcapFaceCorrector(logger=logger)
 
     def discover_files(self):
         self.logger.section("[Parquet Store]")
@@ -47,6 +48,8 @@ class ParquetDatasetWriter:
 
         canonical_bytes = np.ascontiguousarray(geometry_frame[["bin", "x", "y", "z"]].values)
         geometry_hash   = hashlib.md5(canonical_bytes.tobytes()).hexdigest()
+
+        geometry_frame  = self.geometry_corrector.apply(geometry_frame)
 
         self.logger.subsection(f"Canonical geometry: {len(geometry_frame)} channels (stored once)")
         return geometry_frame, geometry_hash
