@@ -73,7 +73,7 @@ class InferencePipeline:
 
     def _write_metrics(self, per_split_results):
         metrics_payload = {
-            "unit"   : "cm",
+            "unit"   : "m",
             "splits" : {split_name: payload["metrics"] for split_name, payload in per_split_results.items()},
         }
         metrics_path = self.run_directory / "metadata" / "metrics.json"

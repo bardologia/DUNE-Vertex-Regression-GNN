@@ -569,7 +569,7 @@ class EventExplorerPanel {
       if (distance < bestDistance) { bestDistance = distance; best = i; }
     }
 
-    this.refs.nearest.textContent = `· snapped ${this._fmt(Math.sqrt(bestDistance))} cm away`;
+    this.refs.nearest.textContent = `· snapped ${this._fmt(Math.sqrt(bestDistance))} m away`;
 
     if (best !== this.selectedIndex) this._queueDetail(best);
   }
@@ -613,13 +613,13 @@ class EventExplorerPanel {
         ["true vertex (x y z)", vector(detail.gt)],
         ["prediction (x y z)", vector(detail.pred)],
         ["abs error (x y z)", vector(detail.error_xyz)],
-        ["3D error", `<span class="ev-strong">${this._fmt(detail.error)} cm</span>`],
+        ["3D error", `<span class="ev-strong">${this._fmt(detail.error)} m</span>`],
         ["error percentile", `${(detail.error_rank * 100).toFixed(1)} % of split below`],
         ["active sensors", String(detail.n_active)],
         ["total light", this._fmt(detail.total_light)],
         ["base event id", String(detail.base_event_id)],
         ["octant", octant],
-        ["split error mean / median", `${this._fmt(this.meta.error_mean)} / ${this._fmt(this.meta.error_median)} cm`],
+        ["split error mean / median", `${this._fmt(this.meta.error_mean)} / ${this._fmt(this.meta.error_median)} m`],
       ];
     } else {
       rows = [

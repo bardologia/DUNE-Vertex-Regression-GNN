@@ -498,7 +498,7 @@ class PreprocessingPanel {
       if (distance < bestDistance) { bestDistance = distance; best = i; }
     }
 
-    this.refs.nearest.textContent = `· snapped ${this._fmt(Math.sqrt(bestDistance))} cm away`;
+    this.refs.nearest.textContent = `· snapped ${this._fmt(Math.sqrt(bestDistance))} m away`;
     if (best !== this.selectedIndex) {
       this.selectedIndex = best;
       this.recenter = true;

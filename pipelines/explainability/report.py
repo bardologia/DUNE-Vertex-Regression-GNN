@@ -8,7 +8,7 @@ from tools.reporting.markdown import MarkdownDoc, MarkdownTable
 
 
 class FeatureImportanceReport:
-    UNIT = "cm"
+    UNIT = "m"
 
     CSV_COLUMNS = (
         "feature", "group",
@@ -63,10 +63,10 @@ class FeatureImportanceReport:
 
         document.heading("Baseline performance", level=2)
         document.kv_table({
-            "Mean euclidean error [cm]"   : f"{baseline['euclidean_mean']:.4f}",
-            "Median euclidean error [cm]" : f"{baseline['euclidean_median']:.4f}",
-            "Mean absolute error [cm]"    : f"{baseline['mae']:.4f}",
-            "Root-mean-square error [cm]" : f"{baseline['rmse']:.4f}",
+            "Mean euclidean error [m]"   : f"{baseline['euclidean_mean']:.4f}",
+            "Median euclidean error [m]" : f"{baseline['euclidean_median']:.4f}",
+            "Mean absolute error [m]"    : f"{baseline['mae']:.4f}",
+            "Root-mean-square error [m]" : f"{baseline['rmse']:.4f}",
             "Coefficient of determination": f"{baseline['r2']:.4f}",
         }, code_keys=False)
 
@@ -85,7 +85,7 @@ class FeatureImportanceReport:
     def _perturbation_table(self, document, title, records):
         document.heading(title, level=3)
         table = MarkdownTable(
-            ["Feature", "Group", f"Delta {self.primary_metric} [cm]", "Std [cm]", "Increase [%]", "Delta MAE [cm]", "Delta RMSE [cm]", "Delta R2"],
+            ["Feature", "Group", f"Delta {self.primary_metric} [m]", "Std [m]", "Increase [%]", "Delta MAE [m]", "Delta RMSE [m]", "Delta R2"],
             align=["left", "left", "right", "right", "right", "right", "right", "right"],
         )
         ranked = sorted(records, key=lambda record: record["deltas"][self.primary_metric], reverse=True)

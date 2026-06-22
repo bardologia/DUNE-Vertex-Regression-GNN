@@ -14,7 +14,7 @@ from pipelines.inference.plots import PublicationStyle
 
 
 class AnalysisAnimations:
-    UNIT             = "cm"
+    UNIT             = "m"
     MAXIMUM_POINTS   = 2000
     NUMBER_OF_FRAMES = 48
     FRAME_DPI        = 100
