@@ -66,6 +66,20 @@ class FeatureGroupNormalizer:
 
         return cls(methods, centers, scales, log_masks)
 
+    @classmethod
+    def fit_isotropic(cls, matrix):
+        matrix             = np.asarray(matrix, dtype=np.float64)
+        number_of_channels = matrix.shape[1]
+
+        centers      = matrix.mean(axis=0)
+        shared_scale = float(np.sqrt(((matrix - centers) ** 2).mean())) + ChannelStrategySelector.EPSILON
+
+        methods   = ["isotropic"] * number_of_channels
+        scales    = np.full(number_of_channels, shared_scale, dtype=np.float32)
+        log_masks = np.zeros(number_of_channels, dtype=bool)
+
+        return cls(methods, centers.astype(np.float32), scales, log_masks)
+
     def forward_numpy(self, matrix):
         matrix      = np.asarray(matrix, dtype=np.float32)
         transformed = np.where(self.log_mask, np.log1p(np.maximum(matrix, 0.0)), matrix)
