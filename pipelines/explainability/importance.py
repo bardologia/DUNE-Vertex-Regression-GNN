@@ -368,3 +368,127 @@ class ExpectedGradients:
                 progress.advance(task_id)
 
         return self._means()
+
+
+class KernelShapImportance:
+    COORDINATES = ("x", "y", "z")
+    CHUNK_SIZE  = 64
+
+    def __init__(self, model, device, engine, samples, events, seed, logger):
+        self.model      = model
+        self.device     = device
+        self.engine     = engine
+        self.samples    = samples
+        self.events     = events
+        self.seed       = seed
+        self.logger     = logger
+
+        self.coordinate_count = len(self.COORDINATES)
+        self.node_features    = engine.node_feature_count()
+        self.edge_features    = engine.edge_feature_count()
+        self.total_features   = self.node_features + self.edge_features
+
+        self.subset_graphs = None
+        self.node_mean     = None
+        self.edge_mean     = None
+        self.node_sum      = None
+        self.edge_sum      = None
+        self.node_overall  = None
+        self.edge_overall  = None
+        self.completeness  = None
+
+    def _select_subset(self):
+        count          = len(self.engine.graphs)
+        if self.events and self.events > 0:
+            count = min(count, self.events)
+        self.subset_graphs = self.engine.graphs[:count]
+
+        self.node_mean = self.engine.node_matrix.mean(dim=0)
+        self.edge_mean = self.engine.edge_matrix.mean(dim=0)
+
+        self.node_sum     = np.zeros((self.coordinate_count, self.node_features), dtype=np.float64)
+        self.edge_sum     = np.zeros((self.coordinate_count, self.edge_features), dtype=np.float64)
+        self.node_overall = np.zeros(self.node_features, dtype=np.float64)
+        self.edge_overall = np.zeros(self.edge_features, dtype=np.float64)
+        self.completeness = {name: 0.0 for name in self.COORDINATES}
+
+    def _masked_outputs(self, graph, gates):
+        outputs = np.zeros((gates.shape[0], self.coordinate_count), dtype=np.float64)
+
+        for start in range(0, gates.shape[0], self.CHUNK_SIZE):
+            block     = gates[start:start + self.CHUNK_SIZE]
+            data_list = []
+            for row in block:
+                node_gate = torch.from_numpy(row[: self.node_features].astype(np.float32))
+                edge_gate = torch.from_numpy(row[self.node_features:].astype(np.float32))
+
+                node = graph.x * node_gate + self.node_mean * (1.0 - node_gate)
+                edge = graph.edge_attr * edge_gate + self.edge_mean * (1.0 - edge_gate)
+                data_list.append(Data(x=node, edge_index=graph.edge_index, edge_attr=edge, y=graph.y))
+
+            batch = next(iter(GraphDataLoader(data_list, batch_size=len(data_list), shuffle=False))).to(self.device)
+            with torch.no_grad():
+                predictions = self.model(batch)
+            outputs[start:start + len(data_list)] = predictions.double().cpu().numpy()
+
+        return outputs
+
+    def _per_coordinate(self, shap_values):
+        values = np.squeeze(np.array(shap_values))
+        if values.ndim == 1:
+            values = values[None, :]
+        if values.shape == (self.coordinate_count, self.total_features):
+            return values
+        return values.T
+
+    def _accumulate_event(self, explainer, graph, instance):
+        shap_values = explainer.shap_values(instance, nsamples=self.samples, l1_reg=0.0, silent=True)
+        per_coord   = self._per_coordinate(shap_values)
+
+        node_values = per_coord[:, : self.node_features]
+        edge_values = per_coord[:, self.node_features:]
+
+        self.node_sum     += np.abs(node_values)
+        self.edge_sum     += np.abs(edge_values)
+        self.node_overall += np.abs(node_values).sum(axis=0)
+        self.edge_overall += np.abs(edge_values).sum(axis=0)
+
+        instance_output  = self._masked_outputs(graph, instance)[0]
+        reference        = instance_output - np.asarray(explainer.expected_value, dtype=np.float64)
+        attributed       = per_coord.sum(axis=1)
+        for index, name in enumerate(self.COORDINATES):
+            self.completeness[name] += float(attributed[index] / reference[index]) / len(self.subset_graphs) if reference[index] != 0.0 else 0.0
+
+    def _means(self):
+        event_count = len(self.subset_graphs)
+        return {
+            "coordinates"  : self.COORDINATES,
+            "node_overall" : self.node_overall / event_count,
+            "edge_overall" : self.edge_overall / event_count,
+            "node_per_axis": self.node_sum / event_count,
+            "edge_per_axis": self.edge_sum / event_count,
+            "completeness" : self.completeness,
+            "events"       : event_count,
+            "samples"      : self.samples,
+        }
+
+    def run(self):
+        import shap
+
+        self.logger.section("[Kernel SHAP]")
+        self._select_subset()
+
+        background = np.zeros((1, self.total_features), dtype=np.float64)
+        instance   = np.ones((1, self.total_features), dtype=np.float64)
+
+        self.model.eval()
+        np.random.seed(self.seed)
+
+        with self.logger.track() as progress:
+            task_id = progress.add_task("Kernel SHAP", total=len(self.subset_graphs))
+            for graph in self.subset_graphs:
+                explainer = shap.KernelExplainer(lambda gates, current=graph: self._masked_outputs(current, gates), background, silent=True)
+                self._accumulate_event(explainer, graph, instance)
+                progress.advance(task_id)
+
+        return self._means()

@@ -59,6 +59,8 @@ def test_feature_importance_pipeline_outputs(parquet_store, tmp_path):
     config.permutation_repeats = 2
     config.eg_samples          = 4
     config.eg_events           = 8
+    config.shap_nsamples       = 32
+    config.shap_events         = 4
     config.top_k               = 5
 
     output_directory = FeatureImportancePipeline(config, logger=Logger(log_dir="", name="explain", level="ERROR")).run()
@@ -70,7 +72,12 @@ def test_feature_importance_pipeline_outputs(parquet_store, tmp_path):
     assert any((output_directory / "plots").glob("permutation_*.png"))
     assert any((output_directory / "plots").glob("gradient_*.png"))
     assert any((output_directory / "plots").glob("expected_gradients_*.png"))
+    assert any((output_directory / "plots").glob("kernel_shap_*.png"))
 
     payload = json.loads((output_directory / "results.json").read_text(encoding="utf-8"))
     assert "expected_gradients" in payload["analysis"]
     assert set(payload["analysis"]["expected_gradients"]["completeness"]) == {"x", "y", "z"}
+
+    kernel_shap = payload["analysis"]["kernel_shap"]
+    assert len(kernel_shap["node"]) == 17
+    assert all(abs(kernel_shap["completeness"][axis] - 1.0) < 0.1 for axis in ("x", "y", "z"))
