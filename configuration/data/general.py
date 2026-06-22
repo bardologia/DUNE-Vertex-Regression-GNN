@@ -68,21 +68,21 @@ class AugmentationConfig:
     seed    : int  = 1234
 
     sensor_dropout_enabled     : bool  = True
-    sensor_dropout_probability : float = 0.05
+    sensor_dropout_probability : float = 0.02
 
     spurious_activation_enabled     : bool  = True
-    spurious_activation_probability : float = 0.01
-    spurious_activation_max_light   : float = 1.0
+    spurious_activation_probability : float = 0.003
+    spurious_activation_max_light   : float = 0.5
 
     light_noise_enabled : bool  = True
-    light_noise_sigma   : float = 0.1
+    light_noise_sigma   : float = 0.03
     light_noise_mode    : str   = "multiplicative"
 
     photon_thinning_enabled  : bool  = True
-    photon_thinning_survival : float = 0.9
+    photon_thinning_survival : float = 0.97
 
     gain_jitter_enabled : bool  = True
-    gain_jitter_sigma   : float = 0.05
+    gain_jitter_sigma   : float = 0.02
 
 
 @dataclass
