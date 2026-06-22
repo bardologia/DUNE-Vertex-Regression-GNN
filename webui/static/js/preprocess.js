@@ -483,7 +483,7 @@ class PreprocessingPanel {
     if (this.recenter) {
       this.recenter = false;
       this.shared.target.set((min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2);
-      this.shared.radius = extent * 1.9;
+      this.shared.radius = extent * 0.95;
       this.shared.minRadius = extent * 0.05;
       this.shared.maxRadius = extent * 12;
     }
