@@ -45,6 +45,11 @@ class EventViewer {
     this.axes = null;
     this.running = false;
 
+    this.full = null;
+    this.pointSize = 1;
+    this.detectorExt = [1, 1, 1];
+    this.wallFlags = WALL_DEFS.map(() => true);
+
     this._buildMarkers();
     this._wireControls();
     this._loop = this._loop.bind(this);
@@ -168,6 +173,7 @@ class EventViewer {
 
     const positionArray = new Float32Array(positions.length * 3);
     const colorArray = new Float32Array(positions.length * 3);
+    const wallArray = new Int8Array(positions.length);
     positions.forEach((point, i) => {
       positionArray[i * 3] = point[0];
       positionArray[i * 3 + 1] = point[1];
@@ -176,19 +182,12 @@ class EventViewer {
       colorArray[i * 3] = rgb[0];
       colorArray[i * 3 + 1] = rgb[1];
       colorArray[i * 3 + 2] = rgb[2];
+      wallArray[i] = window.classifyWall(point, this.detectorExt);
     });
 
-    if (this.points) {
-      this.scene.remove(this.points);
-      this.points.geometry.dispose();
-      this.points.material.dispose();
-    }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.BufferAttribute(positionArray, 3));
-    geometry.setAttribute("color", new THREE.BufferAttribute(colorArray, 3));
-    const material = new THREE.PointsMaterial({ size: extent * 0.018, vertexColors: true, sizeAttenuation: true, transparent: true, opacity: 0.92 });
-    this.points = new THREE.Points(geometry, material);
-    this.scene.add(this.points);
+    this.full = { positions: positionArray, colors: colorArray, wall: wallArray, count: positions.length };
+    this.pointSize = extent * 0.018;
+    this._rebuildPoints();
     this.pointsFade = firstEvent ? 1 : 0;
 
     const markerSize = extent * 0.05;
@@ -210,6 +209,51 @@ class EventViewer {
     }
 
     this._buildBox(min, max);
+  }
+
+  setDetectorBounds(min, max) {
+    this.detectorExt = window.wallExtents(min, max);
+  }
+
+  setWallFlags(flags) {
+    this.wallFlags = flags;
+    this._rebuildPoints();
+  }
+
+  _rebuildPoints() {
+    if (!this.full) return;
+
+    const flags = this.wallFlags;
+    const count = this.full.count;
+
+    let visible = 0;
+    for (let i = 0; i < count; i++) if (flags[this.full.wall[i]]) visible++;
+
+    const positionArray = new Float32Array(visible * 3);
+    const colorArray = new Float32Array(visible * 3);
+    let cursor = 0;
+    for (let i = 0; i < count; i++) {
+      if (!flags[this.full.wall[i]]) continue;
+      positionArray[cursor * 3]     = this.full.positions[i * 3];
+      positionArray[cursor * 3 + 1] = this.full.positions[i * 3 + 1];
+      positionArray[cursor * 3 + 2] = this.full.positions[i * 3 + 2];
+      colorArray[cursor * 3]     = this.full.colors[i * 3];
+      colorArray[cursor * 3 + 1] = this.full.colors[i * 3 + 1];
+      colorArray[cursor * 3 + 2] = this.full.colors[i * 3 + 2];
+      cursor++;
+    }
+
+    if (this.points) {
+      this.scene.remove(this.points);
+      this.points.geometry.dispose();
+      this.points.material.dispose();
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positionArray, 3));
+    geometry.setAttribute("color", new THREE.BufferAttribute(colorArray, 3));
+    const material = new THREE.PointsMaterial({ size: this.pointSize, vertexColors: true, sizeAttenuation: true, transparent: true, opacity: 0.92 });
+    this.points = new THREE.Points(geometry, material);
+    this.scene.add(this.points);
   }
 
   _buildBox(min, max) {
@@ -296,10 +340,15 @@ class EventExplorerPanel {
     this.refs.splits.querySelectorAll(".ev-split").forEach((button) => {
       button.addEventListener("click", () => this._setSplit(button.dataset.split));
     });
+
+    this.wallToggle = new window.WallToggle(this.refs.walls, (flags) => { if (this.viewer) this.viewer.setWallFlags(flags); });
   }
 
   async enter() {
-    if (!this.viewer) this.viewer = new EventViewer(this.refs.canvas);
+    if (!this.viewer) {
+      this.viewer = new EventViewer(this.refs.canvas);
+      this.viewer.setWallFlags(this.wallToggle.flags);
+    }
     this.viewer.start();
 
     if (!this.entered) {
@@ -449,6 +498,7 @@ class EventExplorerPanel {
     if (!data || !data.ok) { this._failLoad((data && data.error) || "Could not read events."); return; }
 
     this.meta = data.meta;
+    if (this.viewer) this.viewer.setDetectorBounds(this.meta.detector_min, this.meta.detector_max);
     this.gt = data.gt;
     this.error = data.error || [];
     this.nActive = data.n_active;
