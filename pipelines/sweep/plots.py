@@ -14,10 +14,10 @@ from pipelines.inference.plots import PublicationStyle
 
 class SweepPlots:
     HEATMAP_METRICS = (
-        ("euclidean_mean",   "Mean euclidean error [cm]",   "viridis_r"),
-        ("euclidean_median", "Median euclidean error [cm]", "viridis_r"),
-        ("mae",              "Mean absolute error [cm]",     "viridis_r"),
-        ("rmse",             "Root-mean-square error [cm]",  "viridis_r"),
+        ("euclidean_mean",   "Mean euclidean error [m]",   "viridis_r"),
+        ("euclidean_median", "Median euclidean error [m]", "viridis_r"),
+        ("mae",              "Mean absolute error [m]",     "viridis_r"),
+        ("rmse",             "Root-mean-square error [m]",  "viridis_r"),
         ("r2",               "Coefficient of determination", "viridis"),
     )
 
@@ -83,7 +83,7 @@ class SweepPlots:
         for row, efficiency in enumerate(self.efficiency_values):
             axis.plot(self.scale_values, grid[row, :], marker="o", markersize=3, linewidth=1.2, color=colours[row], label=f"{efficiency:g}")
         axis.set_xlabel(self.SCALE_LABEL)
-        axis.set_ylabel("Mean euclidean error [cm]")
+        axis.set_ylabel("Mean euclidean error [m]")
         axis.set_title("Mean euclidean error versus light scale factor")
         axis.legend(title=self.EFFICIENCY_LABEL, fontsize=7, title_fontsize=7, ncol=2, loc="best")
         self._save(figure, "euclidean_mean_vs_scale.png")
@@ -94,7 +94,7 @@ class SweepPlots:
         for column, scale in enumerate(self.scale_values):
             axis.plot(self.efficiency_values, grid[:, column], marker="o", markersize=3, linewidth=1.2, color=colours[column], label=f"{scale:g}")
         axis.set_xlabel(self.EFFICIENCY_LABEL)
-        axis.set_ylabel("Mean euclidean error [cm]")
+        axis.set_ylabel("Mean euclidean error [m]")
         axis.set_title("Mean euclidean error versus detection efficiency")
         axis.legend(title=self.SCALE_LABEL, fontsize=7, title_fontsize=7, ncol=2, loc="best")
         self._save(figure, "euclidean_mean_vs_efficiency.png")

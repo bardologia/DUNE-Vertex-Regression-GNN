@@ -21,7 +21,7 @@ class SweepReport:
 
     def _write_json(self, context, records):
         payload = {
-            "unit"    : "cm",
+            "unit"    : "m",
             "run"     : context,
             "results" : records,
         }
@@ -69,14 +69,14 @@ class SweepReport:
 
         document.heading("Highlights", level=2)
         document.kv_table({
-            "Best mean euclidean error [cm]"  : f"{best['metrics']['euclidean_mean']:.4f} at scale={best['scale_factor']:g}, efficiency={best['detection_efficiency']:g}",
-            "Worst mean euclidean error [cm]" : f"{worst['metrics']['euclidean_mean']:.4f} at scale={worst['scale_factor']:g}, efficiency={worst['detection_efficiency']:g}",
+            "Best mean euclidean error [m]"  : f"{best['metrics']['euclidean_mean']:.4f} at scale={best['scale_factor']:g}, efficiency={best['detection_efficiency']:g}",
+            "Worst mean euclidean error [m]" : f"{worst['metrics']['euclidean_mean']:.4f} at scale={worst['scale_factor']:g}, efficiency={worst['detection_efficiency']:g}",
         }, code_keys=False)
 
     def _results_table(self, document, records):
         document.heading("Per-cell metrics", level=2)
         table = MarkdownTable(
-            ["Scale", "Efficiency", "Count", "MAE [cm]", "RMSE [cm]", "Eucl. mean [cm]", "Eucl. median [cm]", "R2"],
+            ["Scale", "Efficiency", "Count", "MAE [m]", "RMSE [m]", "Eucl. mean [m]", "Eucl. median [m]", "R2"],
             align=["right", "right", "right", "right", "right", "right", "right", "right"],
         )
         for record in records:

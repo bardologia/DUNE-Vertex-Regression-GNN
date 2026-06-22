@@ -287,7 +287,7 @@ class FeatureImportancePipeline:
             "names"    : [record["label"] for record in records],
             "values"   : [record["deltas"][self.primary_metric] for record in records],
             "errors"   : [record["primary_std"] for record in records] if with_errors else None,
-            "xlabel"   : "Delta mean euclidean error [cm]",
+            "xlabel"   : "Delta mean euclidean error [m]",
             "title"    : title,
             "filename" : filename,
             "color"    : color,

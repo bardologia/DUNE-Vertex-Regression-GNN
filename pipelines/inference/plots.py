@@ -29,7 +29,7 @@ class PublicationStyle:
 
 class AnalysisPlots:
     COORDINATE_NAMES = ("x", "y", "z")
-    UNIT             = "cm"
+    UNIT             = "m"
 
     def __init__(self, output_directory, logger):
         self.output_directory = Path(output_directory)
