@@ -114,6 +114,7 @@ DUNE-GNN/
 │   ├── build_parquet_store.py  # build the geometry-once parquet store from raw CSVs
 │   ├── train.py                # training entry point (logs + checkpoints → runs/)
 │   ├── infer.py                # inference / evaluation on a trained checkpoint
+│   ├── explain.py              # graph feature-importance attribution on a trained checkpoint
 │   ├── cross_validate.py       # k-fold cross-validation
 │   ├── tune.py                 # Optuna hyperparameter search
 │   ├── sweep.py                # energy/efficiency robustness sweep on a trained run
@@ -186,11 +187,16 @@ python main/sweep.py --run_directory runs/<model>_<stamp> \
     --scale.minimum 0.05 --scale.maximum 0.5 --scale.step 0.05 \
     --efficiency.minimum 0.01 --efficiency.maximum 0.1 --efficiency.step 0.01
 
-# 7. Monitor training in real time
+# 7. Attribute graph node/edge feature importance on a trained run
+python main/explain.py --run_directory runs/<model>_<stamp>
+
+# 8. Monitor training in real time
 tensorboard --logdir=runs/
 ```
 
 The **energy/efficiency sweep** (`main/sweep.py`) re-evaluates a trained checkpoint on its own held-out split while regenerating the optical signal under a Cartesian grid of light scale factors (`PhysicsConfig.scale_factor`) and binomial detection efficiencies (`PhysicsConfig.detection_efficiency`). The split membership and the training-split normalisation statistics are held fixed, so the sweep isolates the model's robustness to a shift in the photon-counting regime. Each axis is given as `minimum`, `maximum`, and `step`; every grid cell runs a full inference pass. Outputs are written under `runs/<run>/sweeps/energy_efficiency_<stamp>/`: a `report.md`, machine-readable `results.json` / `results.csv`, and per-metric heatmaps plus marginal line plots in `plots/`.
+
+The **feature-importance attribution** (`main/explain.py`) explains which components of the event-graph representation a trained checkpoint relies on, evaluated on its own held-out split with the training-split normalisation statistics held fixed. It reports three complementary attributions over the node and edge feature columns (individually and grouped by semantic block): **permutation importance** — the held-out degradation when a feature is shuffled across every node or edge, averaged over `--permutation_repeats` seeds with a standard deviation; **occlusion (mean-ablation) importance** — the degradation when a feature is replaced by its dataset mean; and **gradient saliency** — the mean magnitude of the gradient of the squared prediction error with respect to each normalised input feature, alongside its gradient×input variant. Outputs are written under `runs/<run>/explainability/feature_importance_<stamp>/`: a `report.md` with ranked tables and a cross-method consensus ranking, machine-readable `results.json`, per-feature `node_importance.csv` / `edge_importance.csv`, and one publication-quality horizontal bar chart per method in `plots/`. Use `--max_events` to cap the evaluation set for a fast pass and `--split` to target `val`/`train`/`test`.
 
 Every entry point wraps its configuration in a `ConfigCli`, so any nested config field can be overridden from the command line without editing source — for example:
 

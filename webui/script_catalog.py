@@ -36,12 +36,18 @@ class ScriptCatalog:
             "category" : "Analysis",
             "purpose"  : "Run the full inference analysis (metrics, plots, animations, report) on a training run.",
         },
+        "explain": {
+            "label"    : "Explain",
+            "category" : "Analysis",
+            "purpose"  : "Attribute the graph node and edge features of a trained run via permutation, occlusion, and gradient saliency, producing plots and a report.",
+        },
     }
 
     ORDER = [
         "build_parquet_store",
         "train",
         "infer",
+        "explain",
         "tune",
         "cross_validate",
         "benchmark",
