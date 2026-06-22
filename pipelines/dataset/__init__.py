@@ -1,6 +1,6 @@
 from .augmentation         import Augmentation
 from .coordinate_correction import CoordinateTransform, EndcapFaceCorrector
-from .graph                import ActiveNodeSelector, EdgeFeatures, FeatureSchema, Graph, GraphAssembler, NodeFeatures
+from .graph                import ActiveNodeSelector, EdgeFeatures, FeatureLayout, FeatureSchema, Graph, GraphAssembler, NodeFeatures
 from .graph_dataset        import GraphDataset, StatsEstimator
 from .hot_channels         import HotChannelCorrector
 from .normalization        import ChannelStrategySelector, FeatureGroupNormalizer, NormalizationStats
@@ -15,6 +15,7 @@ __all__ = [
     "DatasetPipeline",
     "ActiveNodeSelector",
     "EdgeFeatures",
+    "FeatureLayout",
     "FeatureSchema",
     "Graph",
     "GraphAssembler",

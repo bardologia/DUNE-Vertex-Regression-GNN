@@ -34,6 +34,11 @@ class ProjectPaths:
             "entry_config_module" : "configuration.entry.general",
             "entry_config_class"  : "InferenceEntryConfig",
         },
+        "explain": {
+            "file"                : "explain.py",
+            "entry_config_module" : "configuration.explainability.general",
+            "entry_config_class"  : "FeatureImportanceConfig",
+        },
         "build_parquet_store": {
             "file"                : "build_parquet_store.py",
             "entry_config_module" : "configuration.entry.general",

@@ -238,3 +238,51 @@ class FeatureSchema:
         light     = (generator.random(self.PROBE_NODES) + 0.1).astype(np.float32)
         data      = self.builder.build_from_arrays(positions, light)
         return int(data.x.shape[1]), int(data.edge_attr.shape[1])
+
+
+class FeatureLayout:
+    AXES = ("x", "y", "z")
+
+    def __init__(self, config):
+        self.direction_features = config.graph.direction_features
+        self.inertia_features   = config.graph.inertia_features
+        self.rank_features      = config.graph.rank_features
+        self.edge_rbf_count     = int(config.graph.edge_rbf_count)
+
+    def node_features(self):
+        layout  = [(f"position_{axis}", "position") for axis in self.AXES]
+        layout += [("light_intensity",      "light_intensity")]
+        layout += [("light_fraction",       "light_fraction")]
+        layout += [("distance_to_centroid", "distance_to_centroid")]
+        layout += [("local_light_density",  "local_light_density")]
+
+        if self.direction_features:
+            layout += [(f"direction_to_centroid_{axis}",  "direction_to_centroid")  for axis in self.AXES]
+            layout += [(f"direction_to_brightest_{axis}", "direction_to_brightest") for axis in self.AXES]
+
+        if self.inertia_features:
+            layout += [(f"inertia_invariant_{index}", "inertia_invariants") for index in (1, 2, 3)]
+
+        if self.rank_features:
+            layout += [("intensity_rank", "intensity_rank")]
+
+        return layout
+
+    def edge_features(self):
+        layout  = [("edge_distance", "edge_distance")]
+        layout += [(f"displacement_{axis}", "displacement") for axis in self.AXES]
+        layout += [("inverse_square_distance", "inverse_square_distance")]
+        layout += [("light_gradient",   "light_gradient")]
+        layout += [("light_similarity", "light_similarity")]
+
+        if self.edge_rbf_count > 0:
+            layout += [(f"distance_rbf_{index:02d}", "distance_rbf") for index in range(self.edge_rbf_count)]
+
+        return layout
+
+    @staticmethod
+    def group_index(layout):
+        groups = {}
+        for index, (_, group) in enumerate(layout):
+            groups.setdefault(group, []).append(index)
+        return groups
