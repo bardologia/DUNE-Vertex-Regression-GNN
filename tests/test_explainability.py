@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from configuration                 import DatasetConfig, TrainEntryConfig
@@ -56,6 +57,8 @@ def test_feature_importance_pipeline_outputs(parquet_store, tmp_path):
     config.batch_size          = 8
     config.max_events          = 12
     config.permutation_repeats = 2
+    config.eg_samples          = 4
+    config.eg_events           = 8
     config.top_k               = 5
 
     output_directory = FeatureImportancePipeline(config, logger=Logger(log_dir="", name="explain", level="ERROR")).run()
@@ -66,3 +69,8 @@ def test_feature_importance_pipeline_outputs(parquet_store, tmp_path):
     assert (output_directory / "edge_importance.csv").exists()
     assert any((output_directory / "plots").glob("permutation_*.png"))
     assert any((output_directory / "plots").glob("gradient_*.png"))
+    assert any((output_directory / "plots").glob("expected_gradients_*.png"))
+
+    payload = json.loads((output_directory / "results.json").read_text(encoding="utf-8"))
+    assert "expected_gradients" in payload["analysis"]
+    assert set(payload["analysis"]["expected_gradients"]["completeness"]) == {"x", "y", "z"}

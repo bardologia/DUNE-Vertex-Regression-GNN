@@ -17,7 +17,7 @@ from pipelines.inference.metrics     import InferenceMetrics
 from pipelines.inference.predictor   import Predictor
 
 from pipelines.explainability.evaluation import EvaluationGraphTensors, SplitMetricEvaluator
-from pipelines.explainability.importance import GradientSaliency, OcclusionImportance, PermutationImportance
+from pipelines.explainability.importance import ExpectedGradients, GradientSaliency, OcclusionImportance, PermutationImportance
 from pipelines.explainability.plots      import FeatureImportancePlots
 from pipelines.explainability.report     import FeatureImportanceReport
 
@@ -49,10 +49,11 @@ class FeatureImportancePipeline:
         self.node_groups      = None
         self.edge_groups      = None
 
-        self.permutation      = None
-        self.occlusion        = None
-        self.gradient         = None
-        self.output_directory = None
+        self.permutation         = None
+        self.occlusion           = None
+        self.gradient            = None
+        self.expected_gradients  = None
+        self.output_directory    = None
 
     def _resolve_output_directory(self):
         stamp     = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -148,6 +149,28 @@ class FeatureImportancePipeline:
             records.append({"feature": name, "group": group, "saliency": float(saliency[index]), "input_times_grad": float(input_times_grad[index])})
         return records
 
+    def _run_expected_gradients(self):
+        if not self.config.expected_gradients:
+            return
+        means                   = ExpectedGradients(self.predictor.model, self.device, self.engine, self.config.eg_samples, self.config.eg_events, self.config.eg_seed, self.logger).run()
+        self.expected_gradients = {
+            "coordinates"  : list(means["coordinates"]),
+            "completeness" : means["completeness"],
+            "events"       : means["events"],
+            "samples"      : means["samples"],
+            "node"         : self._expected_gradient_records(self.node_layout, means["coordinates"], means["node_overall"], means["node_per_axis"]),
+            "edge"         : self._expected_gradient_records(self.edge_layout, means["coordinates"], means["edge_overall"], means["edge_per_axis"]),
+        }
+
+    def _expected_gradient_records(self, layout, coordinates, overall, per_axis):
+        records = []
+        for index, (name, group) in enumerate(layout):
+            record = {"feature": name, "group": group, "overall": float(overall[index])}
+            for axis_index, axis in enumerate(coordinates):
+                record[axis] = float(per_axis[axis_index][index])
+            records.append(record)
+        return records
+
     def _perturbation_lookup(self, results, key):
         if results is None:
             return {}
@@ -158,14 +181,20 @@ class FeatureImportancePipeline:
             return {}
         return {record["feature"]: record for record in self.gradient[domain]}
 
+    def _expected_gradient_lookup(self, domain):
+        if self.expected_gradients is None:
+            return {}
+        return {record["feature"]: record for record in self.expected_gradients[domain]}
+
     def _rank_map(self, scores):
         ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
         return {feature: position for position, (feature, _) in enumerate(ranked, start=1)}
 
     def _merged_rows(self, layout, domain, permutation_key):
-        permutation_features = self._perturbation_lookup(self.permutation, permutation_key)
-        occlusion_features   = self._perturbation_lookup(self.occlusion, permutation_key)
-        gradient_features    = self._gradient_lookup(domain)
+        permutation_features        = self._perturbation_lookup(self.permutation, permutation_key)
+        occlusion_features          = self._perturbation_lookup(self.occlusion, permutation_key)
+        gradient_features           = self._gradient_lookup(domain)
+        expected_gradient_features  = self._expected_gradient_lookup(domain)
 
         rows = []
         for name, group in layout:
@@ -191,6 +220,13 @@ class FeatureImportancePipeline:
                 row["gradient_saliency"]         = gradient_features[name]["saliency"]
                 row["gradient_input_times_grad"] = gradient_features[name]["input_times_grad"]
 
+            if name in expected_gradient_features:
+                record                     = expected_gradient_features[name]
+                row["expected_gradient"]   = record["overall"]
+                row["expected_gradient_x"] = record["x"]
+                row["expected_gradient_y"] = record["y"]
+                row["expected_gradient_z"] = record["z"]
+
             rows.append(row)
         return rows
 
@@ -198,8 +234,9 @@ class FeatureImportancePipeline:
         permutation_scores = {row["feature"]: row["permutation_delta"] for row in rows if "permutation_delta" in row}
         occlusion_scores   = {row["feature"]: row["occlusion_delta"]   for row in rows if "occlusion_delta"   in row}
         gradient_scores    = {row["feature"]: row["gradient_saliency"] for row in rows if "gradient_saliency" in row}
+        expected_scores    = {row["feature"]: row["expected_gradient"] for row in rows if "expected_gradient" in row}
 
-        rank_maps = {"permutation": self._rank_map(permutation_scores), "occlusion": self._rank_map(occlusion_scores), "gradient": self._rank_map(gradient_scores)}
+        rank_maps = {"permutation": self._rank_map(permutation_scores), "occlusion": self._rank_map(occlusion_scores), "gradient": self._rank_map(gradient_scores), "expected_gradients": self._rank_map(expected_scores)}
 
         consensus = []
         for row in rows:
@@ -234,6 +271,17 @@ class FeatureImportancePipeline:
             "color"    : color,
         }
 
+    def _expected_gradient_figure(self, records, value_key, title, filename, color):
+        return {
+            "names"    : [record["feature"] for record in records],
+            "values"   : [record[value_key] for record in records],
+            "errors"   : None,
+            "xlabel"   : "Mean |expected gradient| (normalized prediction)",
+            "title"    : title,
+            "filename" : filename,
+            "color"    : color,
+        }
+
     def _figure_specifications(self):
         node_color = FeatureImportancePlots.NODE_COLOR
         edge_color = FeatureImportancePlots.EDGE_COLOR
@@ -256,6 +304,13 @@ class FeatureImportancePipeline:
             figures.append(self._gradient_figure(self.gradient["node"], "input_times_grad", "Gradient x input: node features",             "gradient_node_input_times_grad.png", node_color))
             figures.append(self._gradient_figure(self.gradient["edge"], "saliency",         "Gradient saliency: edge features",            "gradient_edge_saliency.png",         edge_color))
             figures.append(self._gradient_figure(self.gradient["edge"], "input_times_grad", "Gradient x input: edge features",             "gradient_edge_input_times_grad.png", edge_color))
+
+        if self.expected_gradients is not None:
+            figures.append(self._expected_gradient_figure(self.expected_gradients["node"], "overall", "Expected gradients: node features (all axes)", "expected_gradients_node_overall.png", node_color))
+            figures.append(self._expected_gradient_figure(self.expected_gradients["edge"], "overall", "Expected gradients: edge features (all axes)", "expected_gradients_edge_overall.png", edge_color))
+            for axis in self.expected_gradients["coordinates"]:
+                figures.append(self._expected_gradient_figure(self.expected_gradients["node"], axis, f"Expected gradients: node features ({axis})", f"expected_gradients_node_{axis}.png", node_color))
+                figures.append(self._expected_gradient_figure(self.expected_gradients["edge"], axis, f"Expected gradients: edge features ({axis})", f"expected_gradients_edge_{axis}.png", edge_color))
 
         return figures
 
@@ -280,10 +335,11 @@ class FeatureImportancePipeline:
         }
 
         analysis = {
-            "permutation" : self.permutation,
-            "occlusion"   : self.occlusion,
-            "gradient"    : self.gradient,
-            "consensus"   : {"node": consensus_node, "edge": consensus_edge},
+            "permutation"        : self.permutation,
+            "occlusion"          : self.occlusion,
+            "gradient"           : self.gradient,
+            "expected_gradients" : self.expected_gradients,
+            "consensus"          : {"node": consensus_node, "edge": consensus_edge},
         }
 
         inventory  = {"node": self.node_layout, "edge": self.edge_layout}
@@ -300,6 +356,7 @@ class FeatureImportancePipeline:
         self._run_permutation()
         self._run_occlusion()
         self._run_gradient()
+        self._run_expected_gradients()
         self._build_outputs()
         self.logger.ok(f"Feature importance complete -> {self.output_directory}")
         return self.output_directory

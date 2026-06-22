@@ -21,10 +21,15 @@ class FeatureImportanceConfig:
     permutation         : bool = True
     occlusion           : bool = True
     gradient            : bool = True
+    expected_gradients  : bool = True
 
     permutation_repeats : int  = 10
     permutation_seed    : int  = 0
     grouped             : bool = True
+
+    eg_samples          : int  = 32
+    eg_events           : int  = 64
+    eg_seed             : int  = 0
 
     primary_metric      : str  = "euclidean_mean"
     top_k               : int  = 15
