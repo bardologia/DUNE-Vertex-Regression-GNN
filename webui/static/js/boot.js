@@ -14,9 +14,25 @@ class Application {
 
   async init() {
     this._buildScene();
+    this._buildNavToggle();
     await this._probeBackend();
     this._buildPanels();
     this._buildRouter();
+  }
+
+  _buildNavToggle() {
+    const toggle = document.getElementById("nav-toggle");
+    const reveal = document.getElementById("nav-reveal");
+    if (!toggle || !reveal) return;
+
+    const setCollapsed = (collapsed) => {
+      document.body.classList.toggle("nav-collapsed", collapsed);
+      toggle.setAttribute("aria-expanded", String(!collapsed));
+      reveal.hidden = !collapsed;
+    };
+
+    toggle.addEventListener("click", () => setCollapsed(true));
+    reveal.addEventListener("click", () => setCollapsed(false));
   }
 
   _buildScene() {

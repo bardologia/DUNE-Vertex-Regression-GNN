@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css" />
-<link rel="stylesheet" href="/static/css/styles.css?v=20260622f" />
+<link rel="stylesheet" href="/static/css/styles.css?v=20260622h" />
 </head>
 <body>
 
@@ -18,10 +18,13 @@
 <div class="vignette" aria-hidden="true"></div>
 
 <header class="nav" id="nav">
-  <a class="nav__brand" href="#/system" data-route="system">
-    <span class="nav__logo" aria-hidden="true"></span>
-    <span class="nav__name">DUNE<span class="nav__name-dim">-GNN</span></span>
-  </a>
+  <div class="nav__head">
+    <a class="nav__brand" href="#/system" data-route="system">
+      <span class="nav__logo" aria-hidden="true"></span>
+      <span class="nav__name">DUNE<span class="nav__name-dim">-GNN</span></span>
+    </a>
+    <button class="nav__toggle" id="nav-toggle" type="button" aria-label="Collapse sidebar" aria-expanded="true"></button>
+  </div>
   <nav class="nav__links" aria-label="Sections">
     <a href="#/system" data-route="system">Server</a>
     <a href="#/scripts" data-route="scripts">Control panel</a>
@@ -36,6 +39,8 @@
     <span id="status-text">connecting</span>
   </div>
 </header>
+
+<button class="nav__reveal" id="nav-reveal" type="button" aria-label="Open sidebar" hidden></button>
 
 <main id="view">
 
@@ -292,6 +297,6 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/build/three.min.js"></script>
 <script src="/static/js/events.js?v=20260622a"></script>
 <script src="/static/js/preprocess.js?v=20260622b"></script>
-<script src="/static/js/boot.js?v=20260622a"></script>
+<script src="/static/js/boot.js?v=20260622c"></script>
 </body>
 </html>
