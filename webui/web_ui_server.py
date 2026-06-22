@@ -6,6 +6,7 @@ from config_registry     import ConfigRegistry
 from event_explorer      import EventExplorer
 from gpu_watchdog        import GpuWatchdog
 from model_library       import ModelLibrary
+from preprocessing_preview import PreprocessingPreview
 from process_manager     import ProcessManager
 from project_paths       import ProjectPaths
 from request_router      import RequestRouter
@@ -47,6 +48,7 @@ class WebUIServer:
         self.results      = ResultsBrowser(self.paths, self.logger)
         self.models       = ModelLibrary(self.paths)
         self.events       = EventExplorer(self.paths, self.logger)
+        self.preprocess   = PreprocessingPreview(self.paths, self.logger)
 
         self.router = RequestRouter(
             paths        = self.paths,
@@ -60,6 +62,7 @@ class WebUIServer:
             results      = self.results,
             models       = self.models,
             events       = self.events,
+            preprocess   = self.preprocess,
         )
 
     def _report_ready(self) -> None:

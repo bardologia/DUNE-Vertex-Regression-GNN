@@ -37,11 +37,27 @@ class HotChannelCorrector:
         _, neighbor_ranks = tree.query(self.positions[hot_channels], k=self.neighbor_count)
         return healthy_indices[neighbor_ranks]
 
+    def fit(self, light_matrix):
+        hot_channels = self._detect(light_matrix)
+        if hot_channels.size == 0:
+            return hot_channels, np.empty((0, self.neighbor_count), dtype=np.int64)
+
+        neighbor_indices = self._neighbor_indices(hot_channels)
+        return hot_channels, neighbor_indices
+
     def _replace(self, light_matrix, hot_channels, neighbor_indices):
         for position, channel in enumerate(hot_channels):
             neighbor_light           = light_matrix[:, neighbor_indices[position]]
             light_matrix[:, channel] = np.rint(neighbor_light.mean(axis=1)).astype(light_matrix.dtype)
         return light_matrix
+
+    def apply_to_event(self, light_row, hot_channels, neighbor_indices):
+        if hot_channels.size == 0:
+            return np.array(light_row, dtype=np.float32)
+
+        single    = np.array(light_row, dtype=np.float64, copy=True).reshape(1, -1)
+        corrected = self._replace(single, hot_channels, neighbor_indices)
+        return corrected.reshape(-1).astype(np.float32)
 
     def run(self, light_matrix):
         if not self.enabled:
@@ -51,13 +67,12 @@ class HotChannelCorrector:
             self.logger.subsection(f"Hot-channel correction skipped ({light_matrix.shape[0]} < {self.min_events} events)")
             return light_matrix
 
-        hot_channels = self._detect(light_matrix)
+        hot_channels, neighbor_indices = self.fit(light_matrix)
         if hot_channels.size == 0:
             self.logger.subsection("Hot-channel correction: no hot channels detected")
             return light_matrix
 
-        neighbor_indices = self._neighbor_indices(hot_channels)
-        light_matrix     = self._replace(light_matrix, hot_channels, neighbor_indices)
+        light_matrix = self._replace(light_matrix, hot_channels, neighbor_indices)
 
         self.logger.subsection(f"Hot-channel correction: {hot_channels.size} channels replaced by {self.neighbor_count}-neighbour mean -> {hot_channels.tolist()}")
         return light_matrix

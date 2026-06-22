@@ -15,6 +15,7 @@ from config_registry     import ConfigRegistry
 from event_explorer      import EventExplorer
 from gpu_watchdog        import GpuWatchdog
 from model_library       import ModelLibrary
+from preprocessing_preview import PreprocessingPreview
 from process_manager     import ProcessManager
 from project_paths       import ProjectPaths
 from results_browser     import ResultsBrowser
@@ -31,7 +32,7 @@ class RequestRouter:
         "tagline" : "Graph neural network vertex reconstruction control console",
     }
 
-    def __init__(self, paths: ProjectPaths, logger: ServerLogger, catalog: ScriptCatalog, configs: ConfigRegistry, processes: ProcessManager, system: SystemMonitor, gpu_watchdog: GpuWatchdog, tensorboard: TensorboardManager, results: ResultsBrowser, models: ModelLibrary, events: EventExplorer) -> None:
+    def __init__(self, paths: ProjectPaths, logger: ServerLogger, catalog: ScriptCatalog, configs: ConfigRegistry, processes: ProcessManager, system: SystemMonitor, gpu_watchdog: GpuWatchdog, tensorboard: TensorboardManager, results: ResultsBrowser, models: ModelLibrary, events: EventExplorer, preprocess: PreprocessingPreview) -> None:
         self.paths        = paths
         self.logger       = logger
         self.catalog      = catalog
@@ -43,6 +44,7 @@ class RequestRouter:
         self.results      = results
         self.models       = models
         self.events       = events
+        self.preprocess   = preprocess
 
     def _route_get(self, handler, path: str) -> None:
         if path == "/" or path == "":
@@ -110,6 +112,13 @@ class RequestRouter:
             result = self.events.detail((query.get("kind") or [""])[0], (query.get("name") or [""])[0], (query.get("split") or [""])[0], index)
             self._send_json(handler, result, 200 if result.get("ok") else 400)
             return
+        if path == "/api/preprocess/status":
+            self._send_json(handler, self.preprocess.load_status())
+            return
+        if path == "/api/preprocess/events":
+            result = self.preprocess.events()
+            self._send_json(handler, result, 200 if result.get("ok") else 400)
+            return
 
         self._send_json(handler, {"error": "not found"}, 404)
 
@@ -161,6 +170,20 @@ class RequestRouter:
 
         if path == "/api/events/load":
             result = self.events.start_load(body.get("kind", "run"), body.get("name", ""), body.get("split", "test"))
+            self._send_json(handler, result, 200 if result.get("ok") else 400)
+            return
+
+        if path == "/api/preprocess/load":
+            result = self.preprocess.start_load()
+            self._send_json(handler, result, 200 if result.get("ok") else 400)
+            return
+
+        if path == "/api/preprocess/preview":
+            try:
+                index = int(body.get("index", -1))
+            except (TypeError, ValueError):
+                index = -1
+            result = self.preprocess.preview(index, body.get("config", {}))
             self._send_json(handler, result, 200 if result.get("ok") else 400)
             return
 
