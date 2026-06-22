@@ -116,6 +116,7 @@ DUNE-GNN/
 │   ├── infer.py                # inference / evaluation on a trained checkpoint
 │   ├── cross_validate.py       # k-fold cross-validation
 │   ├── tune.py                 # Optuna hyperparameter search
+│   ├── sweep.py                # energy/efficiency robustness sweep on a trained run
 │   ├── benchmark.py            # throughput / batch-size benchmarking
 │   ├── export_events.py        # export raw/preprocessed events
 │   ├── export_dataset_events.py
@@ -180,9 +181,16 @@ python main/cross_validate.py
 # 5. Run a hyperparameter search with Optuna
 python main/tune.py
 
-# 6. Monitor training in real time
+# 6. Sweep light scale factor and detection efficiency on a trained run
+python main/sweep.py --run_directory runs/<model>_<stamp> \
+    --scale.minimum 0.05 --scale.maximum 0.5 --scale.step 0.05 \
+    --efficiency.minimum 0.01 --efficiency.maximum 0.1 --efficiency.step 0.01
+
+# 7. Monitor training in real time
 tensorboard --logdir=runs/
 ```
+
+The **energy/efficiency sweep** (`main/sweep.py`) re-evaluates a trained checkpoint on its own held-out split while regenerating the optical signal under a Cartesian grid of light scale factors (`PhysicsConfig.scale_factor`) and binomial detection efficiencies (`PhysicsConfig.detection_efficiency`). The split membership and the training-split normalisation statistics are held fixed, so the sweep isolates the model's robustness to a shift in the photon-counting regime. Each axis is given as `minimum`, `maximum`, and `step`; every grid cell runs a full inference pass. Outputs are written under `runs/<run>/sweeps/energy_efficiency_<stamp>/`: a `report.md`, machine-readable `results.json` / `results.csv`, and per-metric heatmaps plus marginal line plots in `plots/`.
 
 Every entry point wraps its configuration in a `ConfigCli`, so any nested config field can be overridden from the command line without editing source — for example:
 
