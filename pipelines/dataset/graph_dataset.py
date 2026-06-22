@@ -134,7 +134,7 @@ class StatsEstimator:
 
         node_group   = FeatureGroupNormalizer.fit(np.concatenate(node_segments, axis=0))
         edge_group   = FeatureGroupNormalizer.fit(np.concatenate(edge_segments, axis=0))
-        target_group = FeatureGroupNormalizer.fit(np.concatenate(target_segments, axis=0))
+        target_group = FeatureGroupNormalizer.fit_isotropic(np.concatenate(target_segments, axis=0))
 
         self.logger.subsection(f"Fitted normalization on {count} events")
 
