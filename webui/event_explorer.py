@@ -241,8 +241,9 @@ class EventExplorer:
         archive = np.load(cache)
         data    = {key: archive[key] for key in archive.files}
 
-        gt    = data["gt"]
-        error = data["error"]
+        gt        = data["gt"]
+        error     = data["error"]
+        positions = data["sensor_positions"]
 
         meta = {
             "kind"           : "run",
@@ -253,6 +254,8 @@ class EventExplorer:
             "generated"      : datetime.fromtimestamp(cache.stat().st_mtime).isoformat(timespec="seconds"),
             "bounds_min"     : gt.min(axis=0).tolist() if gt.shape[0] else [0.0, 0.0, 0.0],
             "bounds_max"     : gt.max(axis=0).tolist() if gt.shape[0] else [0.0, 0.0, 0.0],
+            "detector_min"   : positions.min(axis=0).tolist() if positions.size else [0.0, 0.0, 0.0],
+            "detector_max"   : positions.max(axis=0).tolist() if positions.size else [0.0, 0.0, 0.0],
             "error_mean"     : float(error.mean()) if error.size else 0.0,
             "error_median"   : float(np.median(error)) if error.size else 0.0,
             "error_p90"      : float(np.percentile(error, 90.0)) if error.size else 0.0,
@@ -263,7 +266,8 @@ class EventExplorer:
         archive = np.load(cache, allow_pickle=False)
         data    = {key: archive[key] for key in archive.files}
 
-        gt = data["gt"]
+        gt        = data["gt"]
+        positions = data["base_positions"]
 
         meta = {
             "kind"           : "dataset",
@@ -274,5 +278,7 @@ class EventExplorer:
             "generated"      : datetime.fromtimestamp(cache.stat().st_mtime).isoformat(timespec="seconds"),
             "bounds_min"     : gt.min(axis=0).tolist() if gt.shape[0] else [0.0, 0.0, 0.0],
             "bounds_max"     : gt.max(axis=0).tolist() if gt.shape[0] else [0.0, 0.0, 0.0],
+            "detector_min"   : positions.min(axis=0).tolist() if positions.size else [0.0, 0.0, 0.0],
+            "detector_max"   : positions.max(axis=0).tolist() if positions.size else [0.0, 0.0, 0.0],
         }
         return data, meta

@@ -76,12 +76,14 @@ class PreprocessingPreview:
             if not self.loaded:
                 return {"ok": False, "error": "preview source not loaded"}
             return {
-                "ok"         : True,
-                "count"      : int(self.octant_gt.shape[0]),
-                "gt"         : self.octant_gt.tolist(),
-                "bounds_min" : self.bounds_min,
-                "bounds_max" : self.bounds_max,
-                "defaults"   : self.defaults(),
+                "ok"           : True,
+                "count"        : int(self.octant_gt.shape[0]),
+                "gt"           : self.octant_gt.tolist(),
+                "bounds_min"   : self.bounds_min,
+                "bounds_max"   : self.bounds_max,
+                "detector_min" : self.geometry.min(axis=0).tolist(),
+                "detector_max" : self.geometry.max(axis=0).tolist(),
+                "defaults"     : self.defaults(),
             }
 
     def preview(self, index: int, config: dict) -> dict:

@@ -645,6 +645,11 @@ main { margin-left: var(--navw); transition: margin-left 0.28s var(--ease); }
 .ev-card__cap { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 12px; }
 .ev-card__cap span { text-transform: none; letter-spacing: 0; color: var(--ink-dim); }
 
+.ev-walls { display: flex; flex-wrap: wrap; gap: 6px; }
+.ev-wall { padding: 5px 0; min-width: 44px; flex: 1 1 44px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-pill); font-family: var(--mono); font-size: 12.5px; color: var(--ink-faint); cursor: pointer; transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease; }
+.ev-wall:hover { border-color: var(--line-strong); color: var(--ink); }
+.ev-wall.is-active { background: rgba(47, 111, 237, 0.1); border-color: var(--accent); color: var(--accent-deep); }
+
 .ev-sliders { display: flex; flex-direction: column; gap: 12px; }
 .ev-slider { display: grid; grid-template-columns: 16px 1fr 64px; align-items: center; gap: 10px; }
 .ev-slider label { font-family: var(--mono); font-size: 13px; color: var(--ink-dim); text-transform: uppercase; }

@@ -110,6 +110,7 @@ class Application {
       readout: document.getElementById("ev-readout"),
       nearest: document.getElementById("ev-nearest"),
       sliders: document.getElementById("ev-sliders"),
+      walls: document.getElementById("ev-walls"),
       stats: document.getElementById("ev-stats"),
     });
 
@@ -123,6 +124,7 @@ class Application {
       stages: document.getElementById("pp-stages"),
       nearest: document.getElementById("pp-nearest"),
       readout: document.getElementById("pp-readout"),
+      walls: document.getElementById("pp-walls"),
     });
   }
 
