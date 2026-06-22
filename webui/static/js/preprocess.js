@@ -288,6 +288,9 @@ class PreprocessingPanel {
     this._buildControls();
     this._buildTargetSliders();
 
+    const eventCard = this.refs.target.closest(".ev-card");
+    if (eventCard) this._wireCollapse(eventCard, eventCard.querySelector(".ev-card__cap"));
+
     const center = [
       (this.bounds.min[0] + this.bounds.max[0]) / 2,
       (this.bounds.min[1] + this.bounds.max[1]) / 2,
@@ -310,9 +313,14 @@ class PreprocessingPanel {
       cap.textContent = group.title;
       card.appendChild(cap);
 
+      const body = document.createElement("div");
+      body.className = "pp-card__body";
       Object.keys(values).forEach((field) => {
-        card.appendChild(this._buildControl(group.key, field, values[field]));
+        body.appendChild(this._buildControl(group.key, field, values[field]));
       });
+      card.appendChild(body);
+
+      this._wireCollapse(card, cap);
       this.refs.controls.appendChild(card);
     });
   }
@@ -377,6 +385,10 @@ class PreprocessingPanel {
     row.appendChild(output);
     row.appendChild(input);
     return row;
+  }
+
+  _wireCollapse(card, cap) {
+    cap.addEventListener("click", () => card.classList.toggle("is-collapsed"));
   }
 
   _buildTargetSliders() {
