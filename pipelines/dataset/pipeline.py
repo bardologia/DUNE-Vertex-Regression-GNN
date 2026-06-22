@@ -205,6 +205,20 @@ class DatasetPipeline:
         self._build_datasets(train_samples, validation_samples, test_samples)
         return self.datasets, self.stats
 
+    def build_evaluation_split(self, split_base_ids, split_name):
+        if self.stats is None:
+            raise ValueError("build_evaluation_split requires normalization stats supplied to the pipeline; physics-only re-evaluation must reuse the training-split statistics.")
+
+        self.prepare_samples()
+
+        partitions   = dict(zip(("train", "val", "test"), self._partition_by_base_ids(self.samples, split_base_ids)))
+        if split_name not in partitions:
+            raise KeyError(f"Unknown split '{split_name}'. Expected one of {tuple(partitions)}.")
+
+        split_samples = partitions[split_name]
+        split_dataset = self._make_dataset(split_samples, augmentation=None, stats=self.stats)
+        return CachedGraphDataset(split_dataset, self.logger)
+
     def run(self):
         self.logger.section("[Dataset Pipeline]")
         self.prepare_samples()
