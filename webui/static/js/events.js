@@ -207,12 +207,11 @@ class EventViewer {
       this.predMarker.visible = false;
       this.errorLine.visible = false;
     }
-
-    this._buildBox(min, max);
   }
 
   setDetectorBounds(min, max) {
     this.detectorExt = window.wallExtents(min, max);
+    this._buildBox(min, max);
   }
 
   setWallFlags(flags) {
