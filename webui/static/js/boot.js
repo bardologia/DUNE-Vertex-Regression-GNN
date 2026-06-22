@@ -96,6 +96,18 @@ class Application {
       sliders: document.getElementById("ev-sliders"),
       stats: document.getElementById("ev-stats"),
     });
+
+    this.preprocessingPanel = new window.PreprocessingPanel({
+      hint: document.getElementById("pp-hint"),
+      progress: document.getElementById("pp-progress"),
+      progressLabel: document.getElementById("pp-progress-label"),
+      stage: document.getElementById("pp-stage"),
+      controls: document.getElementById("pp-controls"),
+      target: document.getElementById("pp-target"),
+      stages: document.getElementById("pp-stages"),
+      nearest: document.getElementById("pp-nearest"),
+      readout: document.getElementById("pp-readout"),
+    });
   }
 
   _buildRouter() {
@@ -119,6 +131,9 @@ class Application {
 
     if (page === "events") this.eventExplorerPanel.enter();
     else this.eventExplorerPanel.leave();
+
+    if (page === "preprocess") this.preprocessingPanel.enter();
+    else this.preprocessingPanel.leave();
 
     if (page === "results") this.resultsPanel.enter();
   }

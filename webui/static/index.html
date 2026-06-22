@@ -27,6 +27,7 @@
     <a href="#/scripts" data-route="scripts">Control panel</a>
     <a href="#/console" data-route="console">Console</a>
     <a href="#/events" data-route="events">Event explorer</a>
+    <a href="#/preprocess" data-route="preprocess">Preprocessing</a>
     <a href="#/results" data-route="results">Results</a>
     <a href="#/tensorboard" data-route="tensorboard">TensorBoard</a>
   </nav>
@@ -154,6 +155,66 @@
     </div>
   </section>
 
+  <!-- PREPROCESSING -->
+  <section class="page page--pad page--preprocess" data-page="preprocess">
+    <div class="page__head">
+      <h2 class="page__title">Preprocessing</h2>
+      <p class="page__lead">
+        Pick an octant-augmented event, then tune each preprocessing stage and watch the
+        transformation propagate from raw photon counts through outlier cleaning, light scaling,
+        binomial detection and sensor augmentation. Drag any panel to rotate them all in sync.
+      </p>
+    </div>
+
+    <div class="pp-hint" id="pp-hint">Loading the raw-light source&hellip;</div>
+
+    <div class="pp-progress" id="pp-progress" hidden>
+      <div class="ev-progress__bar"><span class="ev-progress__fill is-indeterminate"></span></div>
+      <div class="ev-progress__label" id="pp-progress-label"></div>
+    </div>
+
+    <div class="pp-stage" id="pp-stage" hidden>
+      <aside class="pp-rail">
+        <div class="ev-card">
+          <div class="ev-card__cap">octant event <span id="pp-nearest"></span></div>
+          <div class="ev-sliders" id="pp-target"></div>
+        </div>
+        <div class="pp-controls" id="pp-controls"></div>
+      </aside>
+
+      <div class="pp-views">
+        <div class="pp-readout" id="pp-readout"></div>
+        <div class="pp-grid" id="pp-stages">
+          <figure class="pp-stage-cell">
+            <figcaption class="pp-stage__cap">raw octant<span>photon counts</span></figcaption>
+            <canvas class="pp-canvas"></canvas>
+            <div class="pp-stage__meta"></div>
+          </figure>
+          <figure class="pp-stage-cell">
+            <figcaption class="pp-stage__cap">outlier cleaned<span>hot channels</span></figcaption>
+            <canvas class="pp-canvas"></canvas>
+            <div class="pp-stage__meta"></div>
+          </figure>
+          <figure class="pp-stage-cell">
+            <figcaption class="pp-stage__cap">scaled<span>light scaling</span></figcaption>
+            <canvas class="pp-canvas"></canvas>
+            <div class="pp-stage__meta"></div>
+          </figure>
+          <figure class="pp-stage-cell">
+            <figcaption class="pp-stage__cap">detected<span>binomial efficiency</span></figcaption>
+            <canvas class="pp-canvas"></canvas>
+            <div class="pp-stage__meta"></div>
+          </figure>
+          <figure class="pp-stage-cell">
+            <figcaption class="pp-stage__cap">augmented<span>sensor augmentation</span></figcaption>
+            <canvas class="pp-canvas"></canvas>
+            <div class="pp-stage__meta"></div>
+          </figure>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- RESULTS -->
   <section class="page page--pad" data-page="results">
     <div class="page__head">
@@ -229,7 +290,8 @@
 <script src="/static/js/results.js?v=20260621a"></script>
 <script src="/static/js/tensorboard.js?v=20260621a"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/build/three.min.js"></script>
-<script src="/static/js/events.js?v=20260621a"></script>
-<script src="/static/js/boot.js?v=20260621a"></script>
+<script src="/static/js/events.js?v=20260622a"></script>
+<script src="/static/js/preprocess.js?v=20260622a"></script>
+<script src="/static/js/boot.js?v=20260622a"></script>
 </body>
 </html>
