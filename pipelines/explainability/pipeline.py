@@ -18,7 +18,7 @@ from pipelines.inference.predictor   import Predictor
 
 from pipelines.explainability.evaluation import EvaluationGraphTensors, SplitMetricEvaluator
 from pipelines.explainability.importance import ExpectedGradients, GradientSaliency, KernelShapImportance, OcclusionImportance, PermutationImportance
-from pipelines.explainability.plots      import FeatureImportancePlots
+from pipelines.explainability.plots      import FeatureImportancePlots, ShapNativePlots
 from pipelines.explainability.report     import FeatureImportanceReport
 
 
@@ -54,6 +54,7 @@ class FeatureImportancePipeline:
         self.gradient            = None
         self.expected_gradients  = None
         self.kernel_shap         = None
+        self.kernel_shap_samples = None
         self.output_directory    = None
 
     def _resolve_output_directory(self):
@@ -159,8 +160,16 @@ class FeatureImportancePipeline:
     def _run_kernel_shap(self):
         if not self.config.shap:
             return
-        means            = KernelShapImportance(self.predictor.model, self.device, self.engine, self.config.shap_nsamples, self.config.shap_events, self.config.shap_seed, self.logger).run()
-        self.kernel_shap = self._axis_attribution(means)
+        means                    = KernelShapImportance(self.predictor.model, self.device, self.engine, self.config.shap_nsamples, self.config.shap_events, self.config.shap_seed, self.logger).run()
+        self.kernel_shap          = self._axis_attribution(means)
+        self.kernel_shap_samples  = means
+        self.kernel_shap["per_event"] = {
+            "coordinates"         : list(means["coordinates"]),
+            "node_shap"           : means["node_shap"].tolist(),
+            "edge_shap"           : means["edge_shap"].tolist(),
+            "node_feature_values" : means["node_feature_values"].tolist(),
+            "edge_feature_values" : means["edge_feature_values"].tolist(),
+        }
 
     def _axis_attribution(self, means):
         return {
@@ -347,6 +356,13 @@ class FeatureImportancePipeline:
 
         return figures
 
+    def _native_shap_plots(self):
+        if self.kernel_shap_samples is None:
+            return []
+        node_names = [name for name, _ in self.node_layout]
+        edge_names = [name for name, _ in self.edge_layout]
+        return ShapNativePlots(self.output_directory / "plots", self.logger).run(self.kernel_shap_samples, node_names, edge_names, self.kernel_shap_samples["coordinates"])
+
     def _build_outputs(self):
         node_rows = self._merged_rows(self.node_layout, "node", "node_features")
         edge_rows = self._merged_rows(self.edge_layout, "edge", "edge_features")
@@ -355,6 +371,7 @@ class FeatureImportancePipeline:
         consensus_edge = self._consensus(edge_rows)
 
         plots         = FeatureImportancePlots(self.output_directory / "plots", self.logger).run(self._figure_specifications())
+        plots        += self._native_shap_plots()
 
         context = {
             "run_directory"       : str(self.run_directory),

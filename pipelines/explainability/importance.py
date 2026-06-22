@@ -388,14 +388,14 @@ class KernelShapImportance:
         self.edge_features    = engine.edge_feature_count()
         self.total_features   = self.node_features + self.edge_features
 
-        self.subset_graphs = None
-        self.node_mean     = None
-        self.edge_mean     = None
-        self.node_sum      = None
-        self.edge_sum      = None
-        self.node_overall  = None
-        self.edge_overall  = None
-        self.completeness  = None
+        self.subset_graphs       = None
+        self.node_mean           = None
+        self.edge_mean           = None
+        self.node_shap           = None
+        self.edge_shap           = None
+        self.node_feature_values = None
+        self.edge_feature_values = None
+        self.completeness        = None
 
     def _select_subset(self):
         count          = len(self.engine.graphs)
@@ -406,11 +406,12 @@ class KernelShapImportance:
         self.node_mean = self.engine.node_matrix.mean(dim=0)
         self.edge_mean = self.engine.edge_matrix.mean(dim=0)
 
-        self.node_sum     = np.zeros((self.coordinate_count, self.node_features), dtype=np.float64)
-        self.edge_sum     = np.zeros((self.coordinate_count, self.edge_features), dtype=np.float64)
-        self.node_overall = np.zeros(self.node_features, dtype=np.float64)
-        self.edge_overall = np.zeros(self.edge_features, dtype=np.float64)
-        self.completeness = {name: 0.0 for name in self.COORDINATES}
+        event_count              = len(self.subset_graphs)
+        self.node_shap           = np.zeros((event_count, self.node_features, self.coordinate_count), dtype=np.float64)
+        self.edge_shap           = np.zeros((event_count, self.edge_features, self.coordinate_count), dtype=np.float64)
+        self.node_feature_values = np.zeros((event_count, self.node_features), dtype=np.float64)
+        self.edge_feature_values = np.zeros((event_count, self.edge_features), dtype=np.float64)
+        self.completeness        = {name: 0.0 for name in self.COORDINATES}
 
     def _masked_outputs(self, graph, gates):
         outputs = np.zeros((gates.shape[0], self.coordinate_count), dtype=np.float64)
@@ -441,17 +442,14 @@ class KernelShapImportance:
             return values
         return values.T
 
-    def _accumulate_event(self, explainer, graph, instance):
+    def _accumulate_event(self, explainer, graph, instance, event_index):
         shap_values = explainer.shap_values(instance, nsamples=self.samples, l1_reg=0.0, silent=True)
         per_coord   = self._per_coordinate(shap_values)
 
-        node_values = per_coord[:, : self.node_features]
-        edge_values = per_coord[:, self.node_features:]
-
-        self.node_sum     += np.abs(node_values)
-        self.edge_sum     += np.abs(edge_values)
-        self.node_overall += np.abs(node_values).sum(axis=0)
-        self.edge_overall += np.abs(edge_values).sum(axis=0)
+        self.node_shap[event_index]           = per_coord[:, : self.node_features].T
+        self.edge_shap[event_index]           = per_coord[:, self.node_features:].T
+        self.node_feature_values[event_index] = graph.x.mean(dim=0).numpy()
+        self.edge_feature_values[event_index] = graph.edge_attr.mean(dim=0).numpy()
 
         instance_output  = self._masked_outputs(graph, instance)[0]
         reference        = instance_output - np.asarray(explainer.expected_value, dtype=np.float64)
@@ -462,14 +460,18 @@ class KernelShapImportance:
     def _means(self):
         event_count = len(self.subset_graphs)
         return {
-            "coordinates"  : self.COORDINATES,
-            "node_overall" : self.node_overall / event_count,
-            "edge_overall" : self.edge_overall / event_count,
-            "node_per_axis": self.node_sum / event_count,
-            "edge_per_axis": self.edge_sum / event_count,
-            "completeness" : self.completeness,
-            "events"       : event_count,
-            "samples"      : self.samples,
+            "coordinates"        : self.COORDINATES,
+            "node_overall"       : np.abs(self.node_shap).sum(axis=2).mean(axis=0),
+            "edge_overall"       : np.abs(self.edge_shap).sum(axis=2).mean(axis=0),
+            "node_per_axis"      : np.abs(self.node_shap).mean(axis=0).T,
+            "edge_per_axis"      : np.abs(self.edge_shap).mean(axis=0).T,
+            "completeness"       : self.completeness,
+            "events"             : event_count,
+            "samples"            : self.samples,
+            "node_shap"          : self.node_shap,
+            "edge_shap"          : self.edge_shap,
+            "node_feature_values": self.node_feature_values,
+            "edge_feature_values": self.edge_feature_values,
         }
 
     def run(self):
@@ -486,9 +488,9 @@ class KernelShapImportance:
 
         with self.logger.track() as progress:
             task_id = progress.add_task("Kernel SHAP", total=len(self.subset_graphs))
-            for graph in self.subset_graphs:
+            for event_index, graph in enumerate(self.subset_graphs):
                 explainer = shap.KernelExplainer(lambda gates, current=graph: self._masked_outputs(current, gates), background, silent=True)
-                self._accumulate_event(explainer, graph, instance)
+                self._accumulate_event(explainer, graph, instance, event_index)
                 progress.advance(task_id)
 
         return self._means()

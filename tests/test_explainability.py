@@ -73,6 +73,8 @@ def test_feature_importance_pipeline_outputs(parquet_store, tmp_path):
     assert any((output_directory / "plots").glob("gradient_*.png"))
     assert any((output_directory / "plots").glob("expected_gradients_*.png"))
     assert any((output_directory / "plots").glob("kernel_shap_*.png"))
+    assert any((output_directory / "plots" / "shap").glob("shap_beeswarm_*.png"))
+    assert any((output_directory / "plots" / "shap").glob("shap_bar_*_overall.png"))
 
     payload = json.loads((output_directory / "results.json").read_text(encoding="utf-8"))
     assert "expected_gradients" in payload["analysis"]
