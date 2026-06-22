@@ -16,6 +16,7 @@ class FeatureImportanceReport:
         "permutation_delta_mae", "permutation_delta_rmse", "permutation_delta_r2",
         "occlusion_delta", "occlusion_delta_mae", "occlusion_delta_rmse", "occlusion_delta_r2",
         "gradient_saliency", "gradient_input_times_grad",
+        "expected_gradient", "expected_gradient_x", "expected_gradient_y", "expected_gradient_z",
         "consensus_mean_rank",
     )
 
@@ -132,6 +133,28 @@ class FeatureImportanceReport:
         self._gradient_table(document, "Node features", gradient["node"])
         self._gradient_table(document, "Edge features", gradient["edge"])
 
+    def _expected_gradient_table(self, document, title, records, coordinates):
+        document.heading(title, level=3)
+        table  = MarkdownTable(["Feature", "Group", "Overall"] + list(coordinates), align=["left", "left"] + ["right"] * (len(coordinates) + 1))
+        ranked = sorted(records, key=lambda record: record["overall"], reverse=True)
+        for record in ranked:
+            table.add_row(record["feature"], record["group"], f"{record['overall']:.6g}", *[f"{record[axis]:.6g}" for axis in coordinates])
+        document.table(table)
+
+    def _expected_gradient_section(self, document, expected_gradients):
+        document.heading("Expected gradients (SHAP)", level=2)
+        document.paragraph("Expected-gradients attribution: integrated gradients of each predicted coordinate with respect to the normalized input features, averaged over interpolation paths from data-distribution baselines. Values are additive Shapley-consistent attributions in normalized prediction units; the overall column sums the absolute attribution across the three coordinates. Computed on a subset of the split with a completeness check below (the sum of attributions should match the prediction shift from baseline).")
+        document.kv_table({
+            "Attributed events"   : expected_gradients["events"],
+            "Path samples"        : expected_gradients["samples"],
+            "Completeness ratio x": f"{expected_gradients['completeness']['x']:.4f}",
+            "Completeness ratio y": f"{expected_gradients['completeness']['y']:.4f}",
+            "Completeness ratio z": f"{expected_gradients['completeness']['z']:.4f}",
+        }, code_keys=False)
+
+        self._expected_gradient_table(document, "Node features", expected_gradients["node"], expected_gradients["coordinates"])
+        self._expected_gradient_table(document, "Edge features", expected_gradients["edge"], expected_gradients["coordinates"])
+
     def _consensus_table(self, document, title, records):
         document.heading(title, level=3)
         table = MarkdownTable(["Rank", "Feature", "Group", "Mean method rank", "Methods"], align=["right", "left", "left", "right", "left"])
@@ -166,6 +189,8 @@ class FeatureImportanceReport:
             self._occlusion_section(document, analysis["occlusion"])
         if analysis.get("gradient") is not None:
             self._gradient_section(document, analysis["gradient"])
+        if analysis.get("expected_gradients") is not None:
+            self._expected_gradient_section(document, analysis["expected_gradients"])
 
         self._consensus_section(document, analysis["consensus"])
         self._figures(document, plot_filenames)

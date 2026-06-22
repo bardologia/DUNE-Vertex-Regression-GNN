@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import numpy as np
 import torch
+from torch_geometric.data   import Data
+from torch_geometric.loader import DataLoader as GraphDataLoader
 
 
 class PerturbationImportance:
@@ -192,3 +194,177 @@ class GradientSaliency:
                 progress.advance(task_id)
 
         return self._means(accumulators, counters)
+
+
+class ExpectedGradients:
+    COORDINATES = ("x", "y", "z")
+
+    def __init__(self, model, device, engine, samples, events, seed, logger):
+        self.model      = model
+        self.device     = device
+        self.engine     = engine
+        self.samples    = samples
+        self.events     = events
+        self.seed       = seed
+        self.logger     = logger
+
+        self.coordinate_count = len(self.COORDINATES)
+
+        self.subset_graphs      = None
+        self.subset_node_matrix = None
+        self.subset_edge_matrix = None
+        self.subset_node_slices = None
+        self.subset_edge_slices = None
+        self.node_signed        = None
+        self.edge_signed        = None
+        self.real_output        = None
+        self.baseline_output    = None
+
+    def _select_subset(self):
+        count          = len(self.engine.graphs)
+        if self.events and self.events > 0:
+            count = min(count, self.events)
+        self.subset_graphs = self.engine.graphs[:count]
+
+        node_segments = []
+        edge_segments = []
+        node_slices   = []
+        edge_slices   = []
+        node_cursor   = 0
+        edge_cursor   = 0
+
+        for graph in self.subset_graphs:
+            node_count = int(graph.x.shape[0])
+            edge_count = int(graph.edge_attr.shape[0])
+
+            node_slices.append((node_cursor, node_cursor + node_count))
+            edge_slices.append((edge_cursor, edge_cursor + edge_count))
+
+            node_segments.append(graph.x)
+            edge_segments.append(graph.edge_attr)
+
+            node_cursor += node_count
+            edge_cursor += edge_count
+
+        self.subset_node_matrix = torch.cat(node_segments, dim=0)
+        self.subset_edge_matrix = torch.cat(edge_segments, dim=0)
+        self.subset_node_slices = node_slices
+        self.subset_edge_slices = edge_slices
+
+        self.node_signed     = torch.zeros(self.subset_node_matrix.shape[0], self.subset_node_matrix.shape[1], self.coordinate_count, dtype=torch.float64)
+        self.edge_signed     = torch.zeros(self.subset_edge_matrix.shape[0], self.subset_edge_matrix.shape[1], self.coordinate_count, dtype=torch.float64)
+        self.real_output     = torch.zeros(self.coordinate_count, dtype=torch.float64)
+        self.baseline_output = torch.zeros(self.coordinate_count, dtype=torch.float64)
+
+    def _alpha_vector(self, slices, count, alphas):
+        vector = torch.empty(count, 1, dtype=torch.float32)
+        for index, (start, end) in enumerate(slices):
+            vector[start:end] = float(alphas[index])
+        return vector
+
+    def _data_list(self, node_matrix, edge_matrix):
+        rebuilt = []
+        for graph, (node_start, node_end), (edge_start, edge_end) in zip(self.subset_graphs, self.subset_node_slices, self.subset_edge_slices):
+            rebuilt.append(Data(x=node_matrix[node_start:node_end], edge_index=graph.edge_index, edge_attr=edge_matrix[edge_start:edge_end], y=graph.y))
+        return rebuilt
+
+    def _sample_inputs(self, generator):
+        node_baseline_index = torch.from_numpy(generator.integers(0, self.engine.node_row_count(), size=self.subset_node_matrix.shape[0]))
+        edge_baseline_index = torch.from_numpy(generator.integers(0, self.engine.edge_row_count(), size=self.subset_edge_matrix.shape[0]))
+
+        node_baseline = self.engine.node_matrix[node_baseline_index]
+        edge_baseline = self.engine.edge_matrix[edge_baseline_index]
+
+        alphas      = generator.uniform(0.0, 1.0, size=len(self.subset_graphs))
+        node_alpha  = self._alpha_vector(self.subset_node_slices, self.subset_node_matrix.shape[0], alphas)
+        edge_alpha  = self._alpha_vector(self.subset_edge_slices, self.subset_edge_matrix.shape[0], alphas)
+
+        node_delta  = self.subset_node_matrix - node_baseline
+        edge_delta  = self.subset_edge_matrix - edge_baseline
+
+        node_interpolated = node_baseline + node_alpha * node_delta
+        edge_interpolated = edge_baseline + edge_alpha * edge_delta
+        return node_interpolated, edge_interpolated, node_delta, edge_delta, node_baseline, edge_baseline
+
+    def _accumulate_path(self, node_interpolated, edge_interpolated, node_delta, edge_delta):
+        loader      = GraphDataLoader(self._data_list(node_interpolated, edge_interpolated), batch_size=self.engine.batch_size, shuffle=False)
+        node_offset = 0
+        edge_offset = 0
+
+        for data in loader:
+            data = data.to(self.device)
+            data.x.requires_grad_(True)
+            data.edge_attr.requires_grad_(True)
+
+            predictions = self.model(data)
+            node_rows   = int(data.x.shape[0])
+            edge_rows   = int(data.edge_attr.shape[0])
+
+            node_delta_slice = node_delta[node_offset:node_offset + node_rows].to(self.device)
+            edge_delta_slice = edge_delta[edge_offset:edge_offset + edge_rows].to(self.device)
+
+            for coordinate in range(self.coordinate_count):
+                data.x.grad         = None
+                data.edge_attr.grad = None
+                predictions[:, coordinate].sum().backward(retain_graph=coordinate < self.coordinate_count - 1)
+
+                self.node_signed[node_offset:node_offset + node_rows, :, coordinate] += (node_delta_slice * data.x.grad).detach().double().cpu()
+                if data.edge_attr.grad is not None:
+                    self.edge_signed[edge_offset:edge_offset + edge_rows, :, coordinate] += (edge_delta_slice * data.edge_attr.grad).detach().double().cpu()
+
+            node_offset += node_rows
+            edge_offset += edge_rows
+
+    def _coordinate_output(self, node_matrix, edge_matrix):
+        loader = GraphDataLoader(self._data_list(node_matrix, edge_matrix), batch_size=self.engine.batch_size, shuffle=False)
+        totals = torch.zeros(self.coordinate_count, dtype=torch.float64)
+
+        with torch.no_grad():
+            for data in loader:
+                data         = data.to(self.device)
+                predictions  = self.model(data)
+                totals      += predictions.sum(dim=0).double().cpu()
+        return totals
+
+    def _completeness(self):
+        attributed = (self.node_signed.sum(dim=(0, 1)) + self.edge_signed.sum(dim=(0, 1))) / self.samples
+        reference  = self.real_output - self.baseline_output
+
+        ratios = {}
+        for index, name in enumerate(self.COORDINATES):
+            ratios[name] = float(attributed[index] / reference[index]) if reference[index] != 0.0 else float("nan")
+        return ratios
+
+    def _means(self):
+        node_phi = (self.node_signed / self.samples).numpy()
+        edge_phi = (self.edge_signed / self.samples).numpy()
+
+        return {
+            "coordinates"  : self.COORDINATES,
+            "node_overall" : np.abs(node_phi).sum(axis=2).mean(axis=0),
+            "edge_overall" : np.abs(edge_phi).sum(axis=2).mean(axis=0),
+            "node_per_axis": np.abs(node_phi).mean(axis=0).T,
+            "edge_per_axis": np.abs(edge_phi).mean(axis=0).T,
+            "completeness" : self._completeness(),
+            "events"       : len(self.subset_graphs),
+            "samples"      : self.samples,
+        }
+
+    def run(self):
+        self.logger.section("[Expected Gradients]")
+        self._select_subset()
+
+        self.model.eval()
+        self.real_output = self._coordinate_output(self.subset_node_matrix, self.subset_edge_matrix)
+
+        with self.logger.track() as progress:
+            task_id = progress.add_task("Expected gradients", total=self.samples)
+            for sample_index in range(self.samples):
+                generator                                                                  = np.random.default_rng(self.seed + sample_index)
+                node_interpolated, edge_interpolated, node_delta, edge_delta, node_baseline, edge_baseline = self._sample_inputs(generator)
+
+                self._accumulate_path(node_interpolated, edge_interpolated, node_delta, edge_delta)
+                self.baseline_output += self._coordinate_output(node_baseline, edge_baseline) / self.samples
+                progress.advance(task_id)
+
+        return self._means()
