@@ -1,5 +1,21 @@
 "use strict";
 
+function colorForLight(value, min, max) {
+  const t = max > min ? (value - min) / (max - min) : 0.5;
+  const stops = [
+    [0.18, 0.30, 0.78],
+    [0.16, 0.72, 0.86],
+    [0.62, 0.84, 0.30],
+    [0.98, 0.86, 0.24],
+  ];
+  const scaled = t * (stops.length - 1);
+  const index = Math.max(0, Math.min(stops.length - 2, Math.floor(scaled)));
+  const frac = scaled - index;
+  const a = stops[index];
+  const b = stops[index + 1];
+  return [a[0] + (b[0] - a[0]) * frac, a[1] + (b[1] - a[1]) * frac, a[2] + (b[2] - a[2]) * frac];
+}
+
 class EventViewer {
   constructor(canvas) {
     this.canvas = canvas;
@@ -16,6 +32,14 @@ class EventViewer {
     this.minRadius = 0.01;
     this.maxRadius = 1e6;
 
+    this.targetGoal = new THREE.Vector3(0, 0, 0);
+    this.radiusGoal = 10;
+    this.frameEase = 0.14;
+
+    this.gtGoal = new THREE.Vector3(0, 0, 0);
+    this.predGoal = new THREE.Vector3(0, 0, 0);
+    this.pointsFade = 0;
+
     this.points = null;
     this.box = null;
     this.axes = null;
@@ -27,29 +51,22 @@ class EventViewer {
   }
 
   _buildMarkers() {
-    const make = (color) => {
-      const mesh = new THREE.Mesh(
-        new THREE.SphereGeometry(1, 20, 20),
-        new THREE.MeshBasicMaterial({ color })
-      );
-      mesh.visible = false;
-      this.scene.add(mesh);
-      return mesh;
+    const makeDot = (color) => {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(3), 3));
+      const material = new THREE.PointsMaterial({ color, size: 1, sizeAttenuation: true, transparent: true, opacity: 0.95, depthWrite: false });
+      const dot = new THREE.Points(geometry, material);
+      dot.visible = false;
+      this.scene.add(dot);
+      return dot;
     };
 
-    this.gtMarker = make(0x18c08f);
-    this.predMarker = make(0xff7a3c);
-
-    this.targetMarker = new THREE.Mesh(
-      new THREE.SphereGeometry(1, 16, 16),
-      new THREE.MeshBasicMaterial({ color: 0x2f6fed, wireframe: true, transparent: true, opacity: 0.55 })
-    );
-    this.targetMarker.visible = false;
-    this.scene.add(this.targetMarker);
+    this.gtMarker = makeDot(0x18c08f);
+    this.predMarker = makeDot(0xff7a3c);
 
     const lineGeometry = new THREE.BufferGeometry();
     lineGeometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3));
-    this.errorLine = new THREE.Line(lineGeometry, new THREE.LineBasicMaterial({ color: 0xff3b3b }));
+    this.errorLine = new THREE.Line(lineGeometry, new THREE.LineBasicMaterial({ color: 0xff7a3c, transparent: true, opacity: 0.45 }));
     this.errorLine.visible = false;
     this.scene.add(this.errorLine);
   }
@@ -110,22 +127,11 @@ class EventViewer {
   }
 
   _colorForLight(value, min, max) {
-    const t = max > min ? (value - min) / (max - min) : 0.5;
-    const stops = [
-      [0.18, 0.30, 0.78],
-      [0.16, 0.72, 0.86],
-      [0.62, 0.84, 0.30],
-      [0.98, 0.86, 0.24],
-    ];
-    const scaled = t * (stops.length - 1);
-    const index = Math.max(0, Math.min(stops.length - 2, Math.floor(scaled)));
-    const frac = scaled - index;
-    const a = stops[index];
-    const b = stops[index + 1];
-    return [a[0] + (b[0] - a[0]) * frac, a[1] + (b[1] - a[1]) * frac, a[2] + (b[2] - a[2]) * frac];
+    return colorForLight(value, min, max);
   }
 
   setEvent(detail, hasPrediction) {
+    const firstEvent = this.points === null;
     const positions = detail.sensors.positions;
     const light = detail.sensors.light;
     const gt = detail.gt;
@@ -147,10 +153,14 @@ class EventViewer {
     const center = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];
     const extent = Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2], 1e-3);
 
-    this.target.set(center[0], center[1], center[2]);
-    this.radius = extent * 1.9;
+    this.targetGoal.set(center[0], center[1], center[2]);
+    this.radiusGoal = extent * 1.9;
     this.minRadius = extent * 0.05;
     this.maxRadius = extent * 12;
+    if (firstEvent) {
+      this.target.copy(this.targetGoal);
+      this.radius = this.radiusGoal;
+    }
 
     let lightMin = Infinity;
     let lightMax = -Infinity;
@@ -179,21 +189,20 @@ class EventViewer {
     const material = new THREE.PointsMaterial({ size: extent * 0.018, vertexColors: true, sizeAttenuation: true, transparent: true, opacity: 0.92 });
     this.points = new THREE.Points(geometry, material);
     this.scene.add(this.points);
+    this.pointsFade = firstEvent ? 1 : 0;
 
-    const markerRadius = extent * 0.028;
-    this.gtMarker.scale.setScalar(markerRadius);
-    this.gtMarker.position.set(gt[0], gt[1], gt[2]);
+    const markerSize = extent * 0.05;
+    this.gtMarker.material.size = markerSize;
+    this.predMarker.material.size = markerSize;
+
+    this.gtGoal.set(gt[0], gt[1], gt[2]);
     this.gtMarker.visible = true;
+    if (firstEvent) this.gtMarker.position.copy(this.gtGoal);
 
     if (hasPrediction) {
-      this.predMarker.scale.setScalar(markerRadius);
-      this.predMarker.position.set(pred[0], pred[1], pred[2]);
+      this.predGoal.set(pred[0], pred[1], pred[2]);
       this.predMarker.visible = true;
-
-      const linePositions = this.errorLine.geometry.getAttribute("position");
-      linePositions.setXYZ(0, gt[0], gt[1], gt[2]);
-      linePositions.setXYZ(1, pred[0], pred[1], pred[2]);
-      linePositions.needsUpdate = true;
+      if (firstEvent) this.predMarker.position.copy(this.predGoal);
       this.errorLine.visible = true;
     } else {
       this.predMarker.visible = false;
@@ -201,14 +210,6 @@ class EventViewer {
     }
 
     this._buildBox(min, max);
-  }
-
-  setTargetMarker(point, visible) {
-    if (!visible) { this.targetMarker.visible = false; return; }
-    const scale = this.radius * 0.03;
-    this.targetMarker.scale.setScalar(Math.max(scale, 1e-3));
-    this.targetMarker.position.set(point[0], point[1], point[2]);
-    this.targetMarker.visible = true;
   }
 
   _buildBox(min, max) {
@@ -233,9 +234,31 @@ class EventViewer {
     this.scene.add(this.axes);
   }
 
+  _tween() {
+    const ease = this.frameEase;
+    this.target.lerp(this.targetGoal, ease);
+    this.radius += (this.radiusGoal - this.radius) * ease;
+
+    if (this.gtMarker.visible) this.gtMarker.position.lerp(this.gtGoal, ease);
+    if (this.predMarker.visible) this.predMarker.position.lerp(this.predGoal, ease);
+
+    if (this.errorLine.visible) {
+      const linePositions = this.errorLine.geometry.getAttribute("position");
+      linePositions.setXYZ(0, this.gtMarker.position.x, this.gtMarker.position.y, this.gtMarker.position.z);
+      linePositions.setXYZ(1, this.predMarker.position.x, this.predMarker.position.y, this.predMarker.position.z);
+      linePositions.needsUpdate = true;
+    }
+
+    if (this.points) {
+      this.pointsFade += (1 - this.pointsFade) * ease;
+      this.points.material.opacity = 0.92 * this.pointsFade;
+    }
+  }
+
   _loop() {
     if (!this.running) return;
     this._resize();
+    this._tween();
 
     const sinPhi = Math.sin(this.phi);
     this.camera.position.set(
@@ -497,7 +520,6 @@ class EventExplorerPanel {
       if (distance < bestDistance) { bestDistance = distance; best = i; }
     }
 
-    if (this.viewer) this.viewer.setTargetMarker(point, true);
     this.refs.nearest.textContent = `· snapped ${this._fmt(Math.sqrt(bestDistance))} cm away`;
 
     if (best !== this.selectedIndex) this._queueDetail(best);
@@ -578,5 +600,6 @@ class EventExplorerPanel {
   }
 }
 
+window.colorForLight = colorForLight;
 window.EventViewer = EventViewer;
 window.EventExplorerPanel = EventExplorerPanel;
