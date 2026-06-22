@@ -17,7 +17,7 @@ from pipelines.inference.metrics     import InferenceMetrics
 from pipelines.inference.predictor   import Predictor
 
 from pipelines.explainability.evaluation import EvaluationGraphTensors, SplitMetricEvaluator
-from pipelines.explainability.importance import ExpectedGradients, GradientSaliency, OcclusionImportance, PermutationImportance
+from pipelines.explainability.importance import ExpectedGradients, GradientSaliency, KernelShapImportance, OcclusionImportance, PermutationImportance
 from pipelines.explainability.plots      import FeatureImportancePlots
 from pipelines.explainability.report     import FeatureImportanceReport
 
@@ -53,6 +53,7 @@ class FeatureImportancePipeline:
         self.occlusion           = None
         self.gradient            = None
         self.expected_gradients  = None
+        self.kernel_shap         = None
         self.output_directory    = None
 
     def _resolve_output_directory(self):
@@ -153,16 +154,25 @@ class FeatureImportancePipeline:
         if not self.config.expected_gradients:
             return
         means                   = ExpectedGradients(self.predictor.model, self.device, self.engine, self.config.eg_samples, self.config.eg_events, self.config.eg_seed, self.logger).run()
-        self.expected_gradients = {
+        self.expected_gradients = self._axis_attribution(means)
+
+    def _run_kernel_shap(self):
+        if not self.config.shap:
+            return
+        means            = KernelShapImportance(self.predictor.model, self.device, self.engine, self.config.shap_nsamples, self.config.shap_events, self.config.shap_seed, self.logger).run()
+        self.kernel_shap = self._axis_attribution(means)
+
+    def _axis_attribution(self, means):
+        return {
             "coordinates"  : list(means["coordinates"]),
             "completeness" : means["completeness"],
             "events"       : means["events"],
             "samples"      : means["samples"],
-            "node"         : self._expected_gradient_records(self.node_layout, means["coordinates"], means["node_overall"], means["node_per_axis"]),
-            "edge"         : self._expected_gradient_records(self.edge_layout, means["coordinates"], means["edge_overall"], means["edge_per_axis"]),
+            "node"         : self._axis_records(self.node_layout, means["coordinates"], means["node_overall"], means["node_per_axis"]),
+            "edge"         : self._axis_records(self.edge_layout, means["coordinates"], means["edge_overall"], means["edge_per_axis"]),
         }
 
-    def _expected_gradient_records(self, layout, coordinates, overall, per_axis):
+    def _axis_records(self, layout, coordinates, overall, per_axis):
         records = []
         for index, (name, group) in enumerate(layout):
             record = {"feature": name, "group": group, "overall": float(overall[index])}
@@ -186,6 +196,11 @@ class FeatureImportancePipeline:
             return {}
         return {record["feature"]: record for record in self.expected_gradients[domain]}
 
+    def _kernel_shap_lookup(self, domain):
+        if self.kernel_shap is None:
+            return {}
+        return {record["feature"]: record for record in self.kernel_shap[domain]}
+
     def _rank_map(self, scores):
         ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
         return {feature: position for position, (feature, _) in enumerate(ranked, start=1)}
@@ -195,6 +210,7 @@ class FeatureImportancePipeline:
         occlusion_features          = self._perturbation_lookup(self.occlusion, permutation_key)
         gradient_features           = self._gradient_lookup(domain)
         expected_gradient_features  = self._expected_gradient_lookup(domain)
+        kernel_shap_features        = self._kernel_shap_lookup(domain)
 
         rows = []
         for name, group in layout:
@@ -227,6 +243,13 @@ class FeatureImportancePipeline:
                 row["expected_gradient_y"] = record["y"]
                 row["expected_gradient_z"] = record["z"]
 
+            if name in kernel_shap_features:
+                record               = kernel_shap_features[name]
+                row["kernel_shap"]   = record["overall"]
+                row["kernel_shap_x"] = record["x"]
+                row["kernel_shap_y"] = record["y"]
+                row["kernel_shap_z"] = record["z"]
+
             rows.append(row)
         return rows
 
@@ -235,8 +258,9 @@ class FeatureImportancePipeline:
         occlusion_scores   = {row["feature"]: row["occlusion_delta"]   for row in rows if "occlusion_delta"   in row}
         gradient_scores    = {row["feature"]: row["gradient_saliency"] for row in rows if "gradient_saliency" in row}
         expected_scores    = {row["feature"]: row["expected_gradient"] for row in rows if "expected_gradient" in row}
+        kernel_shap_scores = {row["feature"]: row["kernel_shap"]       for row in rows if "kernel_shap"       in row}
 
-        rank_maps = {"permutation": self._rank_map(permutation_scores), "occlusion": self._rank_map(occlusion_scores), "gradient": self._rank_map(gradient_scores), "expected_gradients": self._rank_map(expected_scores)}
+        rank_maps = {"permutation": self._rank_map(permutation_scores), "occlusion": self._rank_map(occlusion_scores), "gradient": self._rank_map(gradient_scores), "expected_gradients": self._rank_map(expected_scores), "kernel_shap": self._rank_map(kernel_shap_scores)}
 
         consensus = []
         for row in rows:
@@ -271,12 +295,12 @@ class FeatureImportancePipeline:
             "color"    : color,
         }
 
-    def _expected_gradient_figure(self, records, value_key, title, filename, color):
+    def _axis_figure(self, records, value_key, title, filename, color, xlabel):
         return {
             "names"    : [record["feature"] for record in records],
             "values"   : [record[value_key] for record in records],
             "errors"   : None,
-            "xlabel"   : "Mean |expected gradient| (normalized prediction)",
+            "xlabel"   : xlabel,
             "title"    : title,
             "filename" : filename,
             "color"    : color,
@@ -306,11 +330,20 @@ class FeatureImportancePipeline:
             figures.append(self._gradient_figure(self.gradient["edge"], "input_times_grad", "Gradient x input: edge features",             "gradient_edge_input_times_grad.png", edge_color))
 
         if self.expected_gradients is not None:
-            figures.append(self._expected_gradient_figure(self.expected_gradients["node"], "overall", "Expected gradients: node features (all axes)", "expected_gradients_node_overall.png", node_color))
-            figures.append(self._expected_gradient_figure(self.expected_gradients["edge"], "overall", "Expected gradients: edge features (all axes)", "expected_gradients_edge_overall.png", edge_color))
+            eg_label = "Mean |expected gradient| (normalized prediction)"
+            figures.append(self._axis_figure(self.expected_gradients["node"], "overall", "Expected gradients: node features (all axes)", "expected_gradients_node_overall.png", node_color, eg_label))
+            figures.append(self._axis_figure(self.expected_gradients["edge"], "overall", "Expected gradients: edge features (all axes)", "expected_gradients_edge_overall.png", edge_color, eg_label))
             for axis in self.expected_gradients["coordinates"]:
-                figures.append(self._expected_gradient_figure(self.expected_gradients["node"], axis, f"Expected gradients: node features ({axis})", f"expected_gradients_node_{axis}.png", node_color))
-                figures.append(self._expected_gradient_figure(self.expected_gradients["edge"], axis, f"Expected gradients: edge features ({axis})", f"expected_gradients_edge_{axis}.png", edge_color))
+                figures.append(self._axis_figure(self.expected_gradients["node"], axis, f"Expected gradients: node features ({axis})", f"expected_gradients_node_{axis}.png", node_color, eg_label))
+                figures.append(self._axis_figure(self.expected_gradients["edge"], axis, f"Expected gradients: edge features ({axis})", f"expected_gradients_edge_{axis}.png", edge_color, eg_label))
+
+        if self.kernel_shap is not None:
+            shap_label = "Mean |SHAP value| (normalized prediction)"
+            figures.append(self._axis_figure(self.kernel_shap["node"], "overall", "Kernel SHAP: node features (all axes)", "kernel_shap_node_overall.png", node_color, shap_label))
+            figures.append(self._axis_figure(self.kernel_shap["edge"], "overall", "Kernel SHAP: edge features (all axes)", "kernel_shap_edge_overall.png", edge_color, shap_label))
+            for axis in self.kernel_shap["coordinates"]:
+                figures.append(self._axis_figure(self.kernel_shap["node"], axis, f"Kernel SHAP: node features ({axis})", f"kernel_shap_node_{axis}.png", node_color, shap_label))
+                figures.append(self._axis_figure(self.kernel_shap["edge"], axis, f"Kernel SHAP: edge features ({axis})", f"kernel_shap_edge_{axis}.png", edge_color, shap_label))
 
         return figures
 
@@ -339,6 +372,7 @@ class FeatureImportancePipeline:
             "occlusion"          : self.occlusion,
             "gradient"           : self.gradient,
             "expected_gradients" : self.expected_gradients,
+            "kernel_shap"        : self.kernel_shap,
             "consensus"          : {"node": consensus_node, "edge": consensus_edge},
         }
 
@@ -357,6 +391,7 @@ class FeatureImportancePipeline:
         self._run_occlusion()
         self._run_gradient()
         self._run_expected_gradients()
+        self._run_kernel_shap()
         self._build_outputs()
         self.logger.ok(f"Feature importance complete -> {self.output_directory}")
         return self.output_directory

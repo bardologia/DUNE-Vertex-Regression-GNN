@@ -10,3 +10,4 @@ rich==15.0.0
 matplotlib==3.10.8
 tensorboard==2.20.0
 psutil==7.2.2
+shap==0.51.0

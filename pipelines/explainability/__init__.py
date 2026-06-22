@@ -1,5 +1,5 @@
 from .evaluation import EvaluationGraphTensors, SplitMetricEvaluator
-from .importance import ExpectedGradients, GradientSaliency, OcclusionImportance, PerturbationImportance, PermutationImportance
+from .importance import ExpectedGradients, GradientSaliency, KernelShapImportance, OcclusionImportance, PerturbationImportance, PermutationImportance
 from .plots      import FeatureImportancePlots
 from .report     import FeatureImportanceReport
 from .pipeline   import FeatureImportancePipeline
@@ -9,6 +9,7 @@ __all__ = [
     "SplitMetricEvaluator",
     "ExpectedGradients",
     "GradientSaliency",
+    "KernelShapImportance",
     "OcclusionImportance",
     "PerturbationImportance",
     "PermutationImportance",

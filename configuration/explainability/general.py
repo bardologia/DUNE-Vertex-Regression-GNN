@@ -22,6 +22,7 @@ class FeatureImportanceConfig:
     occlusion           : bool = True
     gradient            : bool = True
     expected_gradients  : bool = True
+    shap                : bool = True
 
     permutation_repeats : int  = 10
     permutation_seed    : int  = 0
@@ -30,6 +31,10 @@ class FeatureImportanceConfig:
     eg_samples          : int  = 32
     eg_events           : int  = 64
     eg_seed             : int  = 0
+
+    shap_nsamples       : int  = 256
+    shap_events         : int  = 16
+    shap_seed           : int  = 0
 
     primary_metric      : str  = "euclidean_mean"
     top_k               : int  = 15
