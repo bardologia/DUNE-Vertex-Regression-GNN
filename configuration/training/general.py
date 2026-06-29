@@ -40,8 +40,15 @@ class OptimizerConfig:
 
 @dataclass
 class SchedulerConfig:
-    type    : str   = "cosine_annealing"
+    type    : str   = "reduce_on_plateau"
     eta_min : float = 1e-6
+
+    mode      : str   = "min"
+    factor    : float = 0.5
+    patience  : int   = 5
+    threshold : float = 1e-4
+    cooldown  : int   = 0
+    min_lr    : float = 1e-6
 
 
 @dataclass

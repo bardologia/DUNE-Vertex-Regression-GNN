@@ -94,6 +94,17 @@ class Scheduler:
         self._epoch_offset  = 0
         self._t_max_override = None
 
+        self.plateau_mode      = self.config.scheduler.mode
+        self.plateau_factor    = float(self.config.scheduler.factor)
+        self.plateau_patience  = int(self.config.scheduler.patience)
+        self.plateau_threshold = float(self.config.scheduler.threshold)
+        self.plateau_cooldown  = int(self.config.scheduler.cooldown)
+        self.plateau_min_lr    = float(self.config.scheduler.min_lr)
+
+        self.best_metric      = math.inf if self.plateau_mode == "min" else -math.inf
+        self.num_bad_epochs   = 0
+        self.cooldown_counter = 0
+
         self._log_scheduler_info()
 
     def set_total_epochs(self, epochs: int) -> None:
@@ -124,6 +135,9 @@ class Scheduler:
         if self.scheduler_type == "constant":
             return self._constant()
 
+        if self.scheduler_type == "reduce_on_plateau":
+            return list(self.current_lrs)
+
         raise ValueError(f"Unknown scheduler type: {self.scheduler_type}")
 
     def reset(self, epoch_offset: int = 0) -> None:
@@ -133,6 +147,41 @@ class Scheduler:
     def step(self, epoch: int) -> list[float]:
         self.current_lrs = self._lrs_for(epoch - self._epoch_offset)
         return list(self.current_lrs)
+
+    def step_metric(self, metric: float) -> list[float]:
+        if self.scheduler_type != "reduce_on_plateau":
+            return list(self.current_lrs)
+
+        if self._is_improvement(metric):
+            self.best_metric    = metric
+            self.num_bad_epochs = 0
+        else:
+            self.num_bad_epochs += 1
+
+        if self.cooldown_counter > 0:
+            self.cooldown_counter -= 1
+            self.num_bad_epochs    = 0
+
+        if self.num_bad_epochs > self.plateau_patience:
+            self._reduce_lrs()
+            self.cooldown_counter = self.plateau_cooldown
+            self.num_bad_epochs   = 0
+
+        return list(self.current_lrs)
+
+    def _is_improvement(self, metric: float) -> bool:
+        if self.plateau_mode == "min":
+            return metric < self.best_metric * (1.0 - self.plateau_threshold)
+        return metric > self.best_metric * (1.0 + self.plateau_threshold)
+
+    def _reduce_lrs(self) -> None:
+        reduced_lrs = [max(learning_rate * self.plateau_factor, self.plateau_min_lr) for learning_rate in self.current_lrs]
+
+        if reduced_lrs == self.current_lrs:
+            return
+
+        self.current_lrs = reduced_lrs
+        self.logger.info(f"Plateau detected after {self.plateau_patience} stagnant epochs; reducing learning rates to {[round(learning_rate, 8) for learning_rate in reduced_lrs]}.")
 
     def effective_lrs(self) -> list[float]:
         if self.warmup is not None and not self.warmup.is_finished():
@@ -151,6 +200,14 @@ class Scheduler:
         if self.scheduler_type == "cosine_annealing":
             info["T_max"]   = self._resolved_t_max()
             info["Eta Min"] = self.config.scheduler.eta_min
+
+        if self.scheduler_type == "reduce_on_plateau":
+            info["Mode"]      = self.plateau_mode
+            info["Factor"]    = self.plateau_factor
+            info["Patience"]  = self.plateau_patience
+            info["Threshold"] = self.plateau_threshold
+            info["Cooldown"]  = self.plateau_cooldown
+            info["Min LR"]    = self.plateau_min_lr
 
         info["Warmup Enabled"] = self.warmup.enabled if self.warmup else False
         self.logger.kv_table(info)
