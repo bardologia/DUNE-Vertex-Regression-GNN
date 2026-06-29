@@ -44,6 +44,50 @@ def test_model_config_sections():
     assert "head" in BaseGNNConfig.SECTIONS
 
 
+def test_gps_declares_lower_optimizer_overrides():
+    overrides = GPSConfig().optimizer_overrides
+    assert overrides["learning_rate_encoder"] < 1e-3
+    assert overrides["learning_rate_regression_head"] < 1e-2
+    assert MODEL_CONFIG_REGISTRY["gcn"]().optimizer_overrides == {}
+
+
+def test_optimizer_overrides_applied_and_cli_wins():
+    from pipelines.training.optimizer_overrides import OptimizerOverrideApplier
+
+    class SilentLogger:
+        def section(self, *args): pass
+        def kv_table(self, *args): pass
+        def subsection(self, *args): pass
+
+    entry = TrainEntryConfig()
+    OptimizerOverrideApplier(entry.training, GPSConfig(), explicit_paths=set(), logger=SilentLogger()).run()
+    assert entry.training.optimizer.learning_rate_encoder == GPSConfig().optimizer_overrides["learning_rate_encoder"]
+
+    entry = TrainEntryConfig()
+    entry.training.optimizer.learning_rate_encoder = 5e-4
+    OptimizerOverrideApplier(entry.training, GPSConfig(), explicit_paths={"training.optimizer.learning_rate_encoder"}, logger=SilentLogger()).run()
+    assert entry.training.optimizer.learning_rate_encoder == 5e-4
+    assert entry.training.optimizer.learning_rate_pool == GPSConfig().optimizer_overrides["learning_rate_pool"]
+
+
+def test_optimizer_overrides_reject_unknown_field():
+    import pytest
+    from dataclasses import dataclass, field
+    from pipelines.training.optimizer_overrides import OptimizerOverrideApplier
+
+    @dataclass
+    class BadConfig(GPSConfig):
+        optimizer_overrides : dict = field(default_factory=lambda: {"nonexistent_lr": 1.0})
+
+    class SilentLogger:
+        def section(self, *args): pass
+        def kv_table(self, *args): pass
+        def subsection(self, *args): pass
+
+    with pytest.raises(ValueError):
+        OptimizerOverrideApplier(TrainEntryConfig().training, BadConfig(), set(), SilentLogger()).run()
+
+
 def test_default_gps_config_dimensions():
     config = GPSConfig()
     assert config.input_dim  == 17

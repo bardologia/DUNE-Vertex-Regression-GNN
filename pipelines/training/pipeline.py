@@ -5,14 +5,16 @@ from tools.runtime.reproducibility import Reproducibility
 from pipelines.dataset.pipeline    import DatasetPipeline
 from pipelines.shared.run_metadata import TrainingRunMetadata
 
-from pipelines.training.trainer import Trainer
+from pipelines.training.optimizer_overrides import OptimizerOverrideApplier
+from pipelines.training.trainer             import Trainer
 
 
 class TrainingPipeline:
-    def __init__(self, entry_config, logger=None):
+    def __init__(self, entry_config, logger=None, explicit_paths=None):
         self.entry           = entry_config
         self.training_config = entry_config.training
         self.external_logger = logger
+        self.explicit_paths  = explicit_paths
 
     def _prepare_run(self):
         Reproducibility.seed_everything(self.entry.seed)
@@ -73,6 +75,8 @@ class TrainingPipeline:
         })
 
     def _train(self):
+        OptimizerOverrideApplier(self.training_config, self.model_config, self.explicit_paths, self.logger).run()
+
         self.run_metadata.save_resolved_config(self.entry)
         self.run_metadata.save_normalization_stats(self.stats)
         self.run_metadata.save_split(self.dataset_pipeline.split_base_ids)
