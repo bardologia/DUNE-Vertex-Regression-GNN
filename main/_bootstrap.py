@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 import sys
 
+from tools.runtime.warnings_filter import ThirdPartyWarnings
+
 
 class EnvironmentPinner:
     @staticmethod
@@ -18,5 +20,6 @@ class EnvironmentPinner:
 
     @staticmethod
     def pin() -> None:
+        ThirdPartyWarnings.silence()
         os.environ.setdefault("CUDA_VISIBLE_DEVICES", EnvironmentPinner._requested_gpu())
         os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
