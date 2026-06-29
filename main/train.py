@@ -12,8 +12,9 @@ class TrainEntry:
         self.config = TrainEntryConfig()
 
     def run(self):
-        self.config = ConfigCli(self.config, description="Train a DUNE-GNN model").apply()
-        return TrainingPipeline(self.config).run()
+        cli         = ConfigCli(self.config, description="Train a DUNE-GNN model")
+        self.config = cli.apply()
+        return TrainingPipeline(self.config, explicit_paths=set(cli.overrides)).run()
 
 
 if __name__ == "__main__":

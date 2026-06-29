@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 
 
 @dataclass
@@ -28,6 +28,8 @@ class BaseGNNConfig:
     coord_embed_dim          : int   = 64
     regression_hidden_dims   : tuple = (128, 64)
     regression_dropout       : float = 0.1
+
+    optimizer_overrides      : dict  = field(default_factory=dict)
 
     SECTIONS = {
         "dimensions" : ("input_dim", "edge_dim", "output_dim"),
@@ -81,6 +83,12 @@ class GPSConfig(BaseGNNConfig):
     ffn_ratio         : float = 4.0
     pooling           : str   = "mean_max"
     drop_path_rate    : float = 0.0
+
+    optimizer_overrides : dict = field(default_factory=lambda: {
+        "learning_rate_encoder"         : 3e-4,
+        "learning_rate_pool"            : 3e-4,
+        "learning_rate_regression_head" : 3e-3,
+    })
 
 
 @dataclass
