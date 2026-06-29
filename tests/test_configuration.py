@@ -25,7 +25,17 @@ def test_model_configs_declare_tunable_params():
 
     assert "heads" in MODEL_CONFIG_REGISTRY["gatv2"].tunable_params()
     assert "heads" not in MODEL_CONFIG_REGISTRY["gcn"].tunable_params()
-    assert "sag_ratio" in MODEL_CONFIG_REGISTRY["gps"].tunable_params()
+    assert "sag_ratio" not in MODEL_CONFIG_REGISTRY["gps"].tunable_params()
+
+
+def test_sagpool_config_exposes_sag_ratio():
+    from dataclasses import dataclass
+
+    @dataclass
+    class SagPoolConfig(GPSConfig):
+        pooling : str = "sagpool_multiscale"
+
+    assert "sag_ratio" in SagPoolConfig.tunable_params()
 
 
 def test_model_config_sections():
@@ -39,7 +49,8 @@ def test_default_gps_config_dimensions():
     assert config.input_dim  == 17
     assert config.edge_dim   == 23
     assert config.output_dim == 3
-    assert config.pooling    == "sagpool_multiscale"
+    assert config.pooling    == "mean_max"
+    assert config.drop_path_rate == 0.0
 
 
 def test_configcli_nested_overrides():
