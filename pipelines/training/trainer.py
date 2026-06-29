@@ -188,6 +188,8 @@ class Trainer:
 
         train_loss      = self.train_epoch(train_loader, epoch)
         validation_loss = self.evaluate(val_loader)["avg_loss"]
+
+        self.scheduler.step_metric(validation_loss)
         return train_loss, validation_loss
 
     def train(self, train_loader, val_loader):
