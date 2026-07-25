@@ -34,6 +34,8 @@ class ModuleFactory:
     def pooling(cls, config, hidden_dim: int) -> nn.Module:
         if config.pooling == "mean_max":
             return MeanMaxPool(hidden_dim)
+        if config.pooling == "mean_max_sum":
+            return MeanMaxSumPool(hidden_dim)
         if config.pooling == "sagpool_multiscale":
             return MultiScalePool(hidden_dim, num_levels=config.pool_num_levels, ratio=config.sag_ratio)
         if config.pooling == "set2set":
@@ -107,6 +109,12 @@ class MaxPooling(nn.Module):
         return scatter(features, batch, dim=0, reduce="max")
 
 
+class LogSumPooling(nn.Module):
+    def forward(self, features: torch.Tensor, batch: torch.Tensor) -> torch.Tensor:
+        totals = scatter(features, batch, dim=0, reduce="sum")
+        return torch.sign(totals) * torch.log1p(totals.abs())
+
+
 class MeanMaxPool(nn.Module):
     def __init__(self, hidden_dim: int):
         super().__init__()
@@ -116,6 +124,18 @@ class MeanMaxPool(nn.Module):
 
     def forward(self, node_features, edge_index, batch, edge_attr=None) -> torch.Tensor:
         return torch.cat([self.mean_pool(node_features, batch), self.max_pool(node_features, batch)], dim=-1)
+
+
+class MeanMaxSumPool(nn.Module):
+    def __init__(self, hidden_dim: int):
+        super().__init__()
+        self.mean_pool = MeanPooling()
+        self.max_pool  = MaxPooling()
+        self.sum_pool  = LogSumPooling()
+        self.out_dim   = 3 * hidden_dim
+
+    def forward(self, node_features, edge_index, batch, edge_attr=None) -> torch.Tensor:
+        return torch.cat([self.mean_pool(node_features, batch), self.max_pool(node_features, batch), self.sum_pool(node_features, batch)], dim=-1)
 
 
 class MultiScalePool(nn.Module):
@@ -454,6 +474,26 @@ class CascadeRegressionHead(nn.Module):
         return torch.cat([prediction_x, prediction_y, prediction_z], dim=-1)
 
 
+class GraphScalarEncoder(nn.Module):
+    def __init__(self, input_dim: int, output_dim: int):
+        super().__init__()
+        self.net     = nn.Sequential(nn.Linear(input_dim, output_dim), nn.LayerNorm(output_dim), nn.GELU())
+        self.out_dim = output_dim
+        self._initialize_weights()
+
+    def _initialize_weights(self):
+        for module in self.net.modules():
+            if isinstance(module, nn.Linear):
+                nn.init.kaiming_uniform_(module.weight, nonlinearity="relu")
+                nn.init.zeros_(module.bias)
+            elif isinstance(module, nn.LayerNorm):
+                nn.init.constant_(module.weight, 1.0)
+                nn.init.constant_(module.bias, 0.0)
+
+    def forward(self, graph_attributes: torch.Tensor) -> torch.Tensor:
+        return self.net(graph_attributes)
+
+
 class GraphRegressor(nn.Module):
     def __init__(self, config, encoder: nn.Module):
         super().__init__()
@@ -461,7 +501,18 @@ class GraphRegressor(nn.Module):
         self.encoder         = encoder
         self.pool            = ModuleFactory.pooling(config, encoder.out_dim)
         self.norm            = nn.LayerNorm(self.pool.out_dim)
-        self.regression_head = ModuleFactory.head(config, self.pool.out_dim)
+        self.graph_scalars   = GraphScalarEncoder(config.graph_dim, config.graph_embed_dim) if config.graph_dim > 0 else None
+        self.regression_head = ModuleFactory.head(config, self._readout_dim())
+
+    def _readout_dim(self):
+        if self.graph_scalars is None:
+            return self.pool.out_dim
+        return self.pool.out_dim + self.graph_scalars.out_dim
+
+    def _graph_attributes(self, data):
+        if "graph_attr" not in data:
+            raise ValueError(f"Model expects {self.config.graph_dim} graph-level scalars but the batch carries no graph_attr. Rebuild the dataset with graph.graph_scalar_features=true, or build the model with graph_dim=0.")
+        return data.graph_attr
 
     def _prepare_edge_attributes(self, data, reference):
         edge_attr = getattr(data, "edge_attr", None)
@@ -480,7 +531,11 @@ class GraphRegressor(nn.Module):
         node_embeddings  = self.encoder(node_features, edge_index, batch, edge_attr=edge_attr)
         graph_embedding  = self.pool(node_embeddings, edge_index, batch, edge_attr=edge_attr)
         graph_embedding  = self.norm(graph_embedding)
-        predictions      = self.regression_head(graph_embedding)
+
+        if self.graph_scalars is not None:
+            graph_embedding = torch.cat([graph_embedding, self.graph_scalars(self._graph_attributes(data))], dim=-1)
+
+        predictions = self.regression_head(graph_embedding)
 
         if return_features:
             return predictions, {"graph_embedding": graph_embedding, "predictions": predictions}

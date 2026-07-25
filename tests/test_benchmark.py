@@ -8,8 +8,8 @@ from pipelines.dataset.graph      import FeatureSchema
 
 
 def _base_overrides(config):
-    node_dim, edge_dim = FeatureSchema(config.dataset).dimensions()
-    return {"input_dim": node_dim, "edge_dim": edge_dim}
+    node_dim, edge_dim, graph_dim = FeatureSchema(config.dataset).dimensions()
+    return {"input_dim": node_dim, "edge_dim": edge_dim, "graph_dim": graph_dim}
 
 
 def test_model_sizer_matches_reference(quiet_logger):

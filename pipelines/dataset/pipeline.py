@@ -207,8 +207,8 @@ class DatasetPipeline:
 
     @staticmethod
     def inject_feature_dimensions(model_overrides, dataset_config):
-        node_dimension, edge_dimension = FeatureSchema(dataset_config).dimensions()
-        return {**model_overrides, "input_dim": node_dimension, "edge_dim": edge_dimension}
+        node_dimension, edge_dimension, graph_dimension = FeatureSchema(dataset_config).dimensions()
+        return {**model_overrides, "input_dim": node_dimension, "edge_dim": edge_dimension, "graph_dim": graph_dimension}
 
     def pna_degree_histogram(self, model_name, dataset):
         if model_name != "pna":

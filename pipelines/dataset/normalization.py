@@ -68,6 +68,10 @@ class FeatureGroupNormalizer:
         return cls(methods, centers, scales, log_masks)
 
     @classmethod
+    def fit_empty(cls):
+        return cls([], np.zeros(0, dtype=np.float32), np.zeros(0, dtype=np.float32), np.zeros(0, dtype=bool))
+
+    @classmethod
     def fit_isotropic(cls, matrix):
         matrix             = np.asarray(matrix, dtype=np.float64)
         number_of_channels = matrix.shape[1]
@@ -120,11 +124,12 @@ class FeatureGroupNormalizer:
 
 
 class NormalizationStats:
-    GROUPS = ("node", "edge", "target")
+    GROUPS = ("node", "edge", "graph", "target")
 
-    def __init__(self, node, edge, target):
+    def __init__(self, node, edge, graph, target):
         self.node   = node
         self.edge   = edge
+        self.graph  = graph
         self.target = target
 
     def as_dict(self):

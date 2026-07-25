@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import numpy as np
 import torch
-from torch_geometric.data   import Data
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
 
@@ -271,7 +270,7 @@ class ExpectedGradients:
     def _data_list(self, node_matrix, edge_matrix):
         rebuilt = []
         for graph, (node_start, node_end), (edge_start, edge_end) in zip(self.subset_graphs, self.subset_node_slices, self.subset_edge_slices):
-            rebuilt.append(Data(x=node_matrix[node_start:node_end], edge_index=graph.edge_index, edge_attr=edge_matrix[edge_start:edge_end], y=graph.y))
+            rebuilt.append(self.engine.rebuild(graph, node_matrix[node_start:node_end], edge_matrix[edge_start:edge_end]))
         return rebuilt
 
     def _sample_inputs(self, generator):
@@ -433,7 +432,7 @@ class KernelShapImportance:
 
                 node = graph.x * node_gate + self.node_mean * (1.0 - node_gate)
                 edge = graph.edge_attr * edge_gate + self.edge_mean * (1.0 - edge_gate)
-                data_list.append(Data(x=node, edge_index=graph.edge_index, edge_attr=edge, y=graph.y))
+                data_list.append(self.engine.rebuild(graph, node, edge))
 
             batch = next(iter(GraphDataLoader(data_list, batch_size=len(data_list), shuffle=False))).to(self.device)
             with torch.no_grad():

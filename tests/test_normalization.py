@@ -48,12 +48,21 @@ def test_stats_roundtrip(tmp_path):
     generator = np.random.default_rng(4)
     node      = FeatureGroupNormalizer.fit(generator.normal(size=(500, 8)).astype(np.float32))
     edge      = FeatureGroupNormalizer.fit(generator.normal(size=(500, 7)).astype(np.float32))
+    graph     = FeatureGroupNormalizer.fit(generator.normal(size=(500, 9)).astype(np.float32))
     target    = FeatureGroupNormalizer.fit(generator.normal(size=(500, 3)).astype(np.float32))
 
-    NormalizationStats(node, edge, target).save(tmp_path)
+    NormalizationStats(node, edge, graph, target).save(tmp_path)
     loaded = NormalizationStats.load(tmp_path)
 
     assert loaded.node.methods   == node.methods
+    assert loaded.graph.methods  == graph.methods
     assert loaded.target.methods == target.methods
     assert np.allclose(loaded.edge.center, edge.center)
     assert np.allclose(loaded.target.scale, target.scale)
+
+
+def test_empty_group_normalizes_nothing():
+    group = FeatureGroupNormalizer.fit_empty()
+
+    assert group.methods == []
+    assert group.forward_numpy(np.zeros((4, 0), dtype=np.float32)).shape == (4, 0)

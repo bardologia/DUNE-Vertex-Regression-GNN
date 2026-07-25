@@ -13,8 +13,9 @@ def _stats():
     generator = np.random.default_rng(0)
     node      = FeatureGroupNormalizer.fit(generator.normal(size=(500, 8)).astype(np.float32))
     edge      = FeatureGroupNormalizer.fit(generator.normal(size=(500, 7)).astype(np.float32))
+    graph     = FeatureGroupNormalizer.fit(generator.normal(size=(500, 9)).astype(np.float32))
     target    = FeatureGroupNormalizer.fit(generator.normal(size=(500, 3)).astype(np.float32))
-    return NormalizationStats(node, edge, target)
+    return NormalizationStats(node, edge, graph, target)
 
 
 def _batch():

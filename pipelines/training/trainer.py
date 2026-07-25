@@ -64,6 +64,9 @@ class Trainer:
     def _build_param_groups(self):
         regression_head_parameters = list(self.model.regression_head.parameters())
         regression_head_parameters += list(self.model.norm.parameters())
+        if self.model.graph_scalars is not None:
+            regression_head_parameters += list(self.model.graph_scalars.parameters())
+
         pool_parameters            = list(self.model.pool.parameters())
         encoder_parameters         = list(self.model.encoder.parameters())
 

@@ -9,6 +9,7 @@ class BaseGNNConfig:
 
     input_dim         : int   = 17
     edge_dim          : int   = 23
+    graph_dim         : int   = 9
     output_dim        : int   = 3
 
     hidden_dim        : int   = 128
@@ -18,10 +19,11 @@ class BaseGNNConfig:
     normalization     : str   = "layer"
     drop_path_rate    : float = 0.1
 
-    pooling           : str   = "mean_max"
+    pooling           : str   = "mean_max_sum"
     pool_num_levels   : int   = 3
     sag_ratio         : float = 0.5
     set2set_steps     : int   = 3
+    graph_embed_dim   : int   = 32
 
     head_type                : str   = "hierarchical"
     hierarchical_feature_dim : int   = 256
@@ -74,7 +76,7 @@ class GPSConfig(BaseGNNConfig):
     heads             : int   = 4
     attention_dropout : float = 0.1
     ffn_ratio         : float = 4.0
-    pooling           : str   = "mean_max"
+    pooling           : str   = "mean_max_sum"
     drop_path_rate    : float = 0.0
 
     optimizer_overrides : dict = field(default_factory=lambda: {
@@ -92,7 +94,7 @@ class GPSLiteConfig(BaseGNNConfig):
     heads             : int   = 4
     attention_dropout : float = 0.1
     ffn_ratio         : float = 2.0
-    pooling           : str   = "mean_max"
+    pooling           : str   = "mean_max_sum"
     pool_num_levels   : int   = 1
     head_type         : str   = "mlp"
 

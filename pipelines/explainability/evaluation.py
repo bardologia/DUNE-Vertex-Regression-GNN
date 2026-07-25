@@ -68,13 +68,24 @@ class EvaluationGraphTensors:
     def edge_row_count(self):
         return int(self.edge_matrix.shape[0])
 
+    def graph_feature_count(self):
+        if not self.graphs or "graph_attr" not in self.graphs[0]:
+            return 0
+        return int(self.graphs[0].graph_attr.shape[1])
+
+    def rebuild(self, graph, node_features, edge_features):
+        attributes = {"x": node_features, "edge_index": graph.edge_index, "edge_attr": edge_features, "y": graph.y}
+        if "graph_attr" in graph:
+            attributes["graph_attr"] = graph.graph_attr
+        return Data(**attributes)
+
     def loader(self, node_matrix=None, edge_matrix=None):
         node_source = self.node_matrix if node_matrix is None else node_matrix
         edge_source = self.edge_matrix if edge_matrix is None else edge_matrix
 
         rebuilt = []
         for graph, (node_start, node_end), (edge_start, edge_end) in zip(self.graphs, self.node_slices, self.edge_slices):
-            rebuilt.append(Data(x=node_source[node_start:node_end], edge_index=graph.edge_index, edge_attr=edge_source[edge_start:edge_end], y=graph.y))
+            rebuilt.append(self.rebuild(graph, node_source[node_start:node_end], edge_source[edge_start:edge_end]))
 
         return GraphDataLoader(rebuilt, batch_size=self.batch_size, shuffle=False)
 

@@ -29,6 +29,15 @@ class GraphAssembler:
         distances, indices  = tree.query(positions, k=effective_neighbors + 1)
         return distances.astype(np.float64), indices.astype(np.int64)
 
+    def _light_centroid(self, positions, light, total_light):
+        return (light[:, None] * positions).sum(axis=0) / total_light
+
+    def _light_covariance_eigenvalues(self, positions, light, total_light):
+        centroid   = self._light_centroid(positions, light, total_light)
+        centered   = positions - centroid[None, :]
+        covariance = (centered * light[:, None]).T @ centered / total_light
+        return np.clip(np.linalg.eigvalsh(covariance)[::-1], 0.0, None)
+
 
 class NodeFeatures(GraphAssembler):
     def _position(self, positions):
@@ -41,7 +50,7 @@ class NodeFeatures(GraphAssembler):
         return (light / total_light).astype(np.float32).reshape(-1, 1)
 
     def _distance_to_centroid(self, positions, light, total_light):
-        centroid     = (light[:, None] * positions).sum(axis=0) / total_light
+        centroid     = self._light_centroid(positions, light, total_light)
         displacement = positions - centroid[None, :]
         return np.linalg.norm(displacement, axis=1).astype(np.float32).reshape(-1, 1)
 
@@ -49,7 +58,7 @@ class NodeFeatures(GraphAssembler):
         return light[neighbor_indices[:, 1:]].sum(axis=1).astype(np.float32).reshape(-1, 1)
 
     def _direction_to_centroid(self, positions, light, total_light):
-        centroid     = (light[:, None] * positions).sum(axis=0) / total_light
+        centroid     = self._light_centroid(positions, light, total_light)
         displacement = centroid[None, :] - positions
         norm         = np.maximum(np.linalg.norm(displacement, axis=1, keepdims=True), self.EPSILON)
         return (displacement / norm).astype(np.float32)
@@ -60,13 +69,9 @@ class NodeFeatures(GraphAssembler):
         norm         = np.maximum(np.linalg.norm(displacement, axis=1, keepdims=True), self.EPSILON)
         return (displacement / norm).astype(np.float32)
 
-    def _inertia_invariants(self, positions, light, total_light, number_of_nodes):
-        centroid    = (light[:, None] * positions).sum(axis=0) / total_light
-        centered    = positions - centroid[None, :]
-        covariance  = (centered * light[:, None]).T @ centered / total_light
-        eigenvalues = np.clip(np.linalg.eigvalsh(covariance)[::-1], 0.0, None)
-        normalized  = eigenvalues / (eigenvalues.sum() + self.EPSILON)
-        return np.tile(normalized.astype(np.float32), (number_of_nodes, 1))
+    def _inertia_eigenvalues(self, positions, light, total_light, number_of_nodes):
+        eigenvalues = self._light_covariance_eigenvalues(positions, light, total_light)
+        return np.tile(eigenvalues.astype(np.float32), (number_of_nodes, 1))
 
     def _intensity_rank(self, light, number_of_nodes):
         ordinal = rankdata(light, method="average") - 1.0
@@ -89,7 +94,7 @@ class NodeFeatures(GraphAssembler):
             feature_columns.append(self._direction_to_brightest(positions, light))
 
         if self.inertia_features:
-            feature_columns.append(self._inertia_invariants(positions, light, total_light, number_of_nodes))
+            feature_columns.append(self._inertia_eigenvalues(positions, light, total_light, number_of_nodes))
 
         if self.rank_features:
             feature_columns.append(self._intensity_rank(light, number_of_nodes))
@@ -175,6 +180,25 @@ class EdgeFeatures(GraphAssembler):
         return edge_index, edge_attr
 
 
+class GraphFeatures(GraphAssembler):
+    def _light_scale(self, light, number_of_nodes):
+        return np.array([light.sum(), float(number_of_nodes), light.max()], dtype=np.float64)
+
+    def _spread_scales(self, positions, light, total_light):
+        return np.sqrt(self._light_covariance_eigenvalues(positions, light, total_light))
+
+    def build(self, positions, light):
+        number_of_nodes = int(positions.shape[0])
+        total_light     = light.sum() + self.EPSILON
+
+        centroid      = self._light_centroid(positions, light, total_light)
+        light_scale   = self._light_scale(light, number_of_nodes)
+        spread_scales = self._spread_scales(positions, light, total_light)
+
+        graph_features = np.concatenate([centroid, light_scale, spread_scales]).astype(np.float32)
+        return torch.tensor(graph_features, dtype=torch.float32).unsqueeze(0)
+
+
 class ActiveNodeSelector:
     MINIMUM_NODES = 2
 
@@ -209,10 +233,12 @@ class ActiveNodeSelector:
 
 class Graph:
     def __init__(self, config):
-        self.config        = config
-        self.node_selector = ActiveNodeSelector(config)
-        self.node_features = NodeFeatures(config)
-        self.edge_features = EdgeFeatures(config)
+        self.config         = config
+        self.node_selector  = ActiveNodeSelector(config)
+        self.node_features  = NodeFeatures(config)
+        self.edge_features  = EdgeFeatures(config)
+        self.graph_features = GraphFeatures(config)
+        self.graph_scalars  = config.graph.graph_scalar_features
 
     def build_from_arrays(self, positions, light):
         positions = np.asarray(positions, dtype=np.float32)
@@ -224,7 +250,11 @@ class Graph:
 
         node_features         = self.node_features.build(positions, light, neighbor_indices)
         edge_index, edge_attr = self.edge_features.build(positions, light, neighbor_distances, neighbor_indices)
-        return Data(x=node_features, edge_index=edge_index, edge_attr=edge_attr)
+
+        data = Data(x=node_features, edge_index=edge_index, edge_attr=edge_attr)
+        if self.graph_scalars:
+            data.graph_attr = self.graph_features.build(positions, light)
+        return data
 
 
 class FeatureSchema:
@@ -238,17 +268,20 @@ class FeatureSchema:
         positions = generator.normal(size=(self.PROBE_NODES, 3)).astype(np.float32)
         light     = (generator.random(self.PROBE_NODES) + 0.1).astype(np.float32)
         data      = self.builder.build_from_arrays(positions, light)
-        return int(data.x.shape[1]), int(data.edge_attr.shape[1])
+
+        graph_dimension = int(data.graph_attr.shape[1]) if "graph_attr" in data else 0
+        return int(data.x.shape[1]), int(data.edge_attr.shape[1]), graph_dimension
 
 
 class FeatureLayout:
     AXES = ("x", "y", "z")
 
     def __init__(self, config):
-        self.direction_features = config.graph.direction_features
-        self.inertia_features   = config.graph.inertia_features
-        self.rank_features      = config.graph.rank_features
-        self.edge_rbf_count     = int(config.graph.edge_rbf_count)
+        self.direction_features    = config.graph.direction_features
+        self.inertia_features      = config.graph.inertia_features
+        self.rank_features         = config.graph.rank_features
+        self.edge_rbf_count        = int(config.graph.edge_rbf_count)
+        self.graph_scalar_features = config.graph.graph_scalar_features
 
     def node_features(self):
         layout  = [(f"position_{axis}", "position") for axis in self.AXES]
@@ -262,7 +295,7 @@ class FeatureLayout:
             layout += [(f"direction_to_brightest_{axis}", "direction_to_brightest") for axis in self.AXES]
 
         if self.inertia_features:
-            layout += [(f"inertia_invariant_{index}", "inertia_invariants") for index in (1, 2, 3)]
+            layout += [(f"inertia_eigenvalue_{index}", "inertia_eigenvalues") for index in (1, 2, 3)]
 
         if self.rank_features:
             layout += [("intensity_rank", "intensity_rank")]
@@ -278,6 +311,18 @@ class FeatureLayout:
 
         if self.edge_rbf_count > 0:
             layout += [(f"distance_rbf_{index:02d}", "distance_rbf") for index in range(self.edge_rbf_count)]
+
+        return layout
+
+    def graph_features(self):
+        if not self.graph_scalar_features:
+            return []
+
+        layout  = [(f"light_centroid_{axis}", "light_centroid") for axis in self.AXES]
+        layout += [("total_light",       "light_scale")]
+        layout += [("active_node_count", "light_scale")]
+        layout += [("max_channel_light", "light_scale")]
+        layout += [(f"light_spread_{index}", "light_spread") for index in (1, 2, 3)]
 
         return layout
 
