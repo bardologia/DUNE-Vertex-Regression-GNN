@@ -142,9 +142,7 @@ class DatasetPipeline:
         graph_builder = Graph(self.config)
         return GraphDataset(samples, self.geometry_positions, self.light_matrix, graph_builder, self.config.physics, augmentation=augmentation, stats=stats)
 
-    def _train_augmentation(self):
-        if self.evaluation_mode:
-            return None
+    def _augmentation(self):
         augmentation = Augmentation(self.config.augmentation)
         return augmentation if augmentation.active else None
 
@@ -154,7 +152,7 @@ class DatasetPipeline:
             return
 
         clean_train_dataset = self._make_dataset(train_samples, augmentation=None, stats=None)
-        reusable            = "train" in split_names and self._train_augmentation() is None
+        reusable            = "train" in split_names and self._augmentation() is None
 
         if reusable:
             self.raw_train_graphs = CachedGraphDataset(clean_train_dataset, self.logger).graphs
@@ -164,36 +162,38 @@ class DatasetPipeline:
 
         self.stats = StatsEstimator(stats_source, self.config.data.stats_sample_size, self.logger).fit()
 
-    def _train_dataset(self, train_samples, train_augmentation):
+    def _train_dataset(self, train_samples, augmentation):
         if self.raw_train_graphs is not None:
             base_dataset          = self._make_dataset(train_samples, None, self.stats)
             normalized_graphs     = GraphNormalizer(self.stats).apply_all(self.raw_train_graphs)
             self.raw_train_graphs = None
             return CachedGraphDataset(base_dataset, self.logger, graphs=normalized_graphs)
 
-        dataset = self._make_dataset(train_samples, train_augmentation, self.stats)
-        if train_augmentation is not None:
+        dataset = self._make_dataset(train_samples, augmentation, self.stats)
+        if augmentation is not None and not self.evaluation_mode:
             return dataset
         return CachedGraphDataset(dataset, self.logger)
 
     def _build_datasets(self, train_samples, validation_samples, test_samples, split_names):
-        train_augmentation = self._train_augmentation()
+        augmentation = self._augmentation()
+        live_train   = augmentation is not None and not self.evaluation_mode
 
         self.logger.kv_table({
             "Train samples" : len(train_samples),
             "Val samples"   : len(validation_samples),
             "Test samples"  : len(test_samples),
             "Built splits"  : ", ".join(split_names),
-            "Train caching" : "live (augmented)" if train_augmentation is not None else "cached",
+            "Augmentation"  : "every split" if augmentation is not None else "off",
+            "Train caching" : "live (resampled per epoch)" if live_train else "cached",
         }, title="Dataset Splits")
 
         self.datasets = {}
         if "train" in split_names:
-            self.datasets["train"] = self._train_dataset(train_samples, train_augmentation)
+            self.datasets["train"] = self._train_dataset(train_samples, augmentation)
         if "val" in split_names:
-            self.datasets["val"] = CachedGraphDataset(self._make_dataset(validation_samples, None, self.stats), self.logger)
+            self.datasets["val"] = CachedGraphDataset(self._make_dataset(validation_samples, augmentation, self.stats), self.logger)
         if "test" in split_names:
-            self.datasets["test"] = CachedGraphDataset(self._make_dataset(test_samples, None, self.stats), self.logger)
+            self.datasets["test"] = CachedGraphDataset(self._make_dataset(test_samples, augmentation, self.stats), self.logger)
 
     @staticmethod
     def build_loaders(datasets, batch_size, num_workers=0, pin_memory=False, persistent_workers=False, prefetch_factor=2):
@@ -261,7 +261,7 @@ class DatasetPipeline:
         self.validate_split_names((split_name,))
         partitions    = dict(zip(self.SPLIT_NAMES, self._partition_by_base_ids(self.samples, split_base_ids)))
         split_samples = partitions[split_name]
-        split_dataset = self._make_dataset(split_samples, augmentation=None, stats=self.stats)
+        split_dataset = self._make_dataset(split_samples, self._augmentation(), self.stats)
         return CachedGraphDataset(split_dataset, self.logger)
 
     def run(self):

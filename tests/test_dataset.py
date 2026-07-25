@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 
 from configuration import DatasetConfig
 from pipelines.dataset import DatasetPipeline, Graph
@@ -92,6 +93,27 @@ def test_dataset_pipeline_produces_splits(dataset_config, quiet_logger):
     assert len(stats.target.methods)  == 3
     assert len(stats.node.methods)    == 17
     assert len(stats.graph.methods)   == 9
+
+
+def test_augmentation_reaches_every_split(parquet_store, quiet_logger):
+    def build(enabled):
+        config = DatasetConfig()
+        config.data.parquet_store_dir = parquet_store
+        config.data.stats_sample_size = 32
+        config.augmentation.enabled   = enabled
+        return DatasetPipeline(config, quiet_logger).run()[0]
+
+    clean     = build(False)
+    augmented = build(True)
+    repeated  = build(True)
+
+    for split in ("val", "test"):
+        clean_nodes     = [clean[split][index].x.shape[0]     for index in range(len(clean[split]))]
+        augmented_nodes = [augmented[split][index].x.shape[0] for index in range(len(augmented[split]))]
+        assert augmented_nodes != clean_nodes
+
+    assert torch.equal(augmented["val"][0].x,          repeated["val"][0].x)
+    assert torch.equal(augmented["test"][0].graph_attr, repeated["test"][0].graph_attr)
 
 
 def test_octant_split_has_no_base_event_leakage(parquet_store, quiet_logger):
