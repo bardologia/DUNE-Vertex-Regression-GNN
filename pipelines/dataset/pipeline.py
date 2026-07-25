@@ -6,12 +6,14 @@ from torch_geometric.loader import DataLoader as GraphDataLoader
 
 from pipelines.dataset.augmentation         import Augmentation
 from pipelines.dataset.graph                import FeatureSchema, Graph
-from pipelines.dataset.graph_dataset        import CachedGraphDataset, DegreeHistogramEstimator, GraphDataset, StatsEstimator
+from pipelines.dataset.graph_dataset        import CachedGraphDataset, DegreeHistogramEstimator, GraphDataset, GraphNormalizer, StatsEstimator
 from pipelines.dataset.parquet_store        import ParquetDatasetWriter, ParquetEventReader
 from pipelines.dataset.splitting            import TargetBalancer
 
 
 class DatasetPipeline:
+    SPLIT_NAMES = ("train", "val", "test")
+
     def __init__(self, dataset_config, logger, stats=None, evaluation_mode=False):
         self.config          = dataset_config
         self.logger          = logger
@@ -25,6 +27,14 @@ class DatasetPipeline:
         self.samples            = None
         self.datasets           = None
         self.split_base_ids     = None
+        self.raw_train_graphs   = None
+
+    @classmethod
+    def validate_split_names(cls, split_names):
+        unknown = tuple(name for name in split_names if name not in cls.SPLIT_NAMES)
+        if unknown:
+            raise KeyError(f"Unknown split name(s) {unknown}. Expected any of {cls.SPLIT_NAMES}.")
+        return tuple(split_names)
 
     def _ensure_store(self):
         store_directory = self.config.data.parquet_store_dir
@@ -39,8 +49,8 @@ class DatasetPipeline:
         ParquetDatasetWriter(self.config.data.raw_input_dir, store_parent, worker_count=self.config.data.store_worker_count, logger=self.logger, hot_channels=self.config.data.hot_channels).run()
 
     def _load_store(self):
-        reader                  = ParquetEventReader(self.config.data.parquet_store_dir).load_store(load_octant_light=False)
-        self.geometry_positions = reader.geometry_frame[["x", "y", "z"]].values.astype(np.float32)
+        reader                  = ParquetEventReader(self.config.data.parquet_store_dir).load_store()
+        self.geometry_positions = reader.geometry_frame[list(self.config.data.position_columns)].values.astype(np.float32)
         self.event_targets      = reader.event_targets
         self.light_matrix       = reader.light_matrix
         self.octant_frame       = reader.octant_frame
@@ -65,6 +75,15 @@ class DatasetPipeline:
         self.samples = self._build_samples()
         return self.samples
 
+    def _subsample(self, samples):
+        subset_fraction = self.config.data.subset_fraction
+        if not (0.0 < subset_fraction < 1.0):
+            return samples
+
+        generator = np.random.default_rng(self.config.split.random_state)
+        selection = np.sort(generator.choice(len(samples), size=max(1, int(len(samples) * subset_fraction)), replace=False))
+        return samples[selection]
+
     def _octant_expand(self, base_samples):
         present_ids = set(base_samples[:, 7].astype(np.int64).tolist())
         member_mask = self.octant_frame["base_event_id"].isin(present_ids).values
@@ -76,22 +95,20 @@ class DatasetPipeline:
         base_ids    = member_rows["base_event_id"].values.astype(np.float32)
         return np.column_stack([light_index, signs, targets, base_ids]).astype(np.float32)
 
-    def _subsample(self, samples):
-        subset_fraction = self.config.data.subset_fraction
-        if not (0.0 < subset_fraction < 1.0):
-            return samples
-
-        generator = np.random.default_rng(self.config.split.random_state)
-        selection = np.sort(generator.choice(len(samples), size=max(1, int(len(samples) * subset_fraction)), replace=False))
-        return samples[selection]
+    def _record_train_base_ids(self, train_samples):
+        if self.split_base_ids is None:
+            return
+        self.split_base_ids["train"] = np.unique(train_samples[:, 7].astype(np.int64)).tolist()
 
     def _prepare_train_samples(self, train_base_samples):
         if self.evaluation_mode:
             return train_base_samples
 
-        train_samples = self._octant_expand(train_base_samples) if self.config.data.augment_octants else train_base_samples
-        train_samples = self._subsample(train_samples)
-        self.logger.subsection(f"Train samples: {len(train_samples)} (octants={self.config.data.augment_octants}, subset_fraction={self.config.data.subset_fraction})")
+        selected_base_samples = self._subsample(train_base_samples)
+        train_samples         = self._octant_expand(selected_base_samples) if self.config.data.augment_octants else selected_base_samples
+
+        self._record_train_base_ids(train_samples)
+        self.logger.subsection(f"Train samples: {len(train_samples)} rows from {len(selected_base_samples)} base events (octants={self.config.data.augment_octants}, subset_fraction={self.config.data.subset_fraction})")
         return train_samples
 
     def _split_samples(self, samples):
@@ -103,16 +120,16 @@ class DatasetPipeline:
         train_rows, validation_rows, test_rows, _ = balancer.balance(target_dataframe)
 
         self.split_base_ids = {
-            "train"      : present_base_ids[train_rows].tolist(),
-            "validation" : present_base_ids[validation_rows].tolist(),
-            "test"       : present_base_ids[test_rows].tolist(),
+            "train" : present_base_ids[train_rows].tolist(),
+            "val"   : present_base_ids[validation_rows].tolist(),
+            "test"  : present_base_ids[test_rows].tolist(),
         }
         return self._partition_by_base_ids(samples, self.split_base_ids)
 
     def _partition_by_base_ids(self, samples, split_base_ids):
         sample_base_ids = samples[:, 7].astype(np.int64)
         train_ids       = set(split_base_ids["train"])
-        validation_ids  = set(split_base_ids["validation"])
+        validation_ids  = set(split_base_ids["val"])
         test_ids        = set(split_base_ids["test"])
 
         train_mask      = np.fromiter((base_id in train_ids      for base_id in sample_base_ids), dtype=bool, count=len(sample_base_ids))
@@ -125,33 +142,58 @@ class DatasetPipeline:
         graph_builder = Graph(self.config)
         return GraphDataset(samples, self.geometry_positions, self.light_matrix, graph_builder, self.config.physics, augmentation=augmentation, stats=stats)
 
-    def _fit_stats(self, train_samples):
+    def _train_augmentation(self):
+        if self.evaluation_mode:
+            return None
+        augmentation = Augmentation(self.config.augmentation)
+        return augmentation if augmentation.active else None
+
+    def _fit_stats(self, train_samples, split_names):
         if self.stats is not None:
             self.logger.subsection("Normalization stats reused from caller (skipping fit)")
             return
+
         clean_train_dataset = self._make_dataset(train_samples, augmentation=None, stats=None)
-        self.stats          = StatsEstimator(clean_train_dataset, self.config.data.stats_sample_size, self.logger).fit()
+        reusable            = "train" in split_names and self._train_augmentation() is None
 
-    def _build_datasets(self, train_samples, validation_samples, test_samples):
-        train_augmentation  = None if self.evaluation_mode else Augmentation(self.config.augmentation)
-        train_is_stochastic = train_augmentation is not None and train_augmentation.active
+        if reusable:
+            self.raw_train_graphs = CachedGraphDataset(clean_train_dataset, self.logger).graphs
+            stats_source          = self.raw_train_graphs
+        else:
+            stats_source = clean_train_dataset
 
-        train_dataset = self._make_dataset(train_samples,      train_augmentation, self.stats)
-        val_dataset   = self._make_dataset(validation_samples, None,               self.stats)
-        test_dataset  = self._make_dataset(test_samples,       None,               self.stats)
+        self.stats = StatsEstimator(stats_source, self.config.data.stats_sample_size, self.logger).fit()
+
+    def _train_dataset(self, train_samples, train_augmentation):
+        if self.raw_train_graphs is not None:
+            base_dataset          = self._make_dataset(train_samples, None, self.stats)
+            normalized_graphs     = GraphNormalizer(self.stats).apply_all(self.raw_train_graphs)
+            self.raw_train_graphs = None
+            return CachedGraphDataset(base_dataset, self.logger, graphs=normalized_graphs)
+
+        dataset = self._make_dataset(train_samples, train_augmentation, self.stats)
+        if train_augmentation is not None:
+            return dataset
+        return CachedGraphDataset(dataset, self.logger)
+
+    def _build_datasets(self, train_samples, validation_samples, test_samples, split_names):
+        train_augmentation = self._train_augmentation()
 
         self.logger.kv_table({
             "Train samples" : len(train_samples),
             "Val samples"   : len(validation_samples),
             "Test samples"  : len(test_samples),
-            "Train caching" : "live (augmented)" if train_is_stochastic else "cached",
+            "Built splits"  : ", ".join(split_names),
+            "Train caching" : "live (augmented)" if train_augmentation is not None else "cached",
         }, title="Dataset Splits")
 
-        self.datasets = {
-            "train" : train_dataset if train_is_stochastic else CachedGraphDataset(train_dataset, self.logger),
-            "val"   : CachedGraphDataset(val_dataset,  self.logger),
-            "test"  : CachedGraphDataset(test_dataset, self.logger),
-        }
+        self.datasets = {}
+        if "train" in split_names:
+            self.datasets["train"] = self._train_dataset(train_samples, train_augmentation)
+        if "val" in split_names:
+            self.datasets["val"] = CachedGraphDataset(self._make_dataset(validation_samples, None, self.stats), self.logger)
+        if "test" in split_names:
+            self.datasets["test"] = CachedGraphDataset(self._make_dataset(test_samples, None, self.stats), self.logger)
 
     @staticmethod
     def build_loaders(datasets, batch_size, num_workers=0, pin_memory=False, persistent_workers=False, prefetch_factor=2):
@@ -176,9 +218,9 @@ class DatasetPipeline:
     def base_ids_for_indices(self, train_indices, validation_indices, test_indices):
         sample_base_ids = self.samples[:, 7].astype(np.int64)
         return {
-            "train"      : np.unique(sample_base_ids[train_indices]).tolist(),
-            "validation" : np.unique(sample_base_ids[validation_indices]).tolist(),
-            "test"       : np.unique(sample_base_ids[test_indices]).tolist(),
+            "train" : np.unique(sample_base_ids[train_indices]).tolist(),
+            "val"   : np.unique(sample_base_ids[validation_indices]).tolist(),
+            "test"  : np.unique(sample_base_ids[test_indices]).tolist(),
         }
 
     def run_with_indices(self, train_indices, validation_indices, test_indices):
@@ -189,20 +231,25 @@ class DatasetPipeline:
         validation_samples = self.samples[validation_indices]
         test_samples       = self.samples[test_indices]
 
-        self.stats    = None
+        self.stats           = None
+        self.split_base_ids  = self.base_ids_for_indices(train_indices, validation_indices, test_indices)
+
         train_samples = self._prepare_train_samples(train_base)
-        self._fit_stats(train_samples)
-        self._build_datasets(train_samples, validation_samples, test_samples)
+        self._fit_stats(train_samples, self.SPLIT_NAMES)
+        self._build_datasets(train_samples, validation_samples, test_samples, self.SPLIT_NAMES)
         return self.datasets, self.stats
 
-    def run_with_base_ids(self, split_base_ids):
+    def run_with_base_ids(self, split_base_ids, split_names=None):
         self.logger.section("[Dataset Pipeline | Persisted Split]")
         self.prepare_samples()
 
+        requested           = self.validate_split_names(split_names) if split_names is not None else self.SPLIT_NAMES
+        self.split_base_ids = dict(split_base_ids)
+
         train_base, validation_samples, test_samples = self._partition_by_base_ids(self.samples, split_base_ids)
         train_samples = self._prepare_train_samples(train_base)
-        self._fit_stats(train_samples)
-        self._build_datasets(train_samples, validation_samples, test_samples)
+        self._fit_stats(train_samples, requested)
+        self._build_datasets(train_samples, validation_samples, test_samples, requested)
         return self.datasets, self.stats
 
     def build_evaluation_split(self, split_base_ids, split_name):
@@ -211,10 +258,8 @@ class DatasetPipeline:
 
         self.prepare_samples()
 
-        partitions   = dict(zip(("train", "val", "test"), self._partition_by_base_ids(self.samples, split_base_ids)))
-        if split_name not in partitions:
-            raise KeyError(f"Unknown split '{split_name}'. Expected one of {tuple(partitions)}.")
-
+        self.validate_split_names((split_name,))
+        partitions    = dict(zip(self.SPLIT_NAMES, self._partition_by_base_ids(self.samples, split_base_ids)))
         split_samples = partitions[split_name]
         split_dataset = self._make_dataset(split_samples, augmentation=None, stats=self.stats)
         return CachedGraphDataset(split_dataset, self.logger)
@@ -225,6 +270,6 @@ class DatasetPipeline:
 
         train_base, validation_samples, test_samples = self._split_samples(self.samples)
         train_samples = self._prepare_train_samples(train_base)
-        self._fit_stats(train_samples)
-        self._build_datasets(train_samples, validation_samples, test_samples)
+        self._fit_stats(train_samples, self.SPLIT_NAMES)
+        self._build_datasets(train_samples, validation_samples, test_samples, self.SPLIT_NAMES)
         return self.datasets, self.stats

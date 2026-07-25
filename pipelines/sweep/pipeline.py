@@ -130,7 +130,7 @@ class EnergyEfficiencySweepPipeline:
             "model_name"          : self.entry.model_name,
             "checkpoint"          : self.entry.training.io.checkpoint_name,
             "split"               : self.split,
-            "split_event_count"   : len(self.split_base_ids[self._split_key()]),
+            "split_event_count"   : len(self.split_base_ids[self.split]),
             "baseline_scale"      : self.baseline[0],
             "baseline_efficiency" : self.baseline[1],
             "efficiency_seed"     : self.efficiency_seed,
@@ -138,9 +138,6 @@ class EnergyEfficiencySweepPipeline:
             "axes"                : self._axes_context(),
         }
         SweepReport(self.output_directory, self.logger).build(context, self.records, plots)
-
-    def _split_key(self):
-        return "validation" if self.split == "val" else self.split
 
     def run(self):
         self.logger.section("[Energy and Efficiency Sweep]")

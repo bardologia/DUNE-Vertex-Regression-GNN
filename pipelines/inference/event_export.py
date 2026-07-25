@@ -106,6 +106,5 @@ class EventExportPipeline:
         self._load()
 
         for split_name in self.inference.splits:
-            if split_name in self.inference.dataset_splits:
-                self.logger.section(f"[Export: {split_name}]")
-                self._write_split(split_name, self._assemble_split(split_name))
+            self.logger.section(f"[Export: {split_name}]")
+            self._write_split(split_name, self._assemble_split(split_name))

@@ -27,8 +27,9 @@ class InferencePipeline:
         self.run_directory   = Path(run_directory)
         self.logger          = logger if logger is not None else Logger(log_dir=str(self.run_directory / "logs"), name="inference")
         self.device          = device if device is not None else ("cuda" if torch.cuda.is_available() else "cpu")
-        self.splits          = splits if splits is not None else defaults.splits
+        self.splits          = DatasetPipeline.validate_split_names(splits if splits is not None else defaults.splits)
         self.batch_size      = batch_size if batch_size is not None else defaults.batch_size
+
         self.analysis_directory = self.run_directory / "analysis"
 
     def _load_run_config(self):
@@ -50,7 +51,7 @@ class InferencePipeline:
 
         self.stats          = NormalizationStats.load(self.run_directory / "metadata")
         split_base_ids      = json.loads((self.run_directory / "metadata" / "split_base_ids.json").read_text(encoding="utf-8"))
-        self.dataset_splits, _ = DatasetPipeline(self.entry.dataset, self.logger, stats=self.stats, evaluation_mode=True).run_with_base_ids(split_base_ids)
+        self.dataset_splits, _ = DatasetPipeline(self.entry.dataset, self.logger, stats=self.stats, evaluation_mode=True).run_with_base_ids(split_base_ids, split_names=self.splits)
 
         model, _        = get_model(self.entry.model_name, **self.entry.model_overrides)
         checkpoint_path = self.run_directory / "checkpoints" / self.entry.training.io.checkpoint_name
@@ -88,8 +89,7 @@ class InferencePipeline:
 
         per_split_results = {}
         for split_name in self.splits:
-            if split_name in self.dataset_splits:
-                per_split_results[split_name] = self._analyze_split(split_name)
+            per_split_results[split_name] = self._analyze_split(split_name)
 
         self._build_report(per_split_results)
         self._write_metrics(per_split_results)

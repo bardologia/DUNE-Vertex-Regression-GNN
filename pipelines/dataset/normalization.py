@@ -41,15 +41,16 @@ class ChannelStrategySelector:
 
 class FeatureGroupNormalizer:
     def __init__(self, methods, center, scale, log_mask):
-        self.methods  = list(methods)
-        self.center   = np.asarray(center,   dtype=np.float32)
-        self.scale    = np.asarray(scale,    dtype=np.float32)
-        self.log_mask = np.asarray(log_mask, dtype=bool)
+        self.methods        = list(methods)
+        self.center         = np.asarray(center,   dtype=np.float32)
+        self.scale          = np.asarray(scale,    dtype=np.float32)
+        self.log_mask       = np.asarray(log_mask, dtype=bool)
+        self.device_tensors = {}
 
     @classmethod
     def fit(cls, matrix):
-        selector       = ChannelStrategySelector()
-        matrix         = np.asarray(matrix, dtype=np.float64)
+        selector           = ChannelStrategySelector()
+        matrix             = np.asarray(matrix)
         number_of_channels = matrix.shape[1]
 
         methods   = []
@@ -85,10 +86,18 @@ class FeatureGroupNormalizer:
         transformed = np.where(self.log_mask, np.log1p(np.maximum(matrix, 0.0)), matrix)
         return (transformed - self.center) / self.scale
 
+    def _tensors_for(self, device):
+        key = str(device)
+        if key not in self.device_tensors:
+            center   = torch.tensor(self.center,   dtype=torch.float32, device=device)
+            scale    = torch.tensor(self.scale,    dtype=torch.float32, device=device)
+            log_mask = torch.tensor(self.log_mask, dtype=torch.bool,    device=device)
+
+            self.device_tensors[key] = (center, scale, log_mask)
+        return self.device_tensors[key]
+
     def inverse_torch(self, values, device):
-        center   = torch.tensor(self.center,   dtype=torch.float32, device=device)
-        scale    = torch.tensor(self.scale,    dtype=torch.float32, device=device)
-        log_mask = torch.tensor(self.log_mask, dtype=torch.bool,    device=device)
+        center, scale, log_mask = self._tensors_for(device)
 
         unscaled = values * scale + center
         return torch.where(log_mask, torch.expm1(unscaled), unscaled)

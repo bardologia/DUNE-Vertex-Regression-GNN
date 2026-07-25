@@ -12,7 +12,7 @@ class ResultsBrowser:
 
     SKIPPED_DIRECTORIES = {"__pycache__", ".git", ".ipynb_checkpoints"}
     MAX_DEPTH           = 6
-    BEST_METRIC_SPLITS  = ("test", "validation", "train")
+    BEST_METRIC_SPLITS  = ("test", "val", "train")
     BEST_METRIC_NAME    = "euclidean_mean"
 
     def __init__(self, paths: ProjectPaths, logger: ServerLogger) -> None:
