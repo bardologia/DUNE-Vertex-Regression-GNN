@@ -60,23 +60,6 @@ class Tracker:
         except (ValueError, RuntimeError):
             pass
 
-    def log_memory(self, step=None, device=None) -> None:
-        import torch
-
-        if self.writer is None or not torch.cuda.is_available():
-            return
-
-        dev = device if device is not None else torch.cuda.current_device()
-        try:
-            memory = {
-                "gpu_mem_alloc_GB"      : torch.cuda.memory_allocated(dev)     / 1024 ** 3,
-                "gpu_mem_reserved_GB"   : torch.cuda.memory_reserved(dev)      / 1024 ** 3,
-                "gpu_mem_peak_alloc_GB" : torch.cuda.max_memory_allocated(dev) / 1024 ** 3,
-            }
-            self.log_metrics("system", memory, step)
-        except Exception:
-            pass
-
     def flush(self) -> None:
         if self.writer is not None:
             self.writer.flush()

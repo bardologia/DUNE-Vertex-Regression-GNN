@@ -34,6 +34,9 @@ class MarkdownTable:
         self.rows    = []
 
     def add_row(self, *cells: Any) -> "MarkdownTable":
+        if len(cells) > len(self.columns):
+            raise ValueError(f"Row has {len(cells)} cells but the table declares {len(self.columns)} column(s): {self.columns}.")
+
         padded = list(cells) + [None] * (len(self.columns) - len(cells))
         self.rows.append([self.EMPTY if c is None else str(c) for c in padded])
         return self

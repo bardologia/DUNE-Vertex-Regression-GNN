@@ -5,8 +5,6 @@ _EXPORTS = {
     "ModelSummary"    : "monitoring",
     "NullLogger"      : "monitoring",
     "NullTracker"     : "monitoring",
-    "ResourceMonitor" : "monitoring",
-    "ShapeLogger"     : "monitoring",
     "Tracker"         : "monitoring",
     "MarkdownDoc"     : "reporting",
     "MarkdownTable"   : "reporting",

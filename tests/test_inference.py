@@ -16,7 +16,6 @@ def test_inference_pipeline_outputs(parquet_store, tmp_path):
     entry.training.loop.epochs           = 1
     entry.training.loop.batch_size       = 8
     entry.training.loop.num_workers      = 0
-    entry.training.loop.verbose          = False
     entry.training.warmup.warmup_steps   = 2
 
     summary       = TrainingPipeline(entry, logger=Logger(log_dir="", name="train", level="ERROR")).run()

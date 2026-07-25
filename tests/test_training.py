@@ -15,7 +15,6 @@ def test_training_pipeline_one_epoch(parquet_store, tmp_path):
     entry.training.loop.epochs                = 1
     entry.training.loop.batch_size            = 8
     entry.training.loop.num_workers           = 0
-    entry.training.loop.verbose               = False
     entry.training.warmup.warmup_steps        = 2
     entry.training.loss.euclidean_weight      = 0.2
     entry.training.loss.containment_weight    = 0.1
@@ -38,7 +37,6 @@ def test_training_pipeline_pna_injects_degree_histogram(parquet_store, tmp_path)
     entry.training.loop.epochs           = 1
     entry.training.loop.batch_size       = 8
     entry.training.loop.num_workers      = 0
-    entry.training.loop.verbose          = False
     entry.training.warmup.warmup_steps   = 2
 
     logger = Logger(log_dir="", name="train_pna", level="ERROR")

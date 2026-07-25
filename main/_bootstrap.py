@@ -7,10 +7,12 @@ from tools.runtime.warnings_filter import ThirdPartyWarnings
 
 
 class EnvironmentPinner:
+    DEFAULT_GPU = "0"
+
     @staticmethod
-    def _requested_gpu() -> str:
+    def _requested_gpu() -> str | None:
         argv = sys.argv[1:]
-        gpu  = "0"
+        gpu  = None
         for index, token in enumerate(argv):
             if token == "--gpu" and index + 1 < len(argv):
                 gpu = argv[index + 1]
@@ -21,5 +23,11 @@ class EnvironmentPinner:
     @staticmethod
     def pin() -> None:
         ThirdPartyWarnings.silence()
-        os.environ.setdefault("CUDA_VISIBLE_DEVICES", EnvironmentPinner._requested_gpu())
+
+        requested = EnvironmentPinner._requested_gpu()
+        if requested is not None:
+            os.environ["CUDA_VISIBLE_DEVICES"] = requested
+        else:
+            os.environ.setdefault("CUDA_VISIBLE_DEVICES", EnvironmentPinner.DEFAULT_GPU)
+
         os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")

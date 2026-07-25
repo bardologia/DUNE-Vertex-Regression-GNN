@@ -5,7 +5,6 @@ from datetime   import datetime
 from typing     import Any, Mapping, Optional, Sequence
 
 from rich.console import Console
-from rich.live    import Live
 from rich.logging import RichHandler
 from rich.panel   import Panel
 from rich.progress import (
@@ -22,45 +21,6 @@ from rich.rule  import Rule
 from rich.table import Table
 from rich.text  import Text
 from rich.theme import Theme
-
-from tools.reporting.markdown import MarkdownDoc, MarkdownTable
-
-
-class LiveMonitor:
-    def __init__(self, console: Console, title: str = "Training Monitor") -> None:
-        self.console = console
-        self.title   = title
-        self._metrics : dict[str, Any] = {}
-        self._live    : Optional[Live] = None
-
-    def __enter__(self):
-        self._live = Live(self._render(), console=self.console, refresh_per_second=4, transient=False)
-        self._live.__enter__()
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if self._live is not None:
-            self._live.__exit__(exc_type, exc_val, exc_tb)
-            self._live = None
-        return False
-
-    def update(self, **kwargs: Any) -> None:
-        self._metrics.update(kwargs)
-        if self._live is not None:
-            self._live.update(self._render())
-
-    def _render(self) -> Panel:
-        tbl = Table(show_header=True, header_style="bold cyan", box=None, expand=False)
-        tbl.add_column("Metric", style="key", no_wrap=True)
-        tbl.add_column("Value", style="value", justify="right")
-
-        for k, v in sorted(self._metrics.items()):
-            if isinstance(v, float):
-                tbl.add_row(k, f"{v:.6f}" if abs(v) < 1000 else f"{v:.2f}")
-            else:
-                tbl.add_row(k, str(v))
-
-        return Panel(tbl, title=f"[bold cyan]{self.title}[/bold cyan]", border_style="cyan")
 
 
 _THEME = Theme({
@@ -268,12 +228,6 @@ class Logger:
 
     progress_bar = track
 
-    @contextmanager
-    def live_monitor(self, title: str = "Training Monitor"):
-        monitor = LiveMonitor(self.console, title=title)
-        with monitor:
-            yield monitor
-
     def close(self) -> None:
         elapsed = datetime.now() - self.start_time
         hours, remainder = divmod(int(elapsed.total_seconds()), 3600)
@@ -291,30 +245,6 @@ class Logger:
     def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
         self.close()
         return False
-
-    def save_profiler_results(self, stats, output):
-        sorted_stats = sorted(stats.stats.items(), key=lambda x: x[1][3], reverse=True)
-
-        columns = ["Function", "Calls", "Total Time (s)", "Per Call (s)", "Cumulative Time (s)", "Cumulative Per Call (s)", "Location"]
-        align   = ["left", "right", "right", "right", "right", "right", "left"]
-        table   = MarkdownTable(columns, align=align)
-
-        for func, (cc, nc, tt, ct, callers) in sorted_stats:
-            filename, lineno, func_name = func
-
-            per_call_total = tt / nc if nc > 0 else 0
-            per_call_cum   = ct / nc if nc > 0 else 0
-
-            table.add_row(func_name, nc, f"{tt:.6f}", f"{per_call_total:.6f}", f"{ct:.6f}", f"{per_call_cum:.6f}", f"{filename}:{lineno}")
-
-        doc = MarkdownDoc("Profiler Results")
-        doc.paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        doc.table(table)
-        doc.save(output)
-
-        self.info(f"Full profiler results saved to: {output}")
-        return output
-
 
 class NullLogger:
     def __getattr__(self, name: str):
