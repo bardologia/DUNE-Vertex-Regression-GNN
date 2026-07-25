@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 import subprocess
 import threading
+from pathlib import Path
 
-from project_paths import ProjectPaths
+from launch_layout  import LaunchLayout, LayoutError
+from project_paths  import ProjectPaths
 
 
 class ConfigRegistry:
@@ -64,27 +66,16 @@ class ConfigRegistry:
     )
 
     def __init__(self, paths: ProjectPaths) -> None:
-        self.paths = paths
-        self.cache = {}
-        self.lock  = threading.Lock()
+        self.paths  = paths
+        self.cache  = {}
+        self.lock   = threading.Lock()
+        self.layout = LaunchLayout()
 
     def _entry(self, script_key: str) -> dict | None:
         entry = self.paths.script_entry(script_key)
         if entry is None or not entry["has_config"]:
             return None
         return entry
-
-    def _signature(self) -> tuple:
-        watched = sorted((self.paths.repo_root / "configuration").rglob("*.py"))
-        watched.append(self.paths.repo_root / "tools" / "runtime" / "config_cli.py")
-
-        stamps = []
-        for path in watched:
-            try:
-                stamps.append((path.name, path.stat().st_mtime_ns))
-            except OSError:
-                continue
-        return tuple(stamps)
 
     def _run_bootstrap(self, entry: dict, interpreter: str) -> dict:
         argv = [interpreter, "-c", self.BOOTSTRAP, str(self.paths.repo_root), entry["entry_config_module"], entry["entry_config_class"]]
@@ -105,6 +96,28 @@ class ConfigRegistry:
 
         return {"ok": True, "config_class": payload["class"], "leaves": payload["leaves"]}
 
+    def _with_layout(self, script_key: str, result: dict) -> dict:
+        if not result.get("ok"):
+            return result
+
+        try:
+            return {**result, "layout": self.layout.build(script_key, result["leaves"])}
+        except LayoutError as error:
+            return {"ok": False, "error": str(error)}
+
+    def _signature(self) -> tuple:
+        watched = sorted((self.paths.repo_root / "configuration").rglob("*.py"))
+        watched.append(self.paths.repo_root / "tools" / "runtime" / "config_cli.py")
+        watched.append(Path(__file__).resolve().parent / "launch_layout.py")
+
+        stamps = []
+        for path in watched:
+            try:
+                stamps.append((path.name, path.stat().st_mtime_ns))
+            except OSError:
+                continue
+        return tuple(stamps)
+
     def schema(self, script_key: str, interpreter: str) -> dict:
         entry = self._entry(script_key)
         if entry is None:
@@ -118,7 +131,7 @@ class ConfigRegistry:
             if cached is not None and cached[0] == signature:
                 return cached[1]
 
-        result = self._run_bootstrap(entry, interpreter)
+        result = self._with_layout(script_key, self._run_bootstrap(entry, interpreter))
         if result.get("ok"):
             with self.lock:
                 self.cache[cache_key] = (signature, result)

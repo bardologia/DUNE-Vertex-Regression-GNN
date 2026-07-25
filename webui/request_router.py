@@ -73,6 +73,11 @@ class RequestRouter:
             result = self.configs.schema(key, self.paths.preferred_interpreter())
             self._send_json(handler, result, 200 if result.get("ok") else 400)
             return
+        if path.startswith("/api/scripts/") and path.endswith("/source"):
+            key    = path[len("/api/scripts/"):-len("/source")]
+            result = self.catalog.source(key)
+            self._send_json(handler, result, 200 if result.get("ok") else 404)
+            return
         if path == "/api/models":
             result = self.models.list(self.paths.preferred_interpreter())
             self._send_json(handler, result, 200 if result.get("ok") else 400)
