@@ -19,6 +19,7 @@ class TensorboardManager:
     HOST              = "127.0.0.1"
     STARTUP_TIMEOUT_S = 90.0
     PROBE_INTERVAL_S  = 0.5
+    SHUTDOWN_GRACE_S  = 5.0
 
     def __init__(self, paths: ProjectPaths, logger: ServerLogger) -> None:
         self.paths     = paths
@@ -43,7 +44,7 @@ class TensorboardManager:
         tensorboard_directory = candidate / "tensorboard"
         return str(tensorboard_directory if tensorboard_directory.is_dir() else candidate)
 
-    def ensure(self, logdir: str) -> dict:
+    def ensure(self, logdir: str, owner_pid: int | None = None) -> dict:
         logdir = str(logdir)
 
         with self.lock:
@@ -74,14 +75,15 @@ class TensorboardManager:
             return {"ok": False, "error": str(error)}
 
         record = {
-            "id"       : tb_id,
-            "logdir"   : logdir,
-            "port"     : port,
-            "pid"      : process.pid,
-            "status"   : "starting",
-            "started"  : datetime.now().isoformat(timespec="seconds"),
-            "process"  : process,
-            "log_path" : log_path,
+            "id"        : tb_id,
+            "logdir"    : logdir,
+            "port"      : port,
+            "pid"       : process.pid,
+            "owner_pid" : owner_pid,
+            "status"    : "starting",
+            "started"   : datetime.now().isoformat(timespec="seconds"),
+            "process"   : process,
+            "log_path"  : log_path,
         }
 
         with self.lock:
@@ -150,6 +152,21 @@ class TensorboardManager:
             records = list(self.instances.values())
         return [self._view(record) for record in sorted(records, key=lambda item: item["started"], reverse=True)]
 
+    def _terminate(self, record: dict) -> None:
+        process = record["process"]
+
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=self.SHUTDOWN_GRACE_S)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+        else:
+            process.wait()
+
+        record["status"] = "stopped"
+
     def stop(self, tb_id: str) -> dict:
         with self.lock:
             record = self.instances.get(tb_id)
@@ -157,18 +174,21 @@ class TensorboardManager:
         if record is None:
             return {"ok": False, "error": "unknown tensorboard instance"}
 
-        if record["process"].poll() is None:
-            record["process"].terminate()
-
-        record["status"] = "stopped"
+        self._terminate(record)
         self.logger.warning(f"tensorboard {tb_id} stopped")
         return {"ok": True}
+
+    def stop_for_owner(self, owner_pid: int) -> None:
+        with self.lock:
+            records = [record for record in self.instances.values() if record["owner_pid"] == owner_pid and record["status"] != "stopped"]
+
+        for record in records:
+            self._terminate(record)
+            self.logger.info(f"tensorboard {record['id']} stopped: owning job {owner_pid} exited")
 
     def stop_all(self) -> None:
         with self.lock:
             records = list(self.instances.values())
 
         for record in records:
-            if record["process"].poll() is None:
-                record["process"].terminate()
-            record["status"] = "stopped"
+            self._terminate(record)
