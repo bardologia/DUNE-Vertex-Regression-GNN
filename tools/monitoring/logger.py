@@ -5,6 +5,7 @@ from datetime   import datetime
 from typing     import Any, Mapping, Optional, Sequence
 
 from rich.console import Console
+from rich.live    import Live
 from rich.logging import RichHandler
 from rich.panel   import Panel
 from rich.progress import (
@@ -22,21 +23,66 @@ from rich.table import Table
 from rich.text  import Text
 from rich.theme import Theme
 
+from tools.reporting.markdown import MarkdownDoc, MarkdownTable
+from tools.runtime.run_tag    import RunTag
+
+
+class LiveMonitor:
+    def __init__(self, console: Console, title: str = "Training Monitor", enabled: bool = True) -> None:
+        self.console = console
+        self.title   = title
+        self.enabled = bool(enabled)
+
+        self._metrics : dict[str, Any] = {}
+        self._live    : Optional[Live] = None
+
+    def __enter__(self):
+        if not self.enabled:
+            return self
+
+        self._live = Live(self._render(), console=self.console, refresh_per_second=4, transient=False)
+        self._live.__enter__()
+        return self
+
+    def update(self, **kwargs: Any) -> None:
+        self._metrics.update(kwargs)
+        if self._live is not None:
+            self._live.update(self._render())
+
+    def _render(self) -> Panel:
+        table = Table(show_header=True, header_style="bold cyan", box=None, expand=False)
+        table.add_column("Metric", style="key", no_wrap=True)
+        table.add_column("Value", style="value", justify="right")
+
+        for key, value in sorted(self._metrics.items()):
+            if isinstance(value, float):
+                table.add_row(key, f"{value:.6f}" if abs(value) < 1000 else f"{value:.2f}")
+            else:
+                table.add_row(key, str(value))
+
+        return Panel(table, title=f"[bold cyan]{self.title}[/bold cyan]", border_style="cyan")
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._live is not None:
+            self._live.__exit__(exc_type, exc_val, exc_tb)
+            self._live = None
+        return False
+
 
 _THEME = Theme({
-    "section":    "bold cyan",
-    "subsection": "white",
-    "key":        "bold magenta",
-    "value":      "bright_white",
-    "ok":         "bold green",
-    "warn":       "bold yellow",
-    "err":        "bold red",
-    "muted":      "white",
-    "logging.level.debug":    "white",
-    "logging.level.info":     "white",
-    "logging.level.warning":  "bold yellow",
-    "logging.level.error":    "bold red",
-    "logging.level.critical": "bold red",
+    "section"                : "bold cyan",
+    "subsection"             : "white",
+    "key"                    : "bold magenta",
+    "value"                  : "bright_white",
+    "ok"                     : "bold green",
+    "warn"                   : "bold yellow",
+    "err"                    : "bold red",
+    "muted"                  : "white",
+    "logging.level.debug"    : "white",
+    "logging.level.info"     : "white",
+    "logging.level.warning"  : "bold yellow",
+    "logging.level.error"    : "bold red",
+    "logging.level.critical" : "bold red",
 })
 
 _CONSOLE: Optional[Console] = None
@@ -47,13 +93,13 @@ def get_console() -> Console:
     global _CONSOLE
     if _CONSOLE is None:
         _CONSOLE = Console(
-            theme=_THEME, 
-            highlight=False, 
-            soft_wrap=False, 
-            force_terminal=True,
-            color_system="truecolor",
-            legacy_windows=False,
-            no_color=False
+            theme          = _THEME,
+            highlight      = False,
+            soft_wrap      = False,
+            force_terminal = True,
+            color_system   = "truecolor",
+            legacy_windows = False,
+            no_color       = False,
         )
     return _CONSOLE
 
@@ -76,13 +122,16 @@ def _make_progress(console: Console, transient: bool = False) -> Progress:
 
 class Logger:
 
-    LOG_LEVELS = {name: getattr(logging, name) for name in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")}
+    LOG_LEVELS      = {name: getattr(logging, name) for name in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")}
+    FILE_RULE_WIDTH = 100
 
     def __init__(self, log_dir: str = "logs", name: str = "experiment", level: str = "INFO", config: Any = None) -> None:
         self.log_dir    = log_dir
         self.name       = name
         self.start_time = datetime.now()
         self.config     = config
+
+        self._section_started: Optional[datetime] = None
 
         if log_dir:
             os.makedirs(self.log_dir, exist_ok=True)
@@ -99,14 +148,14 @@ class Logger:
         self.logger.setLevel(log_level)
 
         rich_handler = RichHandler(
-            console            = self.console,
-            level              = log_level,
-            show_time          = True,
-            show_level         = True,
-            show_path          = False,
-            markup             = True,
-            rich_tracebacks    = True,
-            log_time_format    = "[%H:%M:%S]",
+            console         = self.console,
+            level           = log_level,
+            show_time       = True,
+            show_level      = True,
+            show_path       = False,
+            markup          = True,
+            rich_tracebacks = True,
+            log_time_format = "[%H:%M:%S]",
         )
         rich_handler.setLevel(log_level)
         self.logger.addHandler(rich_handler)
@@ -121,16 +170,62 @@ class Logger:
             self.logger.addHandler(file_handler)
             self._file_handler = file_handler
 
+        self._header(log_level)
+
     def _to_file(self, message: str, level: int = logging.INFO) -> None:
         if self._file_handler is None:
             return
         self._file_handler.handle(self.logger.makeRecord(self.name, level, "", 0, message, None, None))
 
-    def section(self, title: str) -> None:
-        text = str(title).upper()
+    def _file_raw(self, text: str = "") -> None:
+        if self._file_handler is None:
+            return
+        self._file_handler.stream.write(text + "\n")
+        self._file_handler.flush()
+
+    def _file_banner(self, line: str) -> None:
+        bar = "=" * self.FILE_RULE_WIDTH
+        self._file_raw()
+        self._file_raw(bar)
+        self._to_file(line)
+        self._file_raw(bar)
+
+    def _header(self, log_level: int) -> None:
+        started = self.start_time.strftime("%Y-%m-%d %H:%M:%S")
+        level   = logging.getLevelName(log_level)
+
         self.console.print()
-        self.console.print(Rule(Text(text, style="section"), style="cyan"))
-        self._to_file(f">>> {text}")
+        self.console.print(Rule(Text(self.name, style="section"), style="cyan"))
+        self.console.print(f"  [key]Started[/key]  : [value]{started}[/value]")
+        if self._file_handler is not None:
+            self.console.print(f"  [key]Log file[/key] : [value]{self._file_handler.baseFilename}[/value]")
+
+        self._file_banner(f">>> RUN {self.name}  |  started {started}  |  level {level}")
+
+    @staticmethod
+    def _fmt_duration(seconds: float) -> str:
+        if seconds < 60:
+            return f"{seconds:.1f}s"
+
+        minutes, secs    = divmod(int(seconds), 60)
+        hours,   minutes = divmod(minutes, 60)
+        return f"{hours}h{minutes:02d}m{secs:02d}s" if hours else f"{minutes}m{secs:02d}s"
+
+    def section(self, title: str) -> None:
+        text  = str(title).upper()
+        delta = None if self._section_started is None else self._fmt_duration((datetime.now() - self._section_started).total_seconds())
+
+        self._section_started = datetime.now()
+
+        label = Text(text, style="section")
+        if delta is not None:
+            label.append(f"  (+{delta})", style="dim")
+
+        self.console.print()
+        self.console.print(Rule(label, style="cyan"))
+
+        suffix = "" if delta is None else f"  (+{delta})"
+        self._file_banner(f">>> {text}{suffix}")
 
     def subsection(self, title: str) -> None:
         line = f"  [cyan]>[/cyan] {title}"
@@ -216,9 +311,15 @@ class Logger:
     @contextmanager
     def timer(self, label: str):
         start = datetime.now()
-        yield
-        elapsed = (datetime.now() - start).total_seconds()
-        self.info(f"{label} completed in {elapsed:.2f}s")
+        try:
+            yield
+        except BaseException:
+            elapsed = (datetime.now() - start).total_seconds()
+            self.error(f"{label} failed after {elapsed:.2f}s")
+            raise
+        else:
+            elapsed = (datetime.now() - start).total_seconds()
+            self.info(f"{label} completed in {elapsed:.2f}s")
 
     @contextmanager
     def track(self, transient: bool = False):
@@ -228,12 +329,45 @@ class Logger:
 
     progress_bar = track
 
+    @contextmanager
+    def live_monitor(self, title: str = "Training Monitor", enabled: bool = True):
+        monitor = LiveMonitor(self.console, title=title, enabled=enabled)
+        with monitor:
+            yield monitor
+
+    def save_profiler_results(self, stats, output):
+        sorted_stats = sorted(stats.stats.items(), key=lambda entry: entry[1][3], reverse=True)
+
+        columns = ["Function", "Calls", "Total Time (s)", "Per Call (s)", "Cumulative Time (s)", "Cumulative Per Call (s)", "Location"]
+        align   = ["left", "right", "right", "right", "right", "right", "left"]
+        table   = MarkdownTable(columns, align=align)
+
+        for function, (call_count, calls, total_time, cumulative_time, callers) in sorted_stats:
+            filename, line_number, function_name = function
+
+            per_call_total      = total_time / calls if calls > 0 else 0.0
+            per_call_cumulative = cumulative_time / calls if calls > 0 else 0.0
+
+            table.add_row(function_name, calls, f"{total_time:.6f}", f"{per_call_total:.6f}", f"{cumulative_time:.6f}", f"{per_call_cumulative:.6f}", f"{filename}:{line_number}")
+
+        document = MarkdownDoc("Profiler Results")
+        document.paragraph(f"Generated: {RunTag.timestamp()}")
+        document.table(table)
+        document.save(output)
+
+        self.info(f"Full profiler results saved to: {output}")
+        return output
+
     def close(self) -> None:
-        elapsed = datetime.now() - self.start_time
+        elapsed          = datetime.now() - self.start_time
         hours, remainder = divmod(int(elapsed.total_seconds()), 3600)
         minutes, seconds = divmod(remainder, 60)
 
+        self.console.print()
+        self.console.print(Rule(Text(f"END {self.name}", style="section"), style="cyan"))
+        self._file_banner(f">>> END {self.name}")
         self.logger.info(f"[End] Duration: {hours:02d}:{minutes:02d}:{seconds:02d}")
+
         for handler in self.logger.handlers[:]:
             handler.close()
             self.logger.removeHandler(handler)
@@ -243,8 +377,11 @@ class Logger:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        if exc_type is not None:
+            self.error(f"Aborted by {exc_type.__name__}: {exc_val}")
         self.close()
         return False
+
 
 class NullLogger:
     def __getattr__(self, name: str):

@@ -29,3 +29,35 @@ class Reproducibility:
         generator.manual_seed(int(seed))
 
         return generator
+
+    @staticmethod
+    def worker_init(base_seed: int):
+        return WorkerInitializer(base_seed)
+
+
+class RngSnapshot:
+    def __init__(self) -> None:
+        self.python = random.getstate()
+        self.numpy  = np.random.get_state()
+        self.torch  = torch.get_rng_state()
+        self.cuda   = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else []
+
+    def restore(self) -> None:
+        random.setstate(self.python)
+        np.random.set_state(self.numpy)
+        torch.set_rng_state(self.torch)
+
+        if torch.cuda.is_available():
+            torch.cuda.set_rng_state_all(self.cuda)
+
+
+class WorkerInitializer:
+    def __init__(self, base_seed: int) -> None:
+        self.base_seed = int(base_seed)
+
+    def __call__(self, worker_id: int) -> None:
+        seed = (self.base_seed + int(worker_id)) % Reproducibility.SEED_MODULUS
+
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
