@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import torch
 from scipy.spatial        import cKDTree
+from scipy.stats          import rankdata
 from torch_geometric.data import Data
 
 
@@ -68,7 +69,7 @@ class NodeFeatures(GraphAssembler):
         return np.tile(normalized.astype(np.float32), (number_of_nodes, 1))
 
     def _intensity_rank(self, light, number_of_nodes):
-        ordinal = np.argsort(np.argsort(light))
+        ordinal = rankdata(light, method="average") - 1.0
         return (ordinal.astype(np.float32) / max(number_of_nodes - 1, 1)).reshape(-1, 1)
 
     def build(self, positions, light, neighbor_indices):
@@ -147,8 +148,8 @@ class EdgeFeatures(GraphAssembler):
         neighbor_indices_without_self   = neighbor_indices[:, 1:]
         neighbor_distances_without_self = neighbor_distances[:, 1:]
 
-        source_node_indices      = np.repeat(np.arange(number_of_nodes), neighbor_indices_without_self.shape[1])
-        destination_node_indices = neighbor_indices_without_self.reshape(-1).astype(np.int64)
+        destination_node_indices = np.repeat(np.arange(number_of_nodes), neighbor_indices_without_self.shape[1]).astype(np.int64)
+        source_node_indices      = neighbor_indices_without_self.reshape(-1).astype(np.int64)
         distance                 = neighbor_distances_without_self.reshape(-1).astype(np.float64)
 
         source_positions      = positions[source_node_indices]
@@ -169,7 +170,7 @@ class EdgeFeatures(GraphAssembler):
             reverse_features = self._assemble(-displacement, distance_column, inverse_square_distance, -light_gradient, light_similarity, distance_rbf)
             return self._interleave_bidirectional(source_node_indices, destination_node_indices, forward_features, reverse_features)
 
-        edge_index = torch.tensor(np.vstack([source_node_indices.astype(np.int64), destination_node_indices]), dtype=torch.long)
+        edge_index = torch.tensor(np.vstack([source_node_indices, destination_node_indices]), dtype=torch.long)
         edge_attr  = torch.tensor(forward_features, dtype=torch.float32)
         return edge_index, edge_attr
 
@@ -192,15 +193,15 @@ class ActiveNodeSelector:
             indices         = indices[brightest_first[: self.max_active_nodes]]
         return indices
 
-    def _enforce_floor(self, indices, light):
-        if indices.shape[0] >= self.MINIMUM_NODES:
-            return indices
-        return np.argsort(light)[::-1][: self.MINIMUM_NODES]
+    def _enforce_floor(self, indices):
+        if indices.shape[0] < self.MINIMUM_NODES:
+            raise ValueError(f"Only {indices.shape[0]} sensor(s) carry light; at least {self.MINIMUM_NODES} are required to build k-nearest-neighbour edges. Raise physics.detection_efficiency or physics.scale_factor, or set graph.active_only=false.")
+        return indices
 
     def select(self, positions, light):
         indices = self._active_indices(light)
         indices = self._apply_budget(indices, light)
-        indices = self._enforce_floor(indices, light)
+        indices = self._enforce_floor(indices)
 
         indices = np.sort(indices)
         return positions[indices], light[indices]
