@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from typing     import Any, Mapping, Optional
 
 import numpy as np
+import torch
 
 
 class Tracker:
@@ -53,12 +54,29 @@ class Tracker:
             except (TypeError, ValueError):
                 continue
 
+    def log_staged(self, group, values: Mapping[str, Any], stage, step=None) -> None:
+        for k, v in values.items():
+            try:
+                self._emit("add_scalar", f"{group}/{k}/{stage}", float(v), step)
+            except (TypeError, ValueError):
+                continue
+
+    def log_figure(self, tag, figure, step=None) -> None:
+        self._emit("add_figure", tag, figure, step, close=True)
+
     def log_histogram(self, tag, values, step=None, bins="auto") -> None:
         v = np.asarray(values).ravel().astype(np.float32)
         try:
             self._emit("add_histogram", tag, v, step, bins=bins)
         except (ValueError, RuntimeError):
             pass
+
+    def log_memory(self, step=None, device=None) -> None:
+        if self.writer is None or not torch.cuda.is_available():
+            return
+
+        target = device if device is not None else torch.cuda.current_device()
+        self.log_scalar("system/gpu_peak_alloc_gb", torch.cuda.max_memory_allocated(target) / 1024 ** 3, step)
 
     def flush(self) -> None:
         if self.writer is not None:
