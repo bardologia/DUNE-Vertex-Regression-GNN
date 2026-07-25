@@ -20,7 +20,7 @@ class MaxBatchProbe:
         self.overrides        = overrides or {}
 
         self.device   = config.training.loop.device if torch.cuda.is_available() else "cpu"
-        self.use_amp  = config.training.loop.use_amp and torch.cuda.is_available()
+        self.use_amp  = config.training.loop.use_amp and str(self.device).startswith("cuda")
 
     def _candidate_batches(self):
         ceiling   = min(self.max_batch_config.maximum_batch, len(self.dataset))
@@ -41,6 +41,7 @@ class MaxBatchProbe:
     def _measure(self, model, optimizer, criterion, batch_size):
         loader = GraphDataLoader(self.dataset, batch_size=batch_size, shuffle=False)
 
+        torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats(self.device)
         model.train()
 
@@ -60,7 +61,7 @@ class MaxBatchProbe:
             if steps >= self.max_batch_config.measure_steps:
                 break
 
-        peak_bytes = torch.cuda.max_memory_reserved(self.device)
+        peak_bytes = torch.cuda.max_memory_allocated(self.device)
         return peak_bytes / 1e9
 
     def run(self):

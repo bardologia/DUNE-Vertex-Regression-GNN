@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 
 from configuration.architectures import MODEL_CONFIG_REGISTRY
 from models import get_model
-from pipelines.dataset.graph import FeatureSchema
 
 
 @dataclass
@@ -20,12 +19,11 @@ class SizeMatchResult:
 
 
 class ModelSizer:
-    def __init__(self, config, logger):
+    def __init__(self, config, logger, base_overrides):
         self.config         = config.size_match
         self.logger         = logger
         self.attribute      = self.config.scaled_attribute
-        node_dim, edge_dim  = FeatureSchema(config.dataset).dimensions()
-        self.base_overrides = {"input_dim": node_dim, "edge_dim": edge_dim}
+        self.base_overrides = dict(base_overrides)
 
     @staticmethod
     def parameter_count(model):
@@ -55,7 +53,10 @@ class ModelSizer:
     def _bracket_upper(self, model_name, target, alignment):
         width = self._snap(self.config.minimum_width, alignment)
         while width < self.config.maximum_width and self._count_at(model_name, width) < target:
-            width = self._snap(width * 2, alignment)
+            widened = self._snap(width * 2, alignment)
+            if widened <= width:
+                break
+            width = widened
         return width
 
     def match(self, model_name, target):

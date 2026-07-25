@@ -12,8 +12,9 @@ class CrossValidateEntry:
         self.config = CrossValidationEntryConfig()
 
     def run(self):
-        self.config = ConfigCli(self.config, description="Cross-validate a DUNE-GNN model").apply()
-        return CrossValidationPipeline(self.config).run()
+        cli         = ConfigCli(self.config, description="Cross-validate a DUNE-GNN model")
+        self.config = cli.apply()
+        return CrossValidationPipeline(self.config, explicit_paths=set(cli.overrides)).run()
 
 
 if __name__ == "__main__":

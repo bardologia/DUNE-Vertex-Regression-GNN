@@ -4,13 +4,19 @@ from pathlib import Path
 from configuration.architectures import MODEL_CONFIG_REGISTRY
 from configuration.benchmark     import BenchmarkConfig
 from pipelines.benchmark         import BenchmarkPipeline, ComparisonReport, ModelSizer, TrialCollector
+from pipelines.dataset.graph      import FeatureSchema
+
+
+def _base_overrides(config):
+    node_dim, edge_dim = FeatureSchema(config.dataset).dimensions()
+    return {"input_dim": node_dim, "edge_dim": edge_dim}
 
 
 def test_model_sizer_matches_reference(quiet_logger):
     config = BenchmarkConfig()
     config.size_match.reference_model = "gps"
 
-    sizer  = ModelSizer(config, quiet_logger)
+    sizer  = ModelSizer(config, quiet_logger, _base_overrides(config))
     target = sizer.reference_count()
     result = sizer.match("graphsage", target)
 
@@ -23,7 +29,7 @@ def test_model_sizer_produces_head_divisible_width(quiet_logger):
     config = BenchmarkConfig()
     config.size_match.reference_model = "gps"
 
-    sizer  = ModelSizer(config, quiet_logger)
+    sizer  = ModelSizer(config, quiet_logger, _base_overrides(config))
     target = sizer.reference_count()
     result = sizer.match("gps_lite", target)
 
@@ -87,7 +93,6 @@ def test_benchmark_pipeline_runs(dataset_config, quiet_logger, tmp_path):
     config.training.loop.use_amp              = False
     config.training.loop.pin_memory           = False
     config.training.loop.persistent_workers   = False
-    config.training.loop.validation_frequency = 1
     config.training.io.log_base_dir           = tmp_path
 
     summary = BenchmarkPipeline(config, logger=quiet_logger).run()
