@@ -5,9 +5,10 @@ import torch
 
 
 class GradientClipper:
-    def __init__(self, config, logger, tracker):
-        self.logger  = logger
-        self.tracker = tracker
+    def __init__(self, config, logger, tracker, param_groups=None):
+        self.logger       = logger
+        self.tracker      = tracker
+        self.param_groups = param_groups
 
         self.mode                = config.gradient_clipper.clip_mode
         self.threshold           = config.gradient_clipper.max_grad_norm if self.mode == "fixed" else None
@@ -48,6 +49,20 @@ class GradientClipper:
         total_norm          = torch.norm(torch.stack(per_parameter_norms), 2)
 
         return total_norm.item()
+
+    def _log_group_norms(self, global_step: int) -> None:
+        if self.param_groups is None or len(self.param_groups) <= 1:
+            return
+
+        for index, group in enumerate(self.param_groups):
+            gradients = [parameter.grad.detach() for parameter in group["params"] if parameter.grad is not None]
+
+            if not gradients:
+                continue
+
+            group_norm = torch.norm(torch.stack(torch._foreach_norm(gradients, 2)), 2).item()
+            name       = group.get("name", str(index))
+            self.tracker.log_scalar(f"train/grad_norm/{name}", group_norm, global_step)
 
     def _clip(self, model: torch.nn.Module, norm: float, max_norm: float) -> tuple[float, float]:
         scale = min(1.0, max_norm / (norm + self.epsilon))
@@ -92,6 +107,7 @@ class GradientClipper:
             self.logger.warning(f"Exploding gradient norm detected: {norm:.2f} at step {global_step}!")
 
         self.tracker.log_scalar("train/grad_norm_before_clip", norm, global_step)
+        self._log_group_norms(global_step)
 
         if self.mode == "disabled":
             return norm
@@ -118,3 +134,10 @@ class GradientClipper:
 
         if global_step % self.log_histogram_freq == 0 and len(self.history) >= self.log_histogram_freq:
             self.tracker.log_histogram("train/grad_norm_dist", np.asarray(self.history[-self.log_histogram_freq:], dtype=np.float32), global_step)
+
+    def state_dict(self) -> dict:
+        keep = max(self.window, self.log_histogram_freq)
+        return {"history": [float(value) for value in self.history[-keep:]]}
+
+    def load_state_dict(self, state: dict) -> None:
+        self.history = [float(value) for value in state["history"]]

@@ -39,12 +39,12 @@ class TrainingRunMetadata:
         self.metadata_directory = run_paths.metadata_directory
         self.checkpoint_dir     = run_paths.checkpoint_dir
 
-        run_paths.create()
+        run_paths.create(allow_existing=training_config.loop.resume)
 
         self.checkpoint_path = self.checkpoint_dir / training_config.io.checkpoint_name
         self.writer          = SummaryWriter(log_dir=str(self.tensorboard_dir))
         self.logger          = logger if logger is not None else Logger(log_dir=str(self.logs_directory), name=model_name)
-        self.tracker         = Tracker(writer=self.writer)
+        self.tracker         = Tracker(writer=self.writer, debug=training_config.loop.log_debug)
 
         self.logger.section("[Run Setup]")
         self.logger.kv_table({
