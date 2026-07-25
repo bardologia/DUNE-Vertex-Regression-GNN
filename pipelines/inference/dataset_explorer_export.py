@@ -34,7 +34,7 @@ class DatasetExplorerExportPipeline:
         self.node_selector      = None
 
     def _load_store(self):
-        reader = ParquetEventReader(self.config.data.parquet_store_dir).load_store(load_octant_light=False)
+        reader = ParquetEventReader(self.config.data.parquet_store_dir).load_store()
 
         self.geometry_positions = reader.geometry_frame[["x", "y", "z"]].values.astype(np.float32)
         self.event_targets      = reader.event_targets

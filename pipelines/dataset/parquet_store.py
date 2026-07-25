@@ -158,10 +158,6 @@ class ParquetDatasetWriter:
             columns=["base_event_id", "octant", "sign_x", "sign_y", "sign_z", "target_x", "target_y", "target_z"],
         )
 
-        octant_light        = light_matrix[octant_frame["base_event_id"].values]
-        octant_light_values = pa.array(octant_light.reshape(-1), type=pa.int32())
-        octant_light_list   = pa.FixedSizeListArray.from_arrays(octant_light_values, channel_count)
-
         octants_table = pa.table({
             "base_event_id" : pa.array(octant_frame["base_event_id"].values, type=pa.int32()),
             "octant"        : pa.array(octant_frame["octant"].values, type=pa.string()),
@@ -171,7 +167,6 @@ class ParquetDatasetWriter:
             "target_x"      : pa.array(octant_frame["target_x"].values, type=pa.float32()),
             "target_y"      : pa.array(octant_frame["target_y"].values, type=pa.float32()),
             "target_z"      : pa.array(octant_frame["target_z"].values, type=pa.float32()),
-            "light"         : octant_light_list,
         })
         pa_parquet.write_table(octants_table, self.octants_path, compression="zstd")
 
@@ -214,15 +209,14 @@ class ParquetEventReader:
         self.events_path     = self.store_directory / "events.parquet"
         self.octants_path    = self.store_directory / "octants.parquet"
 
-        self.geometry_frame      = None
-        self.light_matrix        = None
-        self.event_targets       = None
-        self.octant_frame        = None
-        self.octant_light_matrix = None
+        self.geometry_frame = None
+        self.light_matrix   = None
+        self.event_targets  = None
+        self.octant_frame   = None
 
-    OCTANT_FRAME_COLUMNS = ["base_event_id", "octant", "sign_x", "sign_y", "sign_z", "target_x", "target_y", "target_z"]
+    OCTANT_COLUMNS = ("base_event_id", "octant", "sign_x", "sign_y", "sign_z", "target_x", "target_y", "target_z")
 
-    def load_store(self, load_octant_light=True):
+    def load_store(self):
         self.geometry_frame = pa_parquet.read_table(self.geometry_path).to_pandas()
         channel_count       = len(self.geometry_frame)
 
@@ -236,15 +230,15 @@ class ParquetEventReader:
             events_table.column("target_z").to_numpy(),
         ])
 
-        if load_octant_light:
-            octants_table            = pa_parquet.read_table(self.octants_path)
-            octant_count             = octants_table.num_rows
-            octant_flat_light        = octants_table.column("light").combine_chunks().values.to_numpy()
-            self.octant_light_matrix = octant_flat_light.reshape(octant_count, channel_count)
-            self.octant_frame        = octants_table.drop(["light"]).to_pandas()
-        else:
-            self.octant_frame = pa_parquet.read_table(self.octants_path, columns=self.OCTANT_FRAME_COLUMNS).to_pandas()
+        self.octant_frame = self._read_octants()
         return self
+
+    def _read_octants(self):
+        schema = pa_parquet.read_schema(self.octants_path)
+        if "light" in schema.names:
+            raise ValueError(f"{self.octants_path} still carries a per-octant light column from the previous store layout. Rebuild the store with data.build_store=true; octant light is now taken from events.parquet by base_event_id.")
+
+        return pa_parquet.read_table(self.octants_path, columns=list(self.OCTANT_COLUMNS)).to_pandas()
 
     def _build_event_frame(self, light_vector, sign_x, sign_y, sign_z):
         event_frame = pd.DataFrame({
@@ -262,13 +256,6 @@ class ParquetEventReader:
             event_frame  = self._build_event_frame(light_vector, 1, 1, 1)
             target       = tuple(float(value) for value in self.event_targets[event_id])
             yield event_frame, target
-
-    def iterate_augmented(self):
-        for row_index, row in enumerate(self.octant_frame.itertuples(index=False)):
-            light_vector = self.octant_light_matrix[row_index]
-            event_frame  = self._build_event_frame(light_vector, row.sign_x, row.sign_y, row.sign_z)
-            target       = (float(row.target_x), float(row.target_y), float(row.target_z))
-            yield event_frame, target, row.octant
 
 
 __all__ = [
