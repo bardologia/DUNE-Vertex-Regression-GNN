@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numpy as np
 import torch
 from torch_geometric.data   import Data
 from torch_geometric.loader import DataLoader as GraphDataLoader
@@ -25,7 +26,9 @@ class EvaluationGraphTensors:
         count = len(self.dataset)
         if self.max_events and self.max_events > 0:
             count = min(count, self.max_events)
-        self.graphs = [self.dataset[index] for index in range(count)]
+
+        indices     = np.linspace(0, len(self.dataset) - 1, count).astype(np.int64)
+        self.graphs = [self.dataset[int(index)] for index in indices]
 
     def _stack(self):
         node_segments = []

@@ -8,8 +8,6 @@ from tools.reporting.markdown import MarkdownDoc, MarkdownTable
 
 
 class FeatureImportanceReport:
-    UNIT = "m"
-
     CSV_COLUMNS = (
         "feature", "group",
         "permutation_delta", "permutation_std", "permutation_pct_increase",
@@ -21,10 +19,11 @@ class FeatureImportanceReport:
         "consensus_mean_rank",
     )
 
-    def __init__(self, output_directory, logger, primary_metric, top_k):
+    def __init__(self, output_directory, logger, metric, top_k):
         self.output_directory = Path(output_directory)
         self.logger           = logger
-        self.primary_metric   = primary_metric
+        self.metric           = metric
+        self.primary_metric   = metric.name
         self.top_k            = top_k
         self.output_directory.mkdir(parents=True, exist_ok=True)
 
@@ -85,10 +84,10 @@ class FeatureImportanceReport:
     def _perturbation_table(self, document, title, records):
         document.heading(title, level=3)
         table = MarkdownTable(
-            ["Feature", "Group", f"Delta {self.primary_metric} [m]", "Std [m]", "Increase [%]", "Delta MAE [m]", "Delta RMSE [m]", "Delta R2"],
+            ["Feature", "Group", self.metric.delta_label, "Std [m]", "Increase [%]", "Delta MAE [m]", "Delta RMSE [m]", "Delta R2"],
             align=["left", "left", "right", "right", "right", "right", "right", "right"],
         )
-        ranked = sorted(records, key=lambda record: record["deltas"][self.primary_metric], reverse=True)
+        ranked = sorted(records, key=lambda record: self.metric.harm(record["deltas"][self.primary_metric]), reverse=True)
         for record in ranked:
             deltas = record["deltas"]
             table.add_row(
@@ -175,7 +174,7 @@ class FeatureImportanceReport:
             document.image(filename, f"plots/{filename}")
 
     def build(self, context, baseline, inventory, analysis, merged_csv, plot_filenames):
-        json_path = self._write_json({"unit": self.UNIT, "primary_metric": self.primary_metric, "run": context, "baseline": baseline, "feature_inventory": inventory, "analysis": analysis})
+        json_path = self._write_json({"unit": self.metric.unit, "primary_metric": self.primary_metric, "run": context, "baseline": baseline, "feature_inventory": inventory, "analysis": analysis})
         node_csv  = self._write_csv("node_importance.csv", merged_csv["node"])
         edge_csv  = self._write_csv("edge_importance.csv", merged_csv["edge"])
 

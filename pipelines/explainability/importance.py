@@ -172,6 +172,10 @@ class GradientSaliency:
     def _means(self, accumulators, counters):
         node_divisor = max(counters["node"], 1)
         edge_divisor = max(counters["edge"], 1)
+
+        if counters["edge"] == 0:
+            self.logger.warning("Edge attributes never received a gradient: this architecture does not read edge_attr, so every edge-feature score is exactly zero and their ranks are tied.")
+
         return {
             "node_saliency"         : (accumulators["node_gradient"] / node_divisor).numpy(),
             "node_input_times_grad" : (accumulators["node_product"]  / node_divisor).numpy(),
@@ -224,7 +228,9 @@ class ExpectedGradients:
         count          = len(self.engine.graphs)
         if self.events and self.events > 0:
             count = min(count, self.events)
-        self.subset_graphs = self.engine.graphs[:count]
+
+        indices            = np.linspace(0, len(self.engine.graphs) - 1, count).astype(np.int64)
+        self.subset_graphs = [self.engine.graphs[int(index)] for index in indices]
 
         node_segments = []
         edge_segments = []
@@ -401,7 +407,9 @@ class KernelShapImportance:
         count          = len(self.engine.graphs)
         if self.events and self.events > 0:
             count = min(count, self.events)
-        self.subset_graphs = self.engine.graphs[:count]
+
+        indices            = np.linspace(0, len(self.engine.graphs) - 1, count).astype(np.int64)
+        self.subset_graphs = [self.engine.graphs[int(index)] for index in indices]
 
         self.node_mean = self.engine.node_matrix.mean(dim=0)
         self.edge_mean = self.engine.edge_matrix.mean(dim=0)
