@@ -74,6 +74,23 @@ class Warmup:
     def is_finished(self) -> bool:
         return self.warmup_finished or not self.enabled or self.warmup_steps <= 0
 
+    def reset(self) -> None:
+        self.current_step       = 0
+        self.warmup_finished    = False
+        self._logged_completion = False
+
+    def state_dict(self) -> dict:
+        return {
+            "current_step"      : self.current_step,
+            "warmup_finished"   : self.warmup_finished,
+            "logged_completion" : self._logged_completion,
+        }
+
+    def load_state_dict(self, state: dict) -> None:
+        self.current_step       = int(state["current_step"])
+        self.warmup_finished    = bool(state["warmup_finished"])
+        self._logged_completion = bool(state["logged_completion"])
+
 
 class Scheduler:
     def __init__(self, base_lrs, warmup, config, logger, tracker):
@@ -101,12 +118,32 @@ class Scheduler:
 
         self._log_scheduler_info()
 
-    def _cosine_annealing(self, epoch: int) -> list[float]:
+    def _progress(self, epoch: int) -> float:
         maximum_epochs = max(1, int(self.config.loop.epochs))
-        eta_min        = float(self.config.scheduler.eta_min)
-        progress       = min(1.0, epoch / max(1, maximum_epochs - 1))
-        cosine_factor  = 0.5 * (1.0 + math.cos(math.pi * progress))
-        return [eta_min + (base_learning_rate - eta_min) * cosine_factor for base_learning_rate in self.base_lrs]
+        return min(1.0, epoch / max(1, maximum_epochs - 1))
+
+    def _decayed(self, factor: float) -> list[float]:
+        eta_min = float(self.config.scheduler.eta_min)
+        return [eta_min + (base_learning_rate - eta_min) * factor for base_learning_rate in self.base_lrs]
+
+    def _cosine_annealing(self, epoch: int) -> list[float]:
+        return self._decayed(0.5 * (1.0 + math.cos(math.pi * self._progress(epoch))))
+
+    def _linear(self, epoch: int) -> list[float]:
+        return self._decayed(1.0 - self._progress(epoch))
+
+    def _polynomial(self, epoch: int) -> list[float]:
+        return self._decayed((1.0 - self._progress(epoch)) ** float(self.config.scheduler.power))
+
+    def _exponential(self, epoch: int) -> list[float]:
+        eta_min = float(self.config.scheduler.eta_min)
+        ratio   = max(eta_min / max(self.base_lrs[0], 1e-12), 1e-8)
+        return [base_learning_rate * ratio ** self._progress(epoch) for base_learning_rate in self.base_lrs]
+
+    def _step_decay(self, epoch: int) -> list[float]:
+        step_size = max(1, int(self.config.scheduler.step_size))
+        decayed   = float(self.config.scheduler.gamma) ** (epoch // step_size)
+        return [max(base_learning_rate * decayed, float(self.config.scheduler.eta_min)) for base_learning_rate in self.base_lrs]
 
     def _constant(self) -> list[float]:
         return list(self.base_lrs)
@@ -114,6 +151,18 @@ class Scheduler:
     def _lrs_for(self, epoch: int) -> list[float]:
         if self.scheduler_type == "cosine_annealing":
             return self._cosine_annealing(epoch)
+
+        if self.scheduler_type == "linear":
+            return self._linear(epoch)
+
+        if self.scheduler_type == "polynomial":
+            return self._polynomial(epoch)
+
+        if self.scheduler_type == "exponential":
+            return self._exponential(epoch)
+
+        if self.scheduler_type == "step":
+            return self._step_decay(epoch)
 
         if self.scheduler_type == "constant":
             return self._constant()
@@ -169,6 +218,29 @@ class Scheduler:
 
         return list(self.current_lrs)
 
+    def reset(self, epoch_offset: int = 0) -> None:
+        self._epoch_offset    = int(epoch_offset)
+        self.current_lrs      = list(self.base_lrs)
+        self.best_metric      = math.inf if self.plateau_mode == "min" else -math.inf
+        self.num_bad_epochs   = 0
+        self.cooldown_counter = 0
+
+    def state_dict(self) -> dict:
+        return {
+            "current_lrs"      : list(self.current_lrs),
+            "epoch_offset"     : self._epoch_offset,
+            "best_metric"      : self.best_metric,
+            "num_bad_epochs"   : self.num_bad_epochs,
+            "cooldown_counter" : self.cooldown_counter,
+        }
+
+    def load_state_dict(self, state: dict) -> None:
+        self.current_lrs      = list(state["current_lrs"])
+        self._epoch_offset    = int(state["epoch_offset"])
+        self.best_metric      = float(state["best_metric"])
+        self.num_bad_epochs   = int(state["num_bad_epochs"])
+        self.cooldown_counter = int(state["cooldown_counter"])
+
     def _log_scheduler_info(self):
         self.logger.section("[Learning Rate Scheduler]")
         info = {
@@ -176,9 +248,16 @@ class Scheduler:
             "Base LRs"       : self.base_lrs,
         }
 
-        if self.scheduler_type == "cosine_annealing":
+        if self.scheduler_type in ("cosine_annealing", "linear", "polynomial", "exponential", "step"):
             info["T_max"]   = max(1, int(self.config.loop.epochs))
             info["Eta Min"] = self.config.scheduler.eta_min
+
+        if self.scheduler_type == "polynomial":
+            info["Power"] = self.config.scheduler.power
+
+        if self.scheduler_type == "step":
+            info["Step Size"] = self.config.scheduler.step_size
+            info["Gamma"]     = self.config.scheduler.gamma
 
         if self.scheduler_type == "reduce_on_plateau":
             info["Mode"]      = self.plateau_mode

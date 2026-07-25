@@ -2,14 +2,18 @@ from __future__ import annotations
 
 import gc
 import math
+import time
 
 import torch
 
-from tools.monitoring.inspection import ModelSummary
-from tools.training.checkpoint   import Checkpoint
-from tools.training.gradients    import GradientClipper
-from tools.training.scheduling   import Scheduler, Warmup
-from tools.training.stopping     import EarlyStopping
+from tools.monitoring.inspection       import ModelSummary
+from tools.monitoring.resource_monitor import ResourceMonitor
+from tools.runtime.completion          import CompletionMarker
+from tools.training.checkpoint         import Checkpoint, TrainerState, WeightEma
+from tools.training.gradients          import GradientClipper
+from tools.training.scheduling         import Scheduler, Warmup
+from tools.training.stopping           import EarlyStopping
+from tools.training.vram_reservation   import VramReservation
 
 from pipelines.training.loss import Loss
 
@@ -26,10 +30,12 @@ class Trainer:
         self.model  = model.to(self.device)
         self.stats  = stats
 
-        self.epochs               = training_config.loop.epochs
-        self.accumulation_steps   = training_config.loop.gradient_accumulation_steps
-        self.use_amp              = training_config.loop.use_amp and str(self.device).startswith("cuda")
-        self.scaler               = torch.amp.GradScaler("cuda") if self.use_amp else None
+        self.epochs                  = training_config.loop.epochs
+        self.validation_frequency    = training_config.loop.validation_frequency
+        self.accumulation_steps      = training_config.loop.gradient_accumulation_steps
+        self.abort_on_nonfinite_loss = training_config.loop.abort_on_nonfinite_loss
+        self.use_amp                 = training_config.loop.use_amp and str(self.device).startswith("cuda")
+        self.scaler                  = torch.amp.GradScaler("cuda") if self.use_amp else None
 
         self.optimizer = torch.optim.AdamW(self._build_param_groups(), betas=training_config.optimizer.betas, eps=training_config.optimizer.eps)
         base_lrs       = [group["lr"] for group in self.optimizer.param_groups]
@@ -37,9 +43,15 @@ class Trainer:
         self.warmup           = Warmup(training_config, self.logger, self.tracker)
         self.scheduler        = Scheduler(base_lrs, self.warmup, training_config, self.logger, self.tracker)
         self.early_stopping   = EarlyStopping(training_config, self.logger, self.tracker)
-        self.gradient_clipper = GradientClipper(training_config, self.logger, self.tracker)
+        self.gradient_clipper = GradientClipper(training_config, self.logger, self.tracker, param_groups=self.optimizer.param_groups)
         self.criterion        = Loss(training_config.loss, self.stats, self.logger)
         self.checkpoint       = Checkpoint(self.logger, self.tracker, str(run_metadata.checkpoint_path), min_delta=training_config.early_stopping.min_delta)
+        self.ema              = WeightEma(self.model, training_config.loop.ema_decay, training_config.loop.use_ema)
+        self.resource_monitor = ResourceMonitor(config=training_config.resources, logger=self.logger, tracker=self.tracker, step_getter=lambda: self.global_step)
+        self.vram_reservation = VramReservation(training_config.memory.reserve_vram, training_config.memory.vram_keep_free_gb, self.device, self.logger)
+
+        self.resume     = training_config.loop.resume
+        self.state_path = TrainerState.path(run_metadata.run_directory)
 
         self.global_step   = 0
         self.train_losses  = []
@@ -51,7 +63,10 @@ class Trainer:
                 "Device"            : self.device,
                 "AMP"               : self.use_amp,
                 "Epochs"            : self.epochs,
+                "Validate every"    : self.validation_frequency,
                 "Grad accumulation" : self.accumulation_steps,
+                "EMA"               : f"{training_config.loop.use_ema} (decay {training_config.loop.ema_decay})",
+                "Resume"            : self.resume,
                 "LR (encoder)"      : training_config.optimizer.learning_rate_encoder,
                 "LR (pool)"         : training_config.optimizer.learning_rate_pool,
                 "LR (head)"         : training_config.optimizer.learning_rate_regression_head,
@@ -91,6 +106,25 @@ class Trainer:
 
     def _clear_memory(self):
         gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        self.vram_reservation.refill()
+
+    def _maybe_resume(self, loader_generator) -> int:
+        if not self.resume:
+            return 0
+
+        start_epoch = TrainerState.restore(self, self.state_path, loader_generator)
+
+        self.logger.section("[Resumed Trainer State]")
+        self.logger.kv_table({
+            "State path"  : str(self.state_path),
+            "Next epoch"  : f"{start_epoch + 1}/{self.epochs}",
+            "Global step" : self.global_step,
+            "Best val"    : f"{self.checkpoint.best_val_loss:.4f} @ epoch {self.checkpoint.best_epoch + 1}",
+        })
+
+        return start_epoch
 
     def _apply_learning_rates(self):
         effective_learning_rates = self.scheduler.effective_lrs()
@@ -131,6 +165,7 @@ class Trainer:
 
     def _finish_step(self):
         self.optimizer.zero_grad(set_to_none=True)
+        self.ema.update(self.model)
         self.warmup.step()
         self.global_step += 1
         self._apply_learning_rates()
@@ -141,11 +176,17 @@ class Trainer:
         weighted_loss     = 0.0
         graph_count       = 0
         number_of_batches = len(loader)
+        clear_every       = self.config.memory.clear_cache_every_n_steps
+
+        data_wait   = 0.0
+        epoch_start = time.perf_counter()
 
         with self.logger.track() as progress:
-            task_id = progress.add_task(f"Epoch {epoch + 1}/{self.epochs} train", total=number_of_batches)
+            task_id     = progress.add_task(f"Epoch {epoch + 1}/{self.epochs} train", total=number_of_batches)
+            fetch_start = time.perf_counter()
 
             for batch_index, data in enumerate(loader):
+                data_wait   += time.perf_counter() - fetch_start
                 data         = data.to(self.device, non_blocking=True)
                 _, loss_dict = self.forward(data)
 
@@ -158,13 +199,30 @@ class Trainer:
 
                 batch_loss_value = batch_loss.item()
                 if not math.isfinite(batch_loss_value):
-                    raise RuntimeError(f"Non-finite loss at batch {batch_index}, step {self.global_step}.")
+                    if self.abort_on_nonfinite_loss:
+                        raise RuntimeError(f"Non-finite loss at batch {batch_index}, step {self.global_step}.")
+                    self.logger.warning(f"Non-finite loss at batch {batch_index}, step {self.global_step}; batch skipped because abort_on_nonfinite_loss is disabled.")
+                else:
+                    weighted_loss += batch_loss_value * data.num_graphs
+                    graph_count   += data.num_graphs
 
-                weighted_loss += batch_loss_value * data.num_graphs
-                graph_count   += data.num_graphs
+                if clear_every > 0 and self.global_step % clear_every == 0:
+                    self._clear_memory()
+
                 progress.advance(task_id)
+                fetch_start = time.perf_counter()
+
+        self._log_throughput(time.perf_counter() - epoch_start, data_wait, graph_count, epoch)
+        self.tracker.log_memory(self.global_step)
 
         return weighted_loss / max(1, graph_count)
+
+    def _log_throughput(self, epoch_time: float, data_wait: float, graph_count: int, epoch: int) -> None:
+        elapsed = max(epoch_time, 1e-9)
+
+        self.tracker.log_scalar("throughput/graphs_per_s",   graph_count / elapsed, epoch)
+        self.tracker.log_scalar("throughput/epoch_time_s",   epoch_time,            epoch)
+        self.tracker.log_scalar("throughput/data_wait_frac", data_wait / elapsed,   epoch)
 
     def evaluate(self, loader):
         self.model.eval()
@@ -172,23 +230,35 @@ class Trainer:
         weighted_loss = 0.0
         graph_count   = 0
 
-        with torch.no_grad():
-            for data in loader:
-                data          = data.to(self.device, non_blocking=True)
-                _, loss_dict  = self.forward(data)
+        try:
+            with torch.no_grad():
+                for data in loader:
+                    data          = data.to(self.device, non_blocking=True)
+                    _, loss_dict  = self.forward(data)
 
-                weighted_loss += loss_dict["total_loss"].item() * data.num_graphs
-                graph_count   += data.num_graphs
+                    weighted_loss += loss_dict["total_loss"].item() * data.num_graphs
+                    graph_count   += data.num_graphs
+        finally:
+            if self.config.memory.clear_cache_after_eval:
+                self._clear_memory()
 
         return {"avg_loss": weighted_loss / max(1, graph_count)}
+
+    def _validates_at(self, epoch: int) -> bool:
+        return ((epoch + 1) % self.validation_frequency == 0) or ((epoch + 1) == self.epochs)
 
     def run_epoch(self, train_loader, val_loader, epoch):
         self.scheduler.step(epoch)
         self._apply_learning_rates()
         train_loader.dataset.set_epoch(epoch)
 
-        train_loss      = self.train_epoch(train_loader, epoch)
-        validation_loss = self.evaluate(val_loader)["avg_loss"]
+        train_loss = self.train_epoch(train_loader, epoch)
+
+        if not self._validates_at(epoch):
+            return train_loss, float("nan")
+
+        with self.ema.applied(self.model):
+            validation_loss = self.evaluate(val_loader)["avg_loss"]
 
         self.scheduler.step_metric(validation_loss)
         return train_loss, validation_loss
@@ -197,26 +267,57 @@ class Trainer:
         self.logger.section("[Training Loop]")
         self.logger.subsection(f"train={len(train_loader)} | val={len(val_loader)}")
 
+        CompletionMarker.clear(self.run_metadata.run_directory)
         self._clear_memory()
         self.optimizer.zero_grad()
+
+        loader_generator = getattr(train_loader, "generator", None)
+        start_epoch      = self._maybe_resume(loader_generator)
+        last_epoch       = max(start_epoch - 1, 0)
+        stopped          = False
+
         self._apply_learning_rates()
+        self.vram_reservation.fill()
 
-        for epoch in range(self.epochs):
-            train_loss, validation_loss = self.run_epoch(train_loader, val_loader, epoch)
+        if not self.tuning_mode:
+            self.resource_monitor.start()
 
-            self.train_losses.append(train_loss)
-            self.val_losses.append(validation_loss)
+        try:
+            with self.logger.live_monitor("Training Progress", enabled=not self.tuning_mode) as live_monitor:
+                for epoch in range(start_epoch, self.epochs):
+                    last_epoch                  = epoch
+                    train_loss, validation_loss = self.run_epoch(train_loader, val_loader, epoch)
 
-            self.tracker.log_scalar("loss/train", train_loss,      epoch)
-            self.tracker.log_scalar("loss/val",   validation_loss, epoch)
-            self.logger.subsection(f"Epoch {epoch + 1}: train_loss={train_loss:.4f} val_loss={validation_loss:.4f}")
+                    self.train_losses.append(train_loss)
+                    self.val_losses.append(validation_loss)
 
-            self.checkpoint.step(validation_loss, epoch, self)
+                    self.tracker.log_scalar("loss/train", train_loss, epoch)
+                    self.logger.subsection(f"Epoch {epoch + 1}: train_loss={train_loss:.4f} val_loss={validation_loss:.4f}")
 
-            self._clear_memory()
+                    if self._validates_at(epoch):
+                        self.tracker.log_scalar("loss/val", validation_loss, epoch)
+                        self.checkpoint.step(validation_loss, epoch, self)
+                        stopped = self.early_stopping(validation_loss, epoch)
 
-            if self.early_stopping(validation_loss, epoch):
-                break
+                    if self.config.memory.clear_cache_after_epoch:
+                        self._clear_memory()
+
+                    TrainerState.save(self, epoch, self.state_path, loader_generator)
+
+                    live_monitor.update(
+                        epoch         = f"{epoch + 1}/{self.epochs}",
+                        train_loss    = train_loss,
+                        val_loss      = validation_loss,
+                        best_val_loss = self.checkpoint.best_val_loss,
+                        best_epoch    = self.checkpoint.best_epoch + 1,
+                        lr            = self.scheduler.effective_lrs()[0],
+                    )
+
+                    if stopped:
+                        break
+        finally:
+            if not self.tuning_mode:
+                self.resource_monitor.stop()
 
         if self.config.early_stopping.restore_best:
             self.checkpoint.restore_best(self.model, self.device)
@@ -227,6 +328,15 @@ class Trainer:
             "Best epoch"    : self.checkpoint.best_epoch + 1,
             "Epochs run"    : len(self.train_losses),
             "Checkpoint"    : str(self.run_metadata.checkpoint_path),
+        })
+
+        CompletionMarker.stamp(self.run_metadata.run_directory, {
+            "stage"            : "training",
+            "epochs_completed" : last_epoch + 1,
+            "epochs_total"     : self.epochs,
+            "early_stopped"    : bool(stopped),
+            "best_val_loss"    : float(self.checkpoint.best_val_loss),
+            "best_epoch"       : self.checkpoint.best_epoch + 1,
         })
 
         return {
