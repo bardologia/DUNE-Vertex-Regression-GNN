@@ -8,7 +8,7 @@ import numpy as np
 
 from configuration.data.general      import AugmentationConfig, DatasetConfig, HotChannelConfig, PhysicsConfig
 from pipelines.dataset.augmentation  import Augmentation
-from pipelines.dataset.hot_channels  import HotChannelCorrector
+from pipelines.dataset.hot_channels  import ChannelStatistics, HotChannelCorrector
 from pipelines.dataset.parquet_store import ParquetEventReader
 
 from project_paths     import ProjectPaths
@@ -39,6 +39,7 @@ class PreprocessingPreview:
         self.bounds_min   = [0.0, 0.0, 0.0]
         self.bounds_max   = [0.0, 0.0, 0.0]
 
+        self.hot_statistics = None
         self.hot_cache_key = None
         self.hot_corrector = None
         self.hot_channels  = None
@@ -138,7 +139,7 @@ class PreprocessingPreview:
         key = (round(float(outlier["active_fraction"]), 9), round(float(outlier["median_factor"]), 9), int(outlier["neighbor_count"]), int(outlier["min_events"]))
         if key != self.hot_cache_key:
             config    = HotChannelConfig(enabled=True, active_fraction=float(outlier["active_fraction"]), median_factor=float(outlier["median_factor"]), neighbor_count=int(outlier["neighbor_count"]), min_events=int(outlier["min_events"]))
-            corrector = HotChannelCorrector(self.geometry, config, self.logger)
+            corrector = HotChannelCorrector(self.geometry, config, self.logger, statistics=self.hot_statistics)
 
             self.hot_corrector                    = corrector
             self.hot_channels, self.hot_neighbors = corrector.fit(self.light_matrix)
@@ -231,12 +232,15 @@ class PreprocessingPreview:
         geometry = archive["geometry_positions"].astype(np.float32)
         light    = archive["light_matrix"]
 
-        reader = ParquetEventReader(DatasetConfig().data.parquet_store_dir).load_store(load_octant_light=False)
+        reader = ParquetEventReader(DatasetConfig().data.parquet_store_dir).load_store()
         frame  = reader.octant_frame
 
+        statistics = ChannelStatistics(light)
+
         with self.lock:
-            self.geometry     = geometry
-            self.light_matrix = light
+            self.geometry       = geometry
+            self.light_matrix   = light
+            self.hot_statistics = statistics
             self.octant_base  = frame["base_event_id"].values.astype(np.int64)
             self.octant_signs = frame[["sign_x", "sign_y", "sign_z"]].values.astype(np.float32)
             self.octant_gt    = frame[["target_x", "target_y", "target_z"]].values.astype(np.float32)
