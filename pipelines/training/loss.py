@@ -11,12 +11,15 @@ class Loss:
         self.stats   = stats
         self.logger  = logger
 
+        self.containment_bounds = None
+
         self.logger.section("[Loss Function]")
         self.logger.kv_table({
-            "Data term"            : f"{self.config.data_term} (weight {self.config.data_weight})",
-            "Euclidean weight"     : self.config.euclidean_weight,
-            "Containment weight"   : self.config.containment_weight,
-            "Light falloff weight" : self.config.light_falloff_weight,
+            "Data term"               : f"{self.config.data_term} (weight {self.config.data_weight})",
+            "Euclidean weight"        : self.config.euclidean_weight,
+            "Containment weight"      : self.config.containment_weight,
+            "Containment half extent" : str(tuple(self.config.containment_half_extent)),
+            "Light falloff weight"    : self.config.light_falloff_weight,
         })
 
     def _data_term(self, predictions, targets):
@@ -29,8 +32,13 @@ class Loss:
     def _euclidean_term(self, predictions, targets):
         return torch.sqrt(((predictions - targets) ** 2).sum(dim=1) + 1e-12).mean()
 
+    def _containment_bounds(self, predictions):
+        if self.containment_bounds is None or self.containment_bounds.device != predictions.device:
+            self.containment_bounds = torch.tensor(self.config.containment_half_extent, dtype=predictions.dtype, device=predictions.device)
+        return self.containment_bounds
+
     def _containment_term(self, predictions):
-        excess = torch.clamp(predictions.abs() - self.config.containment_radius, min=0.0)
+        excess = torch.clamp(predictions.abs() - self._containment_bounds(predictions), min=0.0)
         return (excess ** 2).mean()
 
     def _light_falloff_term(self, predictions, data):

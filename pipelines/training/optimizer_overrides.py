@@ -6,7 +6,7 @@ from dataclasses import fields
 class OptimizerOverrideApplier:
     def __init__(self, training_config, model_config, explicit_paths, logger):
         self.optimizer_config = training_config.optimizer
-        self.overrides        = dict(getattr(model_config, "optimizer_overrides", {}) or {})
+        self.overrides        = dict(model_config.optimizer_overrides)
         self.explicit_paths   = set(explicit_paths or ())
         self.logger           = logger
 

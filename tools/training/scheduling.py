@@ -71,11 +71,6 @@ class Warmup:
 
         return factor
 
-    def reset(self) -> None:
-        self.current_step       = 0
-        self.warmup_finished    = False
-        self._logged_completion = False
-
     def is_finished(self) -> bool:
         return self.warmup_finished or not self.enabled or self.warmup_steps <= 0
 
@@ -92,7 +87,6 @@ class Scheduler:
         self.scheduler_type = self.config.scheduler.type
 
         self._epoch_offset  = 0
-        self._t_max_override = None
 
         self.plateau_mode      = self.config.scheduler.mode
         self.plateau_factor    = float(self.config.scheduler.factor)
@@ -107,19 +101,8 @@ class Scheduler:
 
         self._log_scheduler_info()
 
-    def set_total_epochs(self, epochs: int) -> None:
-        resolved = max(1, int(epochs))
-        if resolved == self._resolved_t_max():
-            return
-
-        self._t_max_override = resolved
-        self._log_scheduler_info()
-
-    def _resolved_t_max(self) -> int:
-        return self._t_max_override if self._t_max_override is not None else self.config.loop.epochs
-
     def _cosine_annealing(self, epoch: int) -> list[float]:
-        maximum_epochs = self._resolved_t_max()
+        maximum_epochs = max(1, int(self.config.loop.epochs))
         eta_min        = float(self.config.scheduler.eta_min)
         progress       = min(1.0, epoch / max(1, maximum_epochs - 1))
         cosine_factor  = 0.5 * (1.0 + math.cos(math.pi * progress))
@@ -139,10 +122,6 @@ class Scheduler:
             return list(self.current_lrs)
 
         raise ValueError(f"Unknown scheduler type: {self.scheduler_type}")
-
-    def reset(self, epoch_offset: int = 0) -> None:
-        self._epoch_offset = epoch_offset
-        self.current_lrs   = list(self.base_lrs)
 
     def step(self, epoch: int) -> list[float]:
         self.current_lrs = self._lrs_for(epoch - self._epoch_offset)
@@ -198,7 +177,7 @@ class Scheduler:
         }
 
         if self.scheduler_type == "cosine_annealing":
-            info["T_max"]   = self._resolved_t_max()
+            info["T_max"]   = max(1, int(self.config.loop.epochs))
             info["Eta Min"] = self.config.scheduler.eta_min
 
         if self.scheduler_type == "reduce_on_plateau":
