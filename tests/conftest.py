@@ -39,9 +39,12 @@ def synthetic_batch():
 @pytest.fixture(scope="session")
 def sample_csv_dir(tmp_path_factory):
     directory    = tmp_path_factory.mktemp("raw_csv")
-    source_files = sorted(glob.glob(str(RAW_DATA_DIR / "*.csv")))[:48]
-    if not source_files:
+    available = sorted(glob.glob(str(RAW_DATA_DIR / "*.csv")))
+    if not available:
         pytest.skip("No raw CSV data available")
+
+    stride       = max(1, len(available) // 48)
+    source_files = available[::stride][:48]
     for source_file in source_files:
         shutil.copy(source_file, directory)
     return directory
