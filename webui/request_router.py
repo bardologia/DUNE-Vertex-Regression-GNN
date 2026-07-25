@@ -46,6 +46,8 @@ class RequestRouter:
         self.events       = events
         self.preprocess   = preprocess
 
+        self.processes.add_exit_listener(self._on_job_exit)
+
     def _route_get(self, handler, path: str) -> None:
         if path == "/" or path == "":
             self._serve_static(handler, "index.html")
@@ -135,9 +137,9 @@ class RequestRouter:
 
             result = self.processes.launch(script, overrides, interpreter)
 
-            if result.get("ok") and script == "train":
+            if result.get("ok") and script == "train" and self._tensorboard_requested(overrides):
                 logdir = self._scoped_train_logdir(overrides, interpreter)
-                threading.Thread(target=self.tensorboard.ensure, args=(logdir,), daemon=True).start()
+                threading.Thread(target=self.tensorboard.ensure, args=(logdir, result["pid"]), daemon=True).start()
 
             self._send_json(handler, result, 200 if result.get("ok") else 400)
             return
@@ -188,6 +190,13 @@ class RequestRouter:
             return
 
         self._send_json(handler, {"error": "not found"}, 404)
+
+    @staticmethod
+    def _tensorboard_requested(overrides: dict) -> bool:
+        return str(overrides.get("tensorboard", "")).strip().lower() in ("1", "true", "yes", "on")
+
+    def _on_job_exit(self, pid: int, code: int) -> None:
+        self.tensorboard.stop_for_owner(pid)
 
     def _scoped_train_logdir(self, overrides: dict, interpreter: str) -> str:
         defaults    = self._train_config_defaults(interpreter)

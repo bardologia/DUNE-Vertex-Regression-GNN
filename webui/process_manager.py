@@ -50,13 +50,18 @@ class ProcessManager:
 
     OVERRIDE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
     TERMINAL_COLUMNS = 120
+    FINISHED_HISTORY = 50
 
     def __init__(self, paths: ProjectPaths, logger: ServerLogger) -> None:
-        self.paths     = paths
-        self.logger    = logger
-        self.processes = {}
-        self.streams   = {}
-        self.lock      = threading.Lock()
+        self.paths          = paths
+        self.logger         = logger
+        self.processes      = {}
+        self.streams        = {}
+        self.exit_listeners = []
+        self.lock           = threading.Lock()
+
+    def add_exit_listener(self, callback) -> None:
+        self.exit_listeners.append(callback)
 
     def launch(self, script_key: str, overrides: dict | None, interpreter: str) -> dict:
         if not self._is_permitted_interpreter(interpreter):
@@ -163,6 +168,7 @@ class ProcessManager:
             stream.publish({"type": "chunk", "data": tail})
 
         process.wait()
+        process.stdout.close()
         code = process.returncode
 
         with self.lock:
@@ -170,11 +176,26 @@ class ProcessManager:
             if record is not None:
                 record["status"]    = "finished" if code == 0 else "failed"
                 record["exit_code"] = code
+                record["process"]   = None
             status = record["status"] if record is not None else "finished"
+            self._prune_finished()
 
         self.logger.info(f"process {pid} exited with code {code}")
         stream.publish({"type": "status", "status": status, "code": code, "verdict": "ok" if code == 0 else "error"})
         stream.publish({"type": "end"})
+
+        for callback in self.exit_listeners:
+            callback(pid, code)
+
+    def _prune_finished(self) -> None:
+        finished = [record for record in self.processes.values() if record["status"] != "running"]
+        if len(finished) <= self.FINISHED_HISTORY:
+            return
+
+        finished.sort(key=lambda record: record["started"])
+        for record in finished[: len(finished) - self.FINISHED_HISTORY]:
+            self.processes.pop(record["pid"], None)
+            self.streams.pop(record["pid"], None)
 
     def _view(self, record: dict) -> dict:
         return {
@@ -233,8 +254,11 @@ class ProcessManager:
         deadline = time.monotonic() + grace
         for record in running:
             remaining = max(0.0, deadline - time.monotonic())
+            process   = record["process"]
+            if process is None:
+                continue
             try:
-                record["process"].wait(timeout=remaining)
+                process.wait(timeout=remaining)
             except subprocess.TimeoutExpired:
                 self._signal_group(record["pid"], signal.SIGKILL)
                 self.logger.warning(f"escalated to SIGKILL for pid {record['pid']}")
