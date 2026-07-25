@@ -15,6 +15,7 @@ class Predictor:
         checkpoint = torch.load(self.checkpoint_path, map_location=self.device, weights_only=False)
         self.model.load_state_dict(checkpoint["params"])
         self.model.eval()
+        self.model.requires_grad_(False)
         self.logger.section("[Checkpoint]")
         self.logger.kv_table({
             "Path"   : str(self.checkpoint_path),

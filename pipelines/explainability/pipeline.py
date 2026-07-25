@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib  import Path
 
 import numpy as np
+from scipy.stats import rankdata
 
 from configuration.entry             import TrainEntryConfig
 from models                          import get_model
@@ -22,6 +23,30 @@ from pipelines.explainability.plots      import FeatureImportancePlots, ShapNati
 from pipelines.explainability.report     import FeatureImportanceReport
 
 
+class MetricDescriptor:
+    DESCRIPTORS = {
+        "euclidean_mean"   : ("m", False),
+        "euclidean_median" : ("m", False),
+        "mae"              : ("m", False),
+        "rmse"             : ("m", False),
+        "r2"               : ("",  True),
+    }
+
+    def __init__(self, name):
+        if name not in self.DESCRIPTORS:
+            raise ValueError(f"Unknown primary_metric '{name}'. Expected one of {tuple(self.DESCRIPTORS)}.")
+
+        self.name                        = name
+        self.unit, self.higher_is_better = self.DESCRIPTORS[name]
+
+    @property
+    def delta_label(self):
+        return f"Delta {self.name} [{self.unit}]" if self.unit else f"Delta {self.name}"
+
+    def harm(self, delta):
+        return -delta if self.higher_is_better else delta
+
+
 class FeatureImportancePipeline:
     METRIC_KEYS = ("euclidean_mean", "euclidean_median", "mae", "rmse", "r2")
 
@@ -33,6 +58,7 @@ class FeatureImportancePipeline:
         self.split            = config.split
         self.batch_size       = config.batch_size
         self.primary_metric   = config.primary_metric
+        self.metric           = MetricDescriptor(config.primary_metric)
 
         self.entry            = None
         self.stats            = None
@@ -211,8 +237,13 @@ class FeatureImportancePipeline:
         return {record["feature"]: record for record in self.kernel_shap[domain]}
 
     def _rank_map(self, scores):
-        ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
-        return {feature: position for position, (feature, _) in enumerate(ranked, start=1)}
+        if not scores:
+            return {}
+
+        features = list(scores)
+        values   = np.asarray([scores[feature] for feature in features], dtype=np.float64)
+        ranks    = rankdata(-values, method="average")
+        return {feature: float(rank) for feature, rank in zip(features, ranks)}
 
     def _merged_rows(self, layout, domain, permutation_key):
         permutation_features        = self._perturbation_lookup(self.permutation, permutation_key)
@@ -263,8 +294,8 @@ class FeatureImportancePipeline:
         return rows
 
     def _consensus(self, rows):
-        permutation_scores = {row["feature"]: row["permutation_delta"] for row in rows if "permutation_delta" in row}
-        occlusion_scores   = {row["feature"]: row["occlusion_delta"]   for row in rows if "occlusion_delta"   in row}
+        permutation_scores = {row["feature"]: self.metric.harm(row["permutation_delta"]) for row in rows if "permutation_delta" in row}
+        occlusion_scores   = {row["feature"]: self.metric.harm(row["occlusion_delta"])   for row in rows if "occlusion_delta"   in row}
         gradient_scores    = {row["feature"]: row["gradient_saliency"] for row in rows if "gradient_saliency" in row}
         expected_scores    = {row["feature"]: row["expected_gradient"] for row in rows if "expected_gradient" in row}
         kernel_shap_scores = {row["feature"]: row["kernel_shap"]       for row in rows if "kernel_shap"       in row}
@@ -287,7 +318,7 @@ class FeatureImportancePipeline:
             "names"    : [record["label"] for record in records],
             "values"   : [record["deltas"][self.primary_metric] for record in records],
             "errors"   : [record["primary_std"] for record in records] if with_errors else None,
-            "xlabel"   : "Delta mean euclidean error [m]",
+            "xlabel"   : self.metric.delta_label,
             "title"    : title,
             "filename" : filename,
             "color"    : color,
@@ -396,7 +427,7 @@ class FeatureImportancePipeline:
         inventory  = {"node": self.node_layout, "edge": self.edge_layout}
         merged_csv = {"node": node_rows, "edge": edge_rows}
 
-        FeatureImportanceReport(self.output_directory, self.logger, self.primary_metric, self.config.top_k).build(context, self.baseline, inventory, analysis, merged_csv, plots)
+        FeatureImportanceReport(self.output_directory, self.logger, self.metric, self.config.top_k).build(context, self.baseline, inventory, analysis, merged_csv, plots)
 
     def run(self):
         self.logger.section("[Graph Feature Importance]")
