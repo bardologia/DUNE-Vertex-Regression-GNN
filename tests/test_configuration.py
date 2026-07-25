@@ -87,7 +87,7 @@ def test_default_gps_config_dimensions():
     assert config.input_dim  == 17
     assert config.edge_dim   == 23
     assert config.output_dim == 3
-    assert config.pooling    == "mean_max"
+    assert config.pooling    == "mean_max_sum"
     assert config.drop_path_rate == 0.0
 
 

@@ -12,8 +12,9 @@ from pipelines.explainability      import FeatureImportancePipeline
 def test_feature_layout_matches_default_dimensions():
     layout = FeatureLayout(DatasetConfig())
 
-    assert len(layout.node_features()) == 17
-    assert len(layout.edge_features()) == 23
+    assert len(layout.node_features())  == 17
+    assert len(layout.edge_features())  == 23
+    assert len(layout.graph_features()) == 9
 
     node_groups = FeatureLayout.group_index(layout.node_features())
     assert node_groups["position"] == [0, 1, 2]
@@ -25,12 +26,14 @@ def test_feature_layout_respects_toggles():
     config                                = DatasetConfig()
     config.graph.inertia_features         = False
     config.graph.rank_features            = False
+    config.graph.graph_scalar_features    = False
     config.graph.edge_rbf_count           = 0
 
     layout = FeatureLayout(config)
 
-    assert len(layout.node_features()) == 13
-    assert len(layout.edge_features()) == 7
+    assert len(layout.node_features())  == 13
+    assert len(layout.edge_features())  == 7
+    assert len(layout.graph_features()) == 0
     assert all(name != "intensity_rank" for name, _ in layout.node_features())
 
 

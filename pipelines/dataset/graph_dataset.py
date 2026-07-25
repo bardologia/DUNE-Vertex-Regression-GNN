@@ -9,12 +9,17 @@ from torch.utils.data import Dataset
 
 class GraphNormalizer:
     def __init__(self, stats):
-        self.stats = stats
+        self.stats         = stats
+        self.graph_scalars = len(stats.graph.methods) > 0
 
     def apply(self, data):
         data.x         = torch.tensor(self.stats.node.forward_numpy(data.x.numpy()),         dtype=torch.float32)
         data.edge_attr = torch.tensor(self.stats.edge.forward_numpy(data.edge_attr.numpy()), dtype=torch.float32)
         data.y         = torch.tensor(self.stats.target.forward_numpy(data.y.numpy()),       dtype=torch.float32)
+
+        if self.graph_scalars:
+            data.graph_attr = torch.tensor(self.stats.graph.forward_numpy(data.graph_attr.numpy()), dtype=torch.float32)
+
         return data
 
     def apply_all(self, graphs):
@@ -132,6 +137,7 @@ class StatsEstimator:
 
         node_segments   = []
         edge_segments   = []
+        graph_segments  = []
         target_segments = []
 
         with self.logger.track() as progress:
@@ -141,21 +147,24 @@ class StatsEstimator:
                 node_segments.append(data.x.numpy())
                 edge_segments.append(data.edge_attr.numpy())
                 target_segments.append(data.y.numpy())
+                if "graph_attr" in data:
+                    graph_segments.append(data.graph_attr.numpy())
                 progress.advance(task_id)
 
         node_group   = FeatureGroupNormalizer.fit(np.concatenate(node_segments, axis=0))
         edge_group   = FeatureGroupNormalizer.fit(np.concatenate(edge_segments, axis=0))
+        graph_group  = FeatureGroupNormalizer.fit(np.concatenate(graph_segments, axis=0)) if graph_segments else FeatureGroupNormalizer.fit_empty()
         target_group = FeatureGroupNormalizer.fit_isotropic(np.concatenate(target_segments, axis=0))
 
         self.logger.subsection(f"Fitted normalization on {count} events")
 
         rows = []
-        for group_name, group in [("node", node_group), ("edge", edge_group), ("target", target_group)]:
+        for group_name, group in [("node", node_group), ("edge", edge_group), ("graph", graph_group), ("target", target_group)]:
             for strategy, channel_count in sorted(group.strategy_counts().items()):
                 rows.append({"Group": group_name, "Strategy": strategy, "Channels": channel_count})
         self.logger.metrics_table(rows, ["Group", "Strategy", "Channels"], title="Normalization Strategies")
 
-        return NormalizationStats(node_group, edge_group, target_group)
+        return NormalizationStats(node_group, edge_group, graph_group, target_group)
 
 
 class DegreeHistogramEstimator:

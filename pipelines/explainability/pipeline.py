@@ -70,6 +70,7 @@ class FeatureImportancePipeline:
 
         self.node_layout      = None
         self.edge_layout      = None
+        self.graph_layout     = None
         self.node_columns     = None
         self.edge_columns     = None
         self.node_groups      = None
@@ -102,19 +103,21 @@ class FeatureImportancePipeline:
         layout            = FeatureLayout(self.entry.dataset)
         self.node_layout  = layout.node_features()
         self.edge_layout  = layout.edge_features()
+        self.graph_layout = layout.graph_features()
         self.node_columns = [(index, name, group) for index, (name, group) in enumerate(self.node_layout)]
         self.edge_columns = [(index, name, group) for index, (name, group) in enumerate(self.edge_layout)]
         self.node_groups  = self._multi_member_groups(self.node_layout)
         self.edge_groups  = self._multi_member_groups(self.edge_layout)
 
         self.logger.kv_table({
-            "Run directory" : str(self.run_directory),
-            "Model"         : self.entry.model_name,
-            "Device"        : self.device,
-            "Split"         : self.split,
-            "Node features" : len(self.node_layout),
-            "Edge features" : len(self.edge_layout),
-            "Output"        : str(self.output_directory),
+            "Run directory"  : str(self.run_directory),
+            "Model"          : self.entry.model_name,
+            "Device"         : self.device,
+            "Split"          : self.split,
+            "Node features"  : len(self.node_layout),
+            "Edge features"  : len(self.edge_layout),
+            "Graph scalars"  : f"{len(self.graph_layout)} (held fixed, not attributed)",
+            "Output"         : str(self.output_directory),
         }, title="Graph Feature Importance")
 
     def _multi_member_groups(self, layout):
@@ -145,6 +148,8 @@ class FeatureImportancePipeline:
             raise ValueError(f"Node feature layout ({len(self.node_layout)}) disagrees with the materialized graphs ({self.engine.node_feature_count()}). The run's GraphConfig and the feature layout are out of sync.")
         if self.engine.edge_feature_count() != len(self.edge_layout):
             raise ValueError(f"Edge feature layout ({len(self.edge_layout)}) disagrees with the materialized graphs ({self.engine.edge_feature_count()}). The run's GraphConfig and the feature layout are out of sync.")
+        if self.engine.graph_feature_count() != len(self.graph_layout):
+            raise ValueError(f"Graph scalar layout ({len(self.graph_layout)}) disagrees with the materialized graphs ({self.engine.graph_feature_count()}). The run's GraphConfig and the feature layout are out of sync.")
 
     def _run_permutation(self):
         if not self.config.permutation:

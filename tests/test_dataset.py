@@ -10,22 +10,49 @@ def test_graph_builder_shapes():
     light     = generator.exponential(size=30).astype(np.float32)
 
     graph = Graph(DatasetConfig()).build_from_arrays(positions, light)
-    assert graph.x.shape         == (30, 17)
+    assert graph.x.shape            == (30, 17)
     assert graph.edge_attr.shape[1] == 23
+    assert graph.graph_attr.shape   == (1, 9)
+
+
+def test_graph_scalars_carry_extensive_quantities():
+    positions = np.random.default_rng(3).normal(size=(20, 3)).astype(np.float32)
+    light     = np.arange(1, 21, dtype=np.float32)
+
+    scalars = Graph(DatasetConfig()).build_from_arrays(positions, light).graph_attr[0].numpy()
+
+    assert scalars[3] == light.sum()
+    assert scalars[4] == 20.0
+    assert scalars[5] == light.max()
+    assert np.all(scalars[6:9] >= 0.0)
 
 
 def test_feature_toggles_change_dimensions():
     from configuration import DatasetConfig as _DatasetConfig
     from pipelines.dataset import FeatureSchema
 
-    assert FeatureSchema(_DatasetConfig()).dimensions() == (17, 23)
+    assert FeatureSchema(_DatasetConfig()).dimensions() == (17, 23, 9)
 
     minimal = _DatasetConfig()
-    minimal.graph.direction_features = False
-    minimal.graph.inertia_features   = False
-    minimal.graph.rank_features      = False
-    minimal.graph.edge_rbf_count     = 0
-    assert FeatureSchema(minimal).dimensions() == (7, 7)
+    minimal.graph.direction_features    = False
+    minimal.graph.inertia_features      = False
+    minimal.graph.rank_features         = False
+    minimal.graph.graph_scalar_features = False
+    minimal.graph.edge_rbf_count        = 0
+
+    assert FeatureSchema(minimal).dimensions() == (7, 7, 0)
+    assert "graph_attr" not in Graph(minimal).build_from_arrays(np.random.default_rng(4).normal(size=(10, 3)).astype(np.float32), np.arange(1, 11, dtype=np.float32))
+
+
+def test_inertia_eigenvalues_are_not_normalized():
+    positions = np.random.default_rng(5).normal(size=(50, 3)).astype(np.float32) * np.array([4.0, 1.0, 1.0], dtype=np.float32)
+    light     = np.ones(50, dtype=np.float32)
+
+    graph       = Graph(DatasetConfig()).build_from_arrays(positions, light)
+    eigenvalues = graph.x[0, 13:16].numpy()
+
+    assert eigenvalues.sum() > 1.5
+    assert eigenvalues[0] > eigenvalues[1] >= eigenvalues[2]
 
 
 def test_active_only_prunes_dark_nodes():
@@ -58,11 +85,13 @@ def test_dataset_pipeline_produces_splits(dataset_config, quiet_logger):
     assert len(datasets["test"])  > 0
 
     sample = datasets["train"][0]
-    assert sample.x.shape[1]         == 17
-    assert sample.edge_attr.shape[1] == 23
-    assert sample.y.shape            == (1, 3)
-    assert len(stats.target.methods) == 3
-    assert len(stats.node.methods)   == 17
+    assert sample.x.shape[1]          == 17
+    assert sample.edge_attr.shape[1]  == 23
+    assert sample.graph_attr.shape    == (1, 9)
+    assert sample.y.shape             == (1, 3)
+    assert len(stats.target.methods)  == 3
+    assert len(stats.node.methods)    == 17
+    assert len(stats.graph.methods)   == 9
 
 
 def test_octant_split_has_no_base_event_leakage(parquet_store, quiet_logger):

@@ -41,11 +41,12 @@ class GraphConfig:
     active_only        : bool  = True
     max_active_nodes   : int   = 0
 
-    direction_features : bool  = True
-    inertia_features   : bool  = True
-    rank_features      : bool  = True
-    edge_rbf_count     : int   = 16
-    edge_rbf_max       : float = 7.0
+    direction_features    : bool  = True
+    inertia_features      : bool  = True
+    rank_features         : bool  = True
+    graph_scalar_features : bool  = True
+    edge_rbf_count        : int   = 16
+    edge_rbf_max          : float = 7.0
 
 
 @dataclass
