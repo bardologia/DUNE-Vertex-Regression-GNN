@@ -21,11 +21,15 @@ class Augmentation:
 
     def _light_noise(self, light, generator):
         hit_mask = light > 0.0
+
         if self.config.light_noise_mode == "additive":
             light = light + np.where(hit_mask, generator.normal(0.0, self.config.light_noise_sigma, size=light.shape), 0.0)
-        else:
+        elif self.config.light_noise_mode == "multiplicative":
             factors = 1.0 + generator.normal(0.0, self.config.light_noise_sigma, size=light.shape)
             light   = np.where(hit_mask, light * factors, light)
+        else:
+            raise ValueError(f"Unknown light_noise_mode '{self.config.light_noise_mode}'. Expected 'additive' or 'multiplicative'.")
+
         return np.maximum(light, 0.0)
 
     def _sensor_dropout(self, light, generator):

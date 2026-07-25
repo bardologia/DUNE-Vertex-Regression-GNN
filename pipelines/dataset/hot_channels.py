@@ -4,10 +4,28 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 
+class ChannelStatistics:
+    def __init__(self, light_matrix):
+        lit_mask = light_matrix > 0
+
+        self.active_fraction = lit_mask.mean(axis=0)
+        self.global_median   = float(np.median(light_matrix[lit_mask]))
+        self.channel_medians = self._channel_medians(light_matrix)
+
+    def _channel_medians(self, light_matrix):
+        medians = np.zeros(light_matrix.shape[1], dtype=np.float64)
+        for channel in range(light_matrix.shape[1]):
+            lit = light_matrix[light_matrix[:, channel] > 0, channel]
+            if lit.size:
+                medians[channel] = np.median(lit)
+        return medians
+
+
 class HotChannelCorrector:
-    def __init__(self, geometry_positions, config, logger):
+    def __init__(self, geometry_positions, config, logger, statistics=None):
         self.positions       = np.asarray(geometry_positions, dtype=np.float64)
         self.logger          = logger
+        self.statistics      = statistics
 
         self.enabled         = config.enabled
         self.active_fraction = config.active_fraction
@@ -16,17 +34,11 @@ class HotChannelCorrector:
         self.min_events      = int(config.min_events)
 
     def _detect(self, light_matrix):
-        active_fraction = (light_matrix > 0).mean(axis=0)
-        global_median   = float(np.median(light_matrix[light_matrix > 0]))
-        threshold       = self.median_factor * global_median
+        if self.statistics is None:
+            self.statistics = ChannelStatistics(light_matrix)
 
-        channel_medians = np.zeros(light_matrix.shape[1], dtype=np.float64)
-        for channel in range(light_matrix.shape[1]):
-            lit = light_matrix[light_matrix[:, channel] > 0, channel]
-            if lit.size:
-                channel_medians[channel] = np.median(lit)
-
-        return np.where((active_fraction >= self.active_fraction) & (channel_medians >= threshold))[0]
+        threshold = self.median_factor * self.statistics.global_median
+        return np.where((self.statistics.active_fraction >= self.active_fraction) & (self.statistics.channel_medians >= threshold))[0]
 
     def _neighbor_indices(self, hot_channels):
         healthy_mask               = np.ones(self.positions.shape[0], dtype=bool)
@@ -35,9 +47,14 @@ class HotChannelCorrector:
 
         tree              = cKDTree(self.positions[healthy_indices])
         _, neighbor_ranks = tree.query(self.positions[hot_channels], k=self.neighbor_count)
+        neighbor_ranks    = neighbor_ranks.reshape(len(hot_channels), self.neighbor_count)
         return healthy_indices[neighbor_ranks]
 
     def fit(self, light_matrix):
+        if light_matrix.shape[0] < self.min_events:
+            self.logger.subsection(f"Hot-channel detection skipped ({light_matrix.shape[0]} < {self.min_events} events)")
+            return np.empty(0, dtype=np.int64), np.empty((0, self.neighbor_count), dtype=np.int64)
+
         hot_channels = self._detect(light_matrix)
         if hot_channels.size == 0:
             return hot_channels, np.empty((0, self.neighbor_count), dtype=np.int64)
@@ -61,10 +78,6 @@ class HotChannelCorrector:
 
     def run(self, light_matrix):
         if not self.enabled:
-            return light_matrix
-
-        if light_matrix.shape[0] < self.min_events:
-            self.logger.subsection(f"Hot-channel correction skipped ({light_matrix.shape[0]} < {self.min_events} events)")
             return light_matrix
 
         hot_channels, neighbor_indices = self.fit(light_matrix)
