@@ -12,6 +12,13 @@ class LaunchPanel {
     this.runs = [];
     this.models = [];
     this.dynamicLoaded = false;
+    this.layout = null;
+    this.byPath = new Map();
+    this.sections = [];
+    this.sectionOf = new Map();
+    this.activeSection = null;
+    this.query = "";
+    this.tabsWired = false;
   }
 
   static FIELD_SPEC = {
@@ -48,6 +55,9 @@ class LaunchPanel {
 
     this.script = script;
     this._renderHeader(script);
+    this._wireTabs();
+    this._setPane("config");
+    this._loadSource(key);
     this.refs.config.innerHTML = `<div class="launch-skeleton"><div class="launch-skeleton__panel"></div><div class="launch-skeleton__panel"></div></div>`;
     this.refs.rail.innerHTML = "";
 
@@ -59,7 +69,7 @@ class LaunchPanel {
     if (this.currentKey !== key) return;
 
     if (!script.has_config) {
-      this._setup([]);
+      this._setup({ leaves: [], layout: null });
       return;
     }
 
@@ -70,7 +80,7 @@ class LaunchPanel {
       this._renderRail();
       return;
     }
-    this._setup(schema.leaves || []);
+    this._setup(schema);
   }
 
   leave() {}
@@ -102,6 +112,45 @@ class LaunchPanel {
     return run.tree ? hasCheckpoint(run.tree) : false;
   }
 
+  _wireTabs() {
+    if (this.tabsWired) return;
+    this.tabsWired = true;
+
+    document.querySelectorAll(".launch__tab").forEach((tab) => {
+      tab.addEventListener("click", () => this._setPane(tab.dataset.pane));
+    });
+  }
+
+  _setPane(pane) {
+    document.querySelectorAll(".launch__tab").forEach((tab) => {
+      const active = tab.dataset.pane === pane;
+      tab.classList.toggle("is-active", active);
+      tab.setAttribute("aria-selected", String(active));
+    });
+
+    document.getElementById("launch-config").classList.toggle("is-active", pane === "config");
+    document.getElementById("launch-source").classList.toggle("is-active", pane === "source");
+  }
+
+  async _loadSource(key) {
+    this.refs.source.textContent = "loading…";
+    this.refs.source.removeAttribute("data-highlighted");
+
+    const result = await window.apiGet(`/api/scripts/${key}/source`).catch(() => ({}));
+    if (this.currentKey !== key) return;
+
+    this.refs.source.textContent = result.ok ? result.source : (result.error || "source unavailable");
+    this.refs.source.className = "language-python";
+
+    if (result.ok && window.hljs) {
+      try {
+        window.hljs.highlightElement(this.refs.source);
+      } catch (error) {
+        return;
+      }
+    }
+  }
+
   _renderHeader(script) {
     this.refs.kicker.textContent = script.category;
     this.refs.title.textContent = script.label;
@@ -111,11 +160,17 @@ class LaunchPanel {
       `<div><dt>config</dt><dd>${script.has_config ? window.escapeHtml(script.config_class) : "none"}</dd></div>`;
   }
 
-  _setup(leaves) {
+  _setup(schema) {
+    const leaves = schema.leaves || [];
+
     this.leaves = leaves;
+    this.layout = schema.layout || null;
+    this.byPath = new Map(leaves.map((leaf) => [leaf.path, leaf]));
     this.defaults = new Map();
     this.values = new Map();
     this.bools = new Set();
+    this.query = "";
+    this.activeSection = null;
 
     leaves.forEach((leaf) => {
       const isBool = leaf.type === "bool";
@@ -139,8 +194,8 @@ class LaunchPanel {
 
   _spec(leaf) {
     const name = this._leafName(leaf);
-    const override = LaunchPanel.FIELD_SPEC[name] || {};
-    let kind = override.kind;
+    const declared = (this.layout && this.layout.widgets && this.layout.widgets[leaf.path]) || LaunchPanel.FIELD_SPEC[name] || {};
+    let kind = declared.kind;
     if (!kind) {
       if (leaf.type === "bool") kind = "toggle";
       else if (leaf.type === "int") kind = "int";
@@ -148,36 +203,7 @@ class LaunchPanel {
       else if (leaf.type === "PosixPath" || leaf.type === "Path") kind = "path";
       else kind = "text";
     }
-    return { ...override, kind };
-  }
-
-  _groups() {
-    const groups = new Map();
-    this.leaves.forEach((leaf) => {
-      const section = this._topSection(leaf);
-      if (!groups.has(section)) groups.set(section, []);
-      groups.get(section).push(leaf);
-    });
-    return [...groups.entries()];
-  }
-
-  _topSection(leaf) {
-    const parts = leaf.path.split(".");
-    return parts.length > 1 ? parts[0] : "general";
-  }
-
-  _subgroups(leaves) {
-    const groups = new Map();
-    leaves.forEach((leaf) => {
-      const namespace = this._namespace(leaf);
-      if (!groups.has(namespace)) groups.set(namespace, []);
-      groups.get(namespace).push(leaf);
-    });
-    return [...groups.entries()];
-  }
-
-  _namespace(leaf) {
-    return leaf.path.split(".").slice(1, -1).join(".");
+    return { ...declared, kind };
   }
 
   _leafName(leaf) {
@@ -185,52 +211,137 @@ class LaunchPanel {
     return parts[parts.length - 1];
   }
 
-  _humanize(token) {
-    return token
-      .split(".")
-      .map((segment) => segment.replace(/_/g, " ").replace(/^./, (character) => character.toUpperCase()))
-      .join(" · ");
+  _gateLabel(name) {
+    if (name.startsWith("use_")) return name.slice(4);
+    if (name !== "enabled" && name.endsWith("_enabled")) return name.slice(0, -"_enabled".length);
+    return name;
   }
 
   _renderConfig() {
-    if (!this.leaves.length) {
+    if (!this.leaves.length || !this.layout) {
       this.refs.config.innerHTML = `<div class="launch-empty">This script takes no overrides. Launch runs it with its built-in defaults.</div>`;
       return;
     }
 
-    const bands = this._groups().map(([section, leaves]) => {
-      const body = this._subgroups(leaves).map(([namespace, groupLeaves]) => {
-        const fields  = groupLeaves.map((leaf) => this._fieldHtml(leaf)).join("");
-        const heading = namespace ? `<h4 class="band-subgroup__head">${window.escapeHtml(this._humanize(namespace))}</h4>` : "";
-        return `<div class="band-subgroup">${heading}<div class="band-fields">${fields}</div></div>`;
-      }).join("");
+    this.sections = [];
+    this.sectionOf = new Map();
 
-      return (
-        `<section class="launch-band is-open" data-section="${window.escapeHtml(section)}">` +
-        `<header class="band-head"><i class="band-head__chev" aria-hidden="true"></i>` +
-        `<h3 class="band-head__name">${window.escapeHtml(this._humanize(section))}</h3>` +
-        `<span class="band-head__count">${leaves.length} field${leaves.length === 1 ? "" : "s"}</span></header>` +
-        `<div class="band-body">${body}</div>` +
-        `</section>`
-      );
-    }).join("");
+    const declared = [];
+    if (this.layout.essentials.length) declared.push({ key: "essentials", title: "Essentials", panels: null });
+    this.layout.sections.forEach((section) => declared.push(section));
 
-    this.refs.config.innerHTML = `<div class="launch-bands">${bands}</div>`;
+    if (!this.activeSection || !declared.some((section) => section.key === this.activeSection)) {
+      this.activeSection = declared[0].key;
+    }
+
+    const single = this.layout.mode === "single";
+    const body = declared.map((section) => this._sectionHtml(section)).join("");
+    const nav = single ? "" : `<nav class="secnav" aria-label="Configuration sections">${declared.map((section) => this._navItemHtml(section)).join("")}</nav>`;
+
+    this.refs.config.innerHTML =
+      this._toolbarHtml() +
+      `<div class="launch-layout${single ? " launch-layout--single" : ""}">` +
+      `<div class="secmain">${body}<p class="cfg-note launch-nomatch" hidden>No fields match this filter.</p></div>` +
+      nav +
+      `</div>`;
+
     this._wireConfig();
+    this._applyVisibility();
   }
 
-  _fieldHtml(leaf) {
+  _toolbarHtml() {
+    return (
+      `<div class="cfg-toolbar">` +
+      `<input class="cfg-search" id="cfg-search" type="search" spellcheck="false" placeholder="Filter ${this.leaves.length} fields&hellip;" value="${window.escapeHtml(this.query)}" />` +
+      `<span class="cfg-toolbar__count" id="cfg-count"></span>` +
+      `<button type="button" class="btn btn--mini" id="cfg-reset-all">Reset all</button>` +
+      `</div>`
+    );
+  }
+
+  _navItemHtml(section) {
+    const active = section.key === this.activeSection ? " is-active" : "";
+    return (
+      `<button type="button" class="secnav__item${active}" data-section-nav="${window.escapeHtml(section.key)}">` +
+      `<span class="secnav__name">${window.escapeHtml(section.title)}</span>` +
+      `<span class="edit-badge" data-badge="${window.escapeHtml(section.key)}" hidden></span>` +
+      `</button>`
+    );
+  }
+
+  _sectionHtml(section) {
+    this.sections.push(section);
+
+    const body = section.panels === null
+      ? this._essentialsHtml()
+      : section.panels.map((panel) => this._panelHtml(panel, section.key)).join("");
+
+    return (
+      `<section class="launch-section" data-section="${window.escapeHtml(section.key)}">` +
+      `<h3 class="launch-section__title">${window.escapeHtml(section.title)}</h3>` +
+      `<div class="launch-section__body">${body}</div>` +
+      `</section>`
+    );
+  }
+
+  _essentialsHtml() {
+    const fields = this.layout.essentials.map((entry) => this._entryHtml(entry, "essentials")).join("");
+
+    return (
+      `<section class="launch-pins">` +
+      `<header class="launch-pins__head"><h3 class="launch-pins__name">Run essentials</h3><span class="launch-pins__hint">check these before every launch</span></header>` +
+      `<div class="launch-pins__grid">${fields}</div>` +
+      `</section>`
+    );
+  }
+
+  _panelHtml(panel, sectionKey) {
+    const head = panel.title
+      ? `<header class="cfg-panel__head"><h4 class="cfg-panel__name">${window.escapeHtml(panel.title)}</h4></header>`
+      : "";
+
+    const groups = panel.groups.map((group) => {
+      const title = group.title ? `<div class="field-group__title">${window.escapeHtml(group.title)}</div>` : "";
+      const fields = group.fields.map((entry) => this._entryHtml(entry, sectionKey)).join("");
+      return `<div class="field-group">${title}<div class="field-group__grid">${fields}</div></div>`;
+    }).join("");
+
+    return (
+      `<section class="cfg-panel" data-cols="${Math.min(panel.groups.length, 4)}">${head}` +
+      `<div class="cfg-panel__groups">${groups}</div></section>`
+    );
+  }
+
+  _entryHtml(entry, sectionKey) {
+    if (!entry.gate) return this._fieldHtml(this.byPath.get(entry.path), sectionKey);
+
+    const gate = this.byPath.get(entry.gate);
+    const rows = entry.fields
+      .map((sub) => this._fieldHtml(this.byPath.get(sub.path), sectionKey, entry.gate))
+      .join("");
+
+    return `<div class="band-block">${this._fieldHtml(gate, sectionKey, null, this._gateLabel(this._leafName(gate)))}${rows}</div>`;
+  }
+
+  _fieldHtml(leaf, sectionKey, gatedBy = null, labelOverride = null) {
+    this.sectionOf.set(leaf.path, sectionKey);
+
     const path  = window.escapeHtml(leaf.path);
-    const label = window.escapeHtml(this._leafName(leaf));
+    const label = window.escapeHtml(labelOverride || this._leafName(leaf));
     const spec  = this._spec(leaf);
     const dirty = this.values.get(leaf.path) !== this.defaults.get(leaf.path);
     const wide  = spec.kind === "runpick";
 
-    const cls   = `cfg-field${dirty ? " is-dirty" : ""}${wide ? " cfg-field--wide" : ""}`;
-    const name  = `<span class="cfg-field__name" title="${path}">${label}<span class="cfg-field__type">${window.escapeHtml(leaf.type)}</span></span>`;
+    const classes = ["cfg-field"];
+    if (dirty) classes.push("is-dirty");
+    if (wide) classes.push("cfg-field--wide");
+    if (gatedBy) classes.push("cfg-field--dependent");
+
+    const gated = gatedBy ? ` data-gated-by="${window.escapeHtml(gatedBy)}"` : "";
+    const name  = `<span class="cfg-field__name" title="--${path}">${label}<span class="cfg-field__type">${window.escapeHtml(leaf.type)}</span></span>`;
     const ctrl  = `<div class="cfg-field__ctrl">${this._controlHtml(leaf, spec)}</div>`;
 
-    return `<div class="${cls}" data-field="${path}">${name}${ctrl}</div>`;
+    return `<div class="${classes.join(" ")}" data-field="${path}"${gated}>${name}${ctrl}</div>`;
   }
 
   _controlHtml(leaf, spec) {
@@ -338,8 +449,19 @@ class LaunchPanel {
   _wireConfig() {
     const root = this.refs.config;
 
-    root.querySelectorAll(".band-head").forEach((head) => {
-      head.addEventListener("click", () => head.parentElement.classList.toggle("is-open"));
+    const search = root.querySelector("#cfg-search");
+    if (search) {
+      search.addEventListener("input", () => {
+        this.query = search.value.trim().toLowerCase();
+        this._applyVisibility();
+      });
+    }
+
+    const resetAll = root.querySelector("#cfg-reset-all");
+    if (resetAll) resetAll.addEventListener("click", () => this._resetAll());
+
+    root.querySelectorAll("[data-section-nav]").forEach((button) => {
+      button.addEventListener("click", () => this._navigate(button.dataset.sectionNav));
     });
 
     root.addEventListener("click", (event) => {
@@ -374,6 +496,75 @@ class LaunchPanel {
     });
   }
 
+  _navigate(key) {
+    this.activeSection = key;
+    this.refs.config.querySelectorAll("[data-section-nav]").forEach((button) => {
+      button.classList.toggle("is-active", button.dataset.sectionNav === key);
+    });
+    this._applyVisibility();
+  }
+
+  _applyVisibility() {
+    const root = this.refs.config;
+    const layoutEl = root.querySelector(".launch-layout");
+    if (!layoutEl) return;
+
+    const searching = Boolean(this.query);
+    layoutEl.classList.toggle("is-searching", searching);
+
+    let visible = 0;
+
+    root.querySelectorAll(".cfg-field").forEach((field) => {
+      const path = field.dataset.field;
+      const gate = field.dataset.gatedBy;
+      const open = !gate || this.values.get(gate) === "true";
+      const hit  = !searching || path.toLowerCase().includes(this.query);
+
+      field.hidden = !open || !hit;
+      if (!field.hidden) visible += 1;
+    });
+
+    const single = this.layout.mode === "single";
+    let anyShown = false;
+
+    root.querySelectorAll(".launch-section").forEach((element) => {
+      const key      = element.dataset.section;
+      const hasRows  = Boolean(element.querySelector(".cfg-field:not([hidden])"));
+      const show     = searching ? hasRows : (single || key === this.activeSection);
+
+      element.hidden = !show;
+      anyShown = anyShown || show;
+    });
+
+    const nomatch = root.querySelector(".launch-nomatch");
+    if (nomatch) nomatch.hidden = !searching || anyShown;
+
+    const count = root.querySelector("#cfg-count");
+    if (count) count.textContent = searching ? `${visible} of ${this.leaves.length} fields` : `${this._overrides().length} changed`;
+
+    this._refreshBadges();
+  }
+
+  _refreshBadges() {
+    const counts = new Map();
+    this._overrides().forEach((override) => {
+      const key = this.sectionOf.get(override.path);
+      if (key) counts.set(key, (counts.get(key) || 0) + 1);
+    });
+
+    this.refs.config.querySelectorAll("[data-badge]").forEach((badge) => {
+      const total = counts.get(badge.dataset.badge) || 0;
+      badge.hidden = total === 0;
+      badge.textContent = total ? String(total) : "";
+    });
+  }
+
+  _resetAll() {
+    this.defaults.forEach((value, path) => this.values.set(path, value));
+    this._renderConfig();
+    this._renderRail();
+  }
+
   _set(path, value, fromInput) {
     this.values.set(path, String(value));
     this._refreshField(path, fromInput);
@@ -406,7 +597,7 @@ class LaunchPanel {
   }
 
   _refreshField(path, fromInput) {
-    const leaf = this.leaves.find((item) => item.path === path);
+    const leaf = this.byPath.get(path);
     if (!leaf) return;
 
     const wrapper = this.refs.config.querySelector(`.cfg-field[data-field="${CSS.escape(path)}"]`);
@@ -426,6 +617,8 @@ class LaunchPanel {
       const value = this.values.get(path);
       wrapper.querySelectorAll(".cfg-preset").forEach((chip) => chip.classList.toggle("is-active", chip.dataset.value === value));
     }
+
+    this._applyVisibility();
   }
 
   _overrides() {

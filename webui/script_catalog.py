@@ -73,6 +73,13 @@ class ScriptCatalog:
             "config_class" : entry["entry_config_class"],
         }
 
+    def source(self, key: str) -> dict:
+        entry = self.paths.script_entry(key)
+        if entry is None or not entry["path"].exists():
+            return {"ok": False, "error": f"unknown script '{key}'"}
+
+        return {"ok": True, "file": entry["relative"], "source": entry["path"].read_text(encoding="utf-8")}
+
     def list(self) -> list[dict]:
         scripts = []
         for key in self.ORDER:

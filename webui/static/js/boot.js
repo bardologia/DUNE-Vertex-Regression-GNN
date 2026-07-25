@@ -79,6 +79,7 @@ class Application {
       title: document.getElementById("launch-title"),
       purpose: document.getElementById("launch-purpose"),
       facts: document.getElementById("launch-facts"),
+      source: document.getElementById("launch-source-code"),
     });
 
     this.consolePanel = new window.ConsolePanel({
