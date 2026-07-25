@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gc
+import math
 
 import torch
 
@@ -27,7 +28,7 @@ class Trainer:
 
         self.epochs               = training_config.loop.epochs
         self.accumulation_steps   = training_config.loop.gradient_accumulation_steps
-        self.use_amp              = training_config.loop.use_amp and torch.cuda.is_available()
+        self.use_amp              = training_config.loop.use_amp and str(self.device).startswith("cuda")
         self.scaler               = torch.amp.GradScaler("cuda") if self.use_amp else None
 
         self.optimizer = torch.optim.AdamW(self._build_param_groups(), betas=training_config.optimizer.betas, eps=training_config.optimizer.eps)
@@ -39,8 +40,6 @@ class Trainer:
         self.gradient_clipper = GradientClipper(training_config, self.logger, self.tracker)
         self.criterion        = Loss(training_config.loss, self.stats, self.logger)
         self.checkpoint       = Checkpoint(self.logger, self.tracker, str(run_metadata.checkpoint_path), min_delta=training_config.early_stopping.min_delta)
-
-        self.scheduler.set_total_epochs(self.epochs)
 
         self.global_step   = 0
         self.train_losses  = []
@@ -98,14 +97,9 @@ class Trainer:
 
     def capture_state(self, epoch) -> dict:
         return {
-            "params"        : self.model.state_dict(),
-            "optimizer"     : self.optimizer.state_dict(),
-            "scaler"        : self.scaler.state_dict() if self.scaler else None,
-            "epoch"         : epoch,
-            "global_step"   : self.global_step,
-            "train_losses"  : self.train_losses,
-            "val_losses"    : self.val_losses,
-            "stats"         : self.stats.as_dict(),
+            "params"      : self.model.state_dict(),
+            "epoch"       : epoch,
+            "global_step" : self.global_step,
         }
 
     def forward(self, data):
@@ -141,7 +135,8 @@ class Trainer:
     def train_epoch(self, loader, epoch):
         self.model.train()
 
-        total_loss        = 0.0
+        weighted_loss     = 0.0
+        graph_count       = 0
         number_of_batches = len(loader)
 
         with self.logger.track() as progress:
@@ -151,35 +146,38 @@ class Trainer:
                 data         = data.to(self.device, non_blocking=True)
                 _, loss_dict = self.forward(data)
 
-                group_start  = (batch_index // self.accumulation_steps) * self.accumulation_steps
-                group_size   = min(self.accumulation_steps, number_of_batches - group_start)
-                loss         = loss_dict["total_loss"] / group_size
+                group_start = (batch_index // self.accumulation_steps) * self.accumulation_steps
+                group_size  = min(self.accumulation_steps, number_of_batches - group_start)
+                batch_loss  = loss_dict["total_loss"]
 
-                if not torch.isfinite(loss):
+                do_step = (batch_index + 1) % self.accumulation_steps == 0 or (batch_index + 1) >= number_of_batches
+                self.backward(batch_loss / group_size, do_step)
+
+                batch_loss_value = batch_loss.item()
+                if not math.isfinite(batch_loss_value):
                     raise RuntimeError(f"Non-finite loss at batch {batch_index}, step {self.global_step}.")
 
-                do_step     = (batch_index + 1) % self.accumulation_steps == 0 or (batch_index + 1) >= number_of_batches
-                self.backward(loss, do_step)
-                total_loss += loss_dict["total_loss"].item()
+                weighted_loss += batch_loss_value * data.num_graphs
+                graph_count   += data.num_graphs
                 progress.advance(task_id)
 
-        return total_loss / max(1, number_of_batches)
+        return weighted_loss / max(1, graph_count)
 
     def evaluate(self, loader):
         self.model.eval()
 
-        total_loss        = 0.0
-        number_of_batches = 0
+        weighted_loss = 0.0
+        graph_count   = 0
 
         with torch.no_grad():
             for data in loader:
-                data              = data.to(self.device, non_blocking=True)
-                _, loss_dict      = self.forward(data)
-                total_loss       += loss_dict["total_loss"].item()
-                number_of_batches += 1
+                data          = data.to(self.device, non_blocking=True)
+                _, loss_dict  = self.forward(data)
 
-        average_loss = total_loss / max(1, number_of_batches)
-        return {"avg_loss": average_loss}
+                weighted_loss += loss_dict["total_loss"].item() * data.num_graphs
+                graph_count   += data.num_graphs
+
+        return {"avg_loss": weighted_loss / max(1, graph_count)}
 
     def run_epoch(self, train_loader, val_loader, epoch):
         self.scheduler.step(epoch)

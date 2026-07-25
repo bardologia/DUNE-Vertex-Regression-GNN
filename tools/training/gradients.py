@@ -51,12 +51,13 @@ class GradientClipper:
 
     def _clip(self, model: torch.nn.Module, norm: float, max_norm: float) -> tuple[float, float]:
         scale = min(1.0, max_norm / (norm + self.epsilon))
-        for parameter in model.parameters():
-            if parameter.grad is not None:
-                parameter.grad.detach().mul_(scale)
+        if scale >= 1.0:
+            return norm, norm
 
-        norm_after = norm * scale
-        return norm, norm_after
+        gradients = [parameter.grad.detach() for parameter in model.parameters() if parameter.grad is not None]
+        torch._foreach_mul_(gradients, scale)
+
+        return norm, norm * scale
 
     def _compute_adaptive_threshold(self) -> float | None:
         if len(self.history) < self.window:
