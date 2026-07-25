@@ -63,7 +63,6 @@ class Tuner:
             setattr(training_config.optimizer, field_name, value)
         training_config.loop.epochs      = self.tuning.epochs
         training_config.loop.tuning_mode = True
-        training_config.loop.verbose     = False
         training_config.loop.batch_size  = self.tuning.batch_size
 
         model_overrides = self.dataset_pipeline.inject_feature_dimensions(model_overrides, self.entry.dataset)
@@ -73,7 +72,7 @@ class Tuner:
             model_overrides = {**model_overrides, "degree_histogram": degree_histogram}
 
         model, _ = get_model(self.entry.model_name, **model_overrides)
-        context  = LightweightRunContext(self.logger, self.tuner_directory / f"trial_{trial.number}.pt")
+        context  = LightweightRunContext(self.logger, self.tuner_directory / f"trial_{trial.number}" / "best_model.pt")
         trainer  = Trainer(model, self.stats, training_config, context)
 
         best_validation_loss = float("inf")

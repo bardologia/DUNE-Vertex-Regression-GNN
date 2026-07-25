@@ -11,11 +11,13 @@ import torch
 from torch.utils.data       import Subset
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
+from configuration.entry              import TrainEntryConfig
 from models                          import get_model
 from pipelines.dataset.pipeline       import DatasetPipeline
 from pipelines.inference.metrics      import InferenceMetrics
 from pipelines.inference.predictor    import Predictor
 from pipelines.shared.run_metadata    import LightweightRunContext, TrainingRunMetadata
+from pipelines.training.optimizer_overrides import OptimizerOverrideApplier
 from pipelines.training.trainer       import Trainer
 
 from pipelines.benchmark.batch_probe import MaxBatchProbe
@@ -26,12 +28,14 @@ from pipelines.benchmark.sizing      import ModelSizer
 class BenchmarkStage:
     RESULT_FILE = None
 
-    def __init__(self, config, run_directory, pipeline_directory, logger, models):
+    def __init__(self, config, run_directory, pipeline_directory, logger, models, base_overrides):
         self.config             = config
         self.run_directory      = Path(run_directory)
         self.pipeline_directory = Path(pipeline_directory)
         self.logger             = logger
         self.models             = list(models)
+        self.base_overrides     = dict(base_overrides)
+        self.size_records       = {}
 
     def _result_path(self):
         return self.pipeline_directory / self.RESULT_FILE
@@ -46,7 +50,12 @@ class BenchmarkStage:
         self._result_path().write_text(json.dumps(records, indent=2), encoding="utf-8")
 
     def _overrides(self, model_name):
-        return self.size_records.get(model_name, {}).get("overrides", {})
+        return {**self.base_overrides, **self.size_records.get(model_name, {}).get("overrides", {})}
+
+    def _build_trainer(self, model_name, training_config, run_context):
+        model, model_config = get_model(model_name, **self._overrides(model_name))
+        OptimizerOverrideApplier(training_config, model_config, explicit_paths=None, logger=self.logger).run()
+        return Trainer(model, self.stats, training_config, run_context)
 
     def _prepare(self):
         return None
@@ -77,7 +86,7 @@ class SizeMatchStage(BenchmarkStage):
     RESULT_FILE = "size_match.json"
 
     def _prepare(self):
-        self.sizer  = ModelSizer(self.config, self.logger)
+        self.sizer  = ModelSizer(self.config, self.logger, self.base_overrides)
         self.target = self.sizer.reference_count()
         self.logger.section("[Benchmark | Capacity Matching]")
         self.logger.subsection(f"Reference '{self.config.size_match.reference_model}': {self.target:,} parameters")
@@ -99,8 +108,8 @@ class SizeMatchStage(BenchmarkStage):
 class OverfitGateStage(BenchmarkStage):
     RESULT_FILE = "overfit_results.json"
 
-    def __init__(self, config, run_directory, pipeline_directory, logger, models, dataset, stats, size_records):
-        super().__init__(config, run_directory, pipeline_directory, logger, models)
+    def __init__(self, config, run_directory, pipeline_directory, logger, models, base_overrides, dataset, stats, size_records):
+        super().__init__(config, run_directory, pipeline_directory, logger, models, base_overrides)
         self.dataset      = dataset
         self.stats        = stats
         self.size_records = size_records
@@ -118,15 +127,15 @@ class OverfitGateStage(BenchmarkStage):
         training_config.loop.tuning_mode    = True
         training_config.loop.use_amp        = False
 
-        model, _ = get_model(model_name, **self._overrides(model_name))
-        context  = LightweightRunContext(self.logger, self.run_directory / "overfit" / model_name / "best_model.pt")
-        trainer  = Trainer(model, self.stats, training_config, context)
+        context = LightweightRunContext(self.logger, self.run_directory / "overfit" / model_name / "best_model.pt")
+        trainer = self._build_trainer(model_name, training_config, context)
 
         final_loss = None
         for epoch in range(self.gate.epochs):
             trainer.scheduler.step(epoch)
             trainer._apply_learning_rates()
             final_loss = trainer.train_epoch(self.loader, epoch)
+            trainer.scheduler.step_metric(final_loss)
 
         return final_loss
 
@@ -163,8 +172,8 @@ class OverfitGateStage(BenchmarkStage):
 class MaxBatchStage(BenchmarkStage):
     RESULT_FILE = "max_batch.json"
 
-    def __init__(self, config, run_directory, pipeline_directory, logger, models, dataset, stats, size_records):
-        super().__init__(config, run_directory, pipeline_directory, logger, models)
+    def __init__(self, config, run_directory, pipeline_directory, logger, models, base_overrides, dataset, stats, size_records):
+        super().__init__(config, run_directory, pipeline_directory, logger, models, base_overrides)
         self.dataset      = dataset
         self.stats        = stats
         self.size_records = size_records
@@ -188,12 +197,13 @@ class MaxBatchStage(BenchmarkStage):
 class TrainingStage(BenchmarkStage):
     RESULT_FILE = "training_results.json"
 
-    def __init__(self, config, run_directory, pipeline_directory, logger, models, datasets, stats, size_records, max_batch_records):
-        super().__init__(config, run_directory, pipeline_directory, logger, models)
+    def __init__(self, config, run_directory, pipeline_directory, logger, models, base_overrides, datasets, stats, size_records, max_batch_records, split_base_ids):
+        super().__init__(config, run_directory, pipeline_directory, logger, models, base_overrides)
         self.datasets          = datasets
         self.stats             = stats
         self.size_records      = size_records
         self.max_batch_records = max_batch_records
+        self.split_base_ids    = split_base_ids
 
     def _prepare(self):
         self.logger.section("[Benchmark | Training]")
@@ -205,8 +215,18 @@ class TrainingStage(BenchmarkStage):
             return int(record["batch_size"])
         return self.config.training.loop.batch_size
 
+    def _entry_config(self, model_name, training_config):
+        entry                 = TrainEntryConfig()
+        entry.model_name      = model_name
+        entry.model_overrides = self._overrides(model_name)
+        entry.seed            = self.config.seed
+        entry.dataset         = self.config.dataset
+        entry.training        = training_config
+        return entry
+
     def _compute(self, model_name):
-        record = {"model": model_name, "status": None, "best_val_loss": None, "best_epoch": None, "duration_s": None, "run_directory": None, "error": None}
+        record       = {"model": model_name, "status": None, "best_val_loss": None, "best_epoch": None, "duration_s": None, "run_directory": None, "error": None}
+        run_metadata = None
 
         try:
             torch.manual_seed(self.config.seed)
@@ -220,15 +240,14 @@ class TrainingStage(BenchmarkStage):
 
             run_metadata = TrainingRunMetadata(training_config, model_name, self.training_directory, run_name="run")
             run_metadata.save_normalization_stats(self.stats)
+            run_metadata.save_split(self.split_base_ids)
 
-            model, _ = get_model(model_name, **self._overrides(model_name))
-            trainer  = Trainer(model, self.stats, training_config, run_metadata)
+            trainer = self._build_trainer(model_name, training_config, run_metadata)
+            run_metadata.save_resolved_config(self._entry_config(model_name, training_config))
 
             started = time.perf_counter()
             summary = trainer.train(train_loader, validation_loader)
             elapsed = time.perf_counter() - started
-
-            run_metadata.close()
 
             record.update({
                 "status"        : "DONE",
@@ -242,6 +261,9 @@ class TrainingStage(BenchmarkStage):
             record["status"] = "FAILED"
             record["error"]  = traceback.format_exc().strip().splitlines()[-1]
             self.logger.error(f"{model_name}: training FAILED ({record['error']})")
+        finally:
+            if run_metadata is not None:
+                run_metadata.close()
 
         return record
 
@@ -249,8 +271,8 @@ class TrainingStage(BenchmarkStage):
 class EvaluationStage(BenchmarkStage):
     RESULT_FILE = "evaluation_results.json"
 
-    def __init__(self, config, run_directory, pipeline_directory, logger, models, datasets, stats, size_records, training_records):
-        super().__init__(config, run_directory, pipeline_directory, logger, models)
+    def __init__(self, config, run_directory, pipeline_directory, logger, models, base_overrides, datasets, stats, size_records, training_records):
+        super().__init__(config, run_directory, pipeline_directory, logger, models, base_overrides)
         self.datasets         = datasets
         self.stats            = stats
         self.size_records     = size_records

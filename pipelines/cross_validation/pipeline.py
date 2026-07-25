@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import torch
 
+from configuration.entry             import TrainEntryConfig
 from models                          import get_model
 from tools.monitoring.logger         import Logger
 from tools.reporting.markdown        import MarkdownDoc, MarkdownTable, ScalarFormatter
@@ -18,6 +19,7 @@ from pipelines.dataset.splitting  import CrossValidationSplitter
 from pipelines.inference.metrics  import InferenceMetrics
 from pipelines.inference.predictor import Predictor
 from pipelines.shared.run_metadata import TrainingRunMetadata
+from pipelines.training.optimizer_overrides import OptimizerOverrideApplier
 from pipelines.training.trainer    import Trainer
 
 
@@ -119,11 +121,12 @@ class CrossValidationReport:
 
 
 class CrossValidationPipeline:
-    def __init__(self, entry_config, logger=None):
+    def __init__(self, entry_config, logger=None, explicit_paths=None):
         self.entry           = entry_config
         self.training_config = entry_config.training
         self.cross_validation = entry_config.cross_validation
         self.external_logger = logger
+        self.explicit_paths  = explicit_paths
 
     def _prepare_run(self):
         Reproducibility.seed_everything(self.entry.seed)
@@ -177,18 +180,29 @@ class CrossValidationPipeline:
             self.entry.model_overrides = {**self.entry.model_overrides, "degree_histogram": degree_histogram}
 
         run_metadata = TrainingRunMetadata(self.training_config, self.entry.model_name, self.run_directory, run_name=f"fold_{fold_index}")
-        run_metadata.save_resolved_config(self.entry)
         run_metadata.save_normalization_stats(stats)
-        run_metadata.save_split(self.dataset_pipeline.base_ids_for_indices(train_indices, validation_indices, test_indices))
+        run_metadata.save_split(self.dataset_pipeline.split_base_ids)
 
-        model, _ = get_model(self.entry.model_name, **self.entry.model_overrides)
-        trainer  = Trainer(model, stats, self.training_config, run_metadata)
-        summary  = trainer.train(train_loader, validation_loader)
+        model, model_config = get_model(self.entry.model_name, **self.entry.model_overrides)
+        OptimizerOverrideApplier(self.training_config, model_config, self.explicit_paths, run_metadata.logger).run()
+        run_metadata.save_resolved_config(self._fold_entry_config())
+
+        trainer = Trainer(model, stats, self.training_config, run_metadata)
+        summary = trainer.train(train_loader, validation_loader)
 
         metrics = self._evaluate_fold(trainer.model, run_metadata, stats, test_loader)
         run_metadata.close()
 
         return {"fold": fold_index, "run_directory": str(run_metadata.run_directory), "metrics": metrics, "summary": summary}
+
+    def _fold_entry_config(self):
+        entry                 = TrainEntryConfig()
+        entry.model_name      = self.entry.model_name
+        entry.model_overrides = self.entry.model_overrides
+        entry.seed            = self.entry.seed
+        entry.dataset         = self.entry.dataset
+        entry.training        = self.training_config
+        return entry
 
     def _evaluate_fold(self, model, run_metadata, stats, test_loader):
         device          = self.training_config.loop.device if torch.cuda.is_available() else "cpu"
