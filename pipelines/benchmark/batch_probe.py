@@ -5,7 +5,9 @@ import traceback
 import torch
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
-from models                  import get_model
+from models                                  import get_model
+from tools.training.pretraining.batch_finder import BatchSizeFinder
+
 from pipelines.training.loss import Loss
 
 
@@ -22,14 +24,18 @@ class MaxBatchProbe:
         self.device   = config.training.loop.device if torch.cuda.is_available() else "cpu"
         self.use_amp  = config.training.loop.use_amp and str(self.device).startswith("cuda")
 
-    def _candidate_batches(self):
-        ceiling   = min(self.max_batch_config.maximum_batch, len(self.dataset))
-        candidate = 1
-        batches   = []
-        while candidate <= ceiling:
-            batches.append(candidate)
-            candidate *= 2
-        return batches
+    def _skipped(self) -> dict:
+        return {
+            "model"      : self.model_name,
+            "status"     : "SKIP",
+            "batch_size" : None,
+            "peak_gb"    : None,
+            "budget_gb"  : self.max_batch_config.vram_budget_gb,
+            "ceiling"    : self.max_batch_config.maximum_batch,
+            "context_gb" : 0.0,
+            "trials"     : [],
+            "error"      : "no CUDA device available; max batch probe skipped",
+        }
 
     def _build_components(self):
         model, _  = get_model(self.model_name, **self.overrides)
@@ -38,7 +44,7 @@ class MaxBatchProbe:
         criterion = Loss(self.config.training.loss, self.stats, self.logger)
         return model, optimizer, criterion
 
-    def _measure(self, model, optimizer, criterion, batch_size):
+    def _measure(self, model, optimizer, criterion, batch_size) -> float:
         loader = GraphDataLoader(self.dataset, batch_size=batch_size, shuffle=False)
 
         torch.cuda.empty_cache()
@@ -61,64 +67,32 @@ class MaxBatchProbe:
             if steps >= self.max_batch_config.measure_steps:
                 break
 
-        peak_bytes = torch.cuda.max_memory_allocated(self.device)
-        return peak_bytes / 1e9
+        return torch.cuda.max_memory_reserved(self.device) / (1024.0 ** 3)
 
-    def run(self):
-        result = {
-            "model"      : self.model_name,
-            "status"     : None,
-            "batch_size" : None,
-            "peak_gb"    : None,
-            "budget_gb"  : self.max_batch_config.vram_budget_gb,
-            "ceiling"    : self.max_batch_config.maximum_batch,
-            "trials"     : [],
-            "error"      : None,
-        }
+    def _failed(self, error: str) -> dict:
+        return {**self._skipped(), "status": "FAIL", "error": error}
 
+    def run(self) -> dict:
         if self.device == "cpu":
-            result["status"] = "SKIP"
-            result["error"]  = "no CUDA device available; max batch probe skipped"
-            return result
+            return self._skipped()
 
         try:
             model, optimizer, criterion = self._build_components()
 
-            candidates = self._candidate_batches()
-            self.logger.subsection(f"{self.model_name}: probing batches {candidates} (budget {self.max_batch_config.vram_budget_gb:.1f} GB)")
+            ceiling = min(self.max_batch_config.maximum_batch, len(self.dataset))
+            self.logger.subsection(f"{self.model_name}: probing batches up to {ceiling} (budget {self.max_batch_config.vram_budget_gb:.1f} GB)")
 
-            best_batch = None
-            best_peak  = None
+            finder = BatchSizeFinder(
+                trial_step = lambda batch_size: self._measure(model, optimizer, criterion, batch_size),
+                budget_gb  = self.max_batch_config.vram_budget_gb,
+                ceiling    = ceiling,
+                device     = torch.device(self.device),
+                logger     = self.logger,
+                model_name = self.model_name,
+                on_oom     = torch.cuda.empty_cache,
+            )
 
-            for batch_size in candidates:
-                try:
-                    peak_gb = self._measure(model, optimizer, criterion, batch_size)
-                except torch.cuda.OutOfMemoryError:
-                    result["trials"].append({"batch_size": batch_size, "peak_gb": None, "status": "OOM"})
-                    self.logger.subsection(f"  batch {batch_size}: OOM")
-                    torch.cuda.empty_cache()
-                    break
-
-                within_budget = peak_gb <= self.max_batch_config.vram_budget_gb
-                status        = "FIT" if within_budget else "OVER"
-                result["trials"].append({"batch_size": batch_size, "peak_gb": float(peak_gb), "status": status})
-                self.logger.subsection(f"  batch {batch_size}: {peak_gb:.2f} GB ({status})")
-
-                if not within_budget:
-                    break
-
-                best_batch, best_peak = batch_size, peak_gb
-
-            if best_batch is None:
-                result["status"] = "FAIL"
-                result["error"]  = "no batch size fits within the VRAM budget"
-            else:
-                result["status"]     = "PASS"
-                result["batch_size"] = int(best_batch)
-                result["peak_gb"]    = float(best_peak)
+            return finder.run()
 
         except Exception:
-            result["status"] = "FAIL"
-            result["error"]  = traceback.format_exc()
-
-        return result
+            return self._failed(traceback.format_exc())

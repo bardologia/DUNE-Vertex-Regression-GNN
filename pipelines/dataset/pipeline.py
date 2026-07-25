@@ -4,6 +4,8 @@ import numpy as np
 import pandas as pd
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
+from tools.runtime.reproducibility          import Reproducibility
+
 from pipelines.dataset.augmentation         import Augmentation
 from pipelines.dataset.graph                import FeatureSchema, Graph
 from pipelines.dataset.graph_dataset        import CachedGraphDataset, DegreeHistogramEstimator, GraphDataset, GraphNormalizer, StatsEstimator
@@ -196,11 +198,11 @@ class DatasetPipeline:
             self.datasets["test"] = CachedGraphDataset(self._make_dataset(test_samples, augmentation, self.stats), self.logger)
 
     @staticmethod
-    def build_loaders(datasets, batch_size, num_workers=0, pin_memory=False, persistent_workers=False, prefetch_factor=2):
-        persistent    = persistent_workers and num_workers > 0
-        worker_options = {"prefetch_factor": prefetch_factor} if num_workers > 0 else {}
+    def build_loaders(datasets, batch_size, num_workers=0, pin_memory=False, persistent_workers=False, prefetch_factor=2, seed=0):
+        persistent     = persistent_workers and num_workers > 0
+        worker_options = {"prefetch_factor": prefetch_factor, "worker_init_fn": Reproducibility.worker_init(seed)} if num_workers > 0 else {}
 
-        train_loader = GraphDataLoader(datasets["train"], batch_size=batch_size, shuffle=True,  num_workers=num_workers, pin_memory=pin_memory, persistent_workers=persistent, **worker_options)
+        train_loader = GraphDataLoader(datasets["train"], batch_size=batch_size, shuffle=True,  num_workers=num_workers, pin_memory=pin_memory, persistent_workers=persistent, generator=Reproducibility.generator(seed), **worker_options)
         val_loader   = GraphDataLoader(datasets["val"],   batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory, persistent_workers=persistent, **worker_options)
         test_loader  = GraphDataLoader(datasets["test"],  batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory, persistent_workers=persistent, **worker_options)
         return train_loader, val_loader, test_loader
