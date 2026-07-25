@@ -7,6 +7,22 @@ import torch
 from torch.utils.data import Dataset
 
 
+class GraphNormalizer:
+    def __init__(self, stats):
+        self.stats = stats
+
+    def apply(self, data):
+        data.x         = torch.tensor(self.stats.node.forward_numpy(data.x.numpy()),         dtype=torch.float32)
+        data.edge_attr = torch.tensor(self.stats.edge.forward_numpy(data.edge_attr.numpy()), dtype=torch.float32)
+        data.y         = torch.tensor(self.stats.target.forward_numpy(data.y.numpy()),       dtype=torch.float32)
+        return data
+
+    def apply_all(self, graphs):
+        for data in graphs:
+            self.apply(data)
+        return graphs
+
+
 class GraphDataset(Dataset):
     EPOCH_SEED_STRIDE = 1_000_003
 
@@ -17,6 +33,7 @@ class GraphDataset(Dataset):
         self.graph_builder      = graph_builder
         self.augmentation       = augmentation
         self.stats              = stats
+        self.normalizer         = GraphNormalizer(stats) if stats is not None else None
 
         self.scale_factor         = physics_config.scale_factor
         self.detection_efficiency = physics_config.detection_efficiency
@@ -48,12 +65,6 @@ class GraphDataset(Dataset):
 
         return light
 
-    def _normalize(self, data):
-        data.x         = torch.tensor(self.stats.node.forward_numpy(data.x.numpy()),         dtype=torch.float32)
-        data.edge_attr = torch.tensor(self.stats.edge.forward_numpy(data.edge_attr.numpy()), dtype=torch.float32)
-        data.y         = torch.tensor(self.stats.target.forward_numpy(data.y.numpy()),       dtype=torch.float32)
-        return data
-
     def __getitem__(self, index):
         sample        = self.samples[index]
         light_row     = int(sample[0])
@@ -67,17 +78,17 @@ class GraphDataset(Dataset):
         data   = self.graph_builder.build_from_arrays(positions, light)
         data.y = torch.tensor(target, dtype=torch.float32).unsqueeze(0)
 
-        if self.stats is not None:
-            data = self._normalize(data)
+        if self.normalizer is not None:
+            data = self.normalizer.apply(data)
 
         return data
 
 
 class CachedGraphDataset(Dataset):
-    def __init__(self, base_dataset, logger):
+    def __init__(self, base_dataset, logger, graphs=None):
         self.base_dataset = base_dataset
         self.logger       = logger
-        self.graphs       = self._materialize()
+        self.graphs       = self._materialize() if graphs is None else graphs
 
     @property
     def samples(self):
