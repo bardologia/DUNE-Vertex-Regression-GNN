@@ -113,7 +113,6 @@ def test_pipeline_runs_two_folds(dataset_config, quiet_logger):
     entry.training.loop.pin_memory           = False
     entry.training.loop.persistent_workers   = False
     entry.training.loop.device               = "cpu"
-    entry.training.loop.validation_frequency = 1
     entry.training.io.log_base_dir           = quiet_logger.log_dir or "."
 
     import tempfile
@@ -144,7 +143,6 @@ def test_pna_pipeline_injects_degree_histogram_per_fold(dataset_config, quiet_lo
     entry.training.loop.pin_memory           = False
     entry.training.loop.persistent_workers   = False
     entry.training.loop.device               = "cpu"
-    entry.training.loop.validation_frequency = 1
 
     import tempfile
     from pathlib import Path

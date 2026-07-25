@@ -59,7 +59,6 @@ class InferenceEntryConfig:
 @dataclass
 class TuneEntryConfig:
     model_name : str            = "gps"
-    seed       : int            = 42
     dataset    : DatasetConfig  = field(default_factory=DatasetConfig)
     tuning     : TuningConfig   = field(default_factory=TuningConfig)
     training   : TrainingConfig = field(default_factory=TrainingConfig)
@@ -70,7 +69,6 @@ class CrossValidationEntryConfig:
     model_name       : str                   = "gps"
     model_overrides  : dict                  = field(default_factory=dict)
     seed             : int                   = 42
-    gpu              : int                   = 0
     run_name         : str                   = ""
     dataset          : DatasetConfig         = field(default_factory=DatasetConfig)
     training         : TrainingConfig        = field(default_factory=TrainingConfig)
