@@ -22,7 +22,7 @@
 
 The reconstruction of the interaction vertex — the three-dimensional point $(x, y, z)$ at which a neutrino interacts within a detector — is a foundational task in accelerator and astroparticle neutrino physics. In a Liquid Argon Time Projection Chamber (LArTPC), the prompt scintillation light produced by a charged-particle cascade is observed by a sparse array of optical sensors distributed over the detector volume. Recovering the vertex from this sparse, irregular, and noisy optical signal is an ill-posed inverse problem that does not admit a fixed-grid, image-based representation.
 
-**DUNE-GNN** formulates vertex reconstruction as a *graph-level regression* problem. Each detector event is encoded as a sparse geometric graph over the optical sensors, in which nodes carry per-sensor photometric and positional features and edges encode local spatial and photometric relationships. A hybrid local–global graph transformer backbone, a multi-scale hierarchical pooling stage, and a conditionally-factorised regression head jointly map the event graph to a continuous coordinate prediction. The pipeline is fully configuration-driven, reproducible, and instrumented for large-scale hyperparameter optimisation.
+**DUNE-GNN** formulates vertex reconstruction as a *graph-level regression* problem. Each detector event is encoded as a sparse geometric graph over the optical sensors, in which nodes carry per-sensor photometric and positional features and edges encode local spatial and photometric relationships. A hybrid local–global graph transformer backbone, a pooled readout combined with graph-level scalars, and a conditionally-factorised regression head jointly map the event graph to a continuous coordinate prediction. The pipeline is fully configuration-driven, reproducible, and instrumented for large-scale hyperparameter optimisation.
 
 ---
 
@@ -59,13 +59,13 @@ The end-to-end pipeline is summarised as:
   preprocessing            outlier rejection · intensity scaling · detection-efficiency simulation · log(1+x)
         │
         ▼
-  graph construction       active-sensor pruning · k-nearest-neighbour graph · 17-D node features · 23-D edge features
+  graph construction       active-sensor pruning · k-nearest-neighbour graph · 17-D node features · 23-D edge features · 9-D graph scalars
         │
         ▼
   GPS backbone             stacked local (GATv2) + global (self-attention) layers with gated fusion
         │
         ▼
-  multi-scale pooling      3-level mean/max readout + SAGPool coarsening → graph embedding
+  readout                  mean/max/log-sum pooling ⊕ projected graph scalars → graph embedding
         │
         ▼
   hierarchical head        x → (y | x) → (z | x, y)  via FiLM conditioning
@@ -78,8 +78,9 @@ The end-to-end pipeline is summarised as:
 
 Each event is materialised as a PyTorch Geometric `Data` object on a $k$-nearest-neighbour topology over sensor positions. Only active sensors (positive realized light) enter the graph, with an optional cap on the brightest sensors, so a full 6912-channel detector collapses to roughly 250 nodes per event and a usable batch size becomes possible:
 
-- **Node features (17-dimensional at default settings):** sensor position, measured light intensity, the per-sensor light fraction, the distance to the light-weighted centroid of the event, a measure of local light density, the normalised direction to the centroid, and per-node inertia and light-rank descriptors. The exact dimensionality follows `BaseGNNConfig.input_dim` and the `GraphConfig` feature toggles (`direction_features`, `inertia_features`, `rank_features`).
+- **Node features (17-dimensional at default settings):** sensor position, measured light intensity, the per-sensor light fraction, the distance to the light-weighted centroid of the event, a measure of local light density, the normalised direction to the centroid, the eigenvalues of the light-weighted inertia tensor, and a light-rank descriptor. The inertia eigenvalues are carried in physical units (m²) rather than as ratios, so the absolute size of the light distribution survives into the encoder. The exact dimensionality follows `BaseGNNConfig.input_dim` and the `GraphConfig` feature toggles (`direction_features`, `inertia_features`, `rank_features`).
 - **Edge features (23-dimensional at default settings):** Euclidean separation, normalised displacement vector, inverse-square distance, light gradient along the edge, a Sørensen–Dice photometric similarity, and a 16-bin radial-basis expansion of the edge distance (`GraphConfig.edge_rbf_count`). The exact dimensionality follows `BaseGNNConfig.edge_dim`.
+- **Graph scalars (9-dimensional at default settings):** the light-weighted centroid, the total detected light, the active-sensor count, the brightest single-channel reading, and the three principal spread scales of the light distribution in metres. These are extensive quantities that a mean/max readout cannot reconstruct from node embeddings, so they are attached to the graph as `graph_attr`, normalised as their own statistics group, and fed straight to the head. The toggle is `GraphConfig.graph_scalar_features` and the width follows `BaseGNNConfig.graph_dim`.
 
 This explicitly injects the detector geometry and the photometric structure of the flash into the learned representation.
 
@@ -92,9 +93,11 @@ The backbone is a stack of **GPS layers**, each of which processes the graph thr
 
 The two channels are combined through a **learned sigmoid gate**, followed by a position-wise feed-forward network. Each sub-block uses residual connections with stochastic depth (DropPath) and layer normalisation, yielding a stable, expressive representation that balances local detector geometry against global event structure.
 
-### 3.3 Multi-Scale Hierarchical Pooling
+### 3.3 Readout
 
-To produce a fixed-dimensional graph embedding that is robust to event size, the model applies **three levels** of hierarchical pooling. At each level, mean- and max-pooled readouts are concatenated and the graph is then coarsened with **SAGPool** (Self-Attention Graph Pooling). The per-level readouts are concatenated to form the final graph embedding, summarising the event at progressively coarser spatial resolutions.
+The default readout (`pooling="mean_max_sum"`) concatenates three views of the node embeddings: a mean, a max, and a sign-preserving log-compressed sum. The mean and max are intensive and describe the shape of the flash; the sum grows with the number of active sensors and the light they carry, which is what locates the vertex in depth. The log compression keeps the sum on the same scale as the other two blocks so the readout normalisation does not crush them.
+
+The pooled vector is layer-normalised and then concatenated with the projected graph scalars (`graph_embed_dim`) before the head, giving those extensive quantities a path to the prediction that does not pass through message passing. Two alternative readouts remain available through `pooling`: `mean_max` for the pooled pair alone, and `sagpool_multiscale`, which repeats the mean/max readout at several levels of **SAGPool** (Self-Attention Graph Pooling) coarsening and concatenates the per-level results.
 
 ### 3.4 Conditionally-Factorised Regression Head
 
@@ -102,7 +105,9 @@ Rather than predicting the three coordinates independently, the head exploits th
 
 ### 3.5 Optimisation
 
-Training uses **AdamW** with three discriminative parameter groups (regression head, pooling stage, and backbone). The learning rate follows **ReduceLROnPlateau** by default; cosine annealing and a constant schedule are available through `training.scheduler.type`, and an optional linear, cosine, polynomial, or exponential warmup runs on top of whichever is selected. The procedure further supports gradient-norm clipping (fixed or adaptive), early stopping, and restoration of the best checkpoint. Automatic mixed precision is exposed as `training.loop.use_amp`, though it measured slower than fp32 on the GTX 1650 this project trains on, which has no tensor cores. Performance is reported in physical units via mean absolute error, root-mean-square error, the coefficient of determination $R^2$, median absolute error, and the mean Euclidean vertex error.
+Sensor-level augmentation (`dataset.augmentation`) is applied to every split, not to training alone. Spurious activations, sensor dropout, photon thinning, and gain jitter all move the light statistics the model reads, so applying them on one side only teaches the network to invert a distortion that is absent when it is scored. Training resamples its realisation each epoch; validation and test are materialised once and stay frozen, so the checkpoint criterion is stable across epochs and inference reproduces the validation numbers exactly.
+
+Training uses **AdamW** with three discriminative parameter groups (regression head with the graph-scalar projection, pooling stage, and backbone). The learning rate follows **ReduceLROnPlateau** by default; cosine annealing and a constant schedule are available through `training.scheduler.type`, and an optional linear, cosine, polynomial, or exponential warmup runs on top of whichever is selected. The procedure further supports gradient-norm clipping (fixed or adaptive), early stopping, and restoration of the best checkpoint. Automatic mixed precision is exposed as `training.loop.use_amp`, though it measured slower than fp32 on the GTX 1650 this project trains on, which has no tensor cores. Performance is reported in physical units via mean absolute error, root-mean-square error, the coefficient of determination $R^2$, median absolute error, and the mean Euclidean vertex error.
 
 ---
 
