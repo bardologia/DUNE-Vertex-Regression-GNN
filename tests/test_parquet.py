@@ -69,14 +69,23 @@ def test_parquet_reader_iterates_corrected(parquet_store):
     assert len(target) == 3
 
 
-def test_parquet_reader_augmentation_expands(parquet_store):
-    reader    = ParquetEventReader(parquet_store).load_store()
-    corrected = list(reader.iterate_corrected())
-    augmented = list(reader.iterate_augmented())
-    assert len(augmented) >= len(corrected)
+def test_parquet_octant_index_expands_every_event(parquet_store):
+    reader = ParquetEventReader(parquet_store).load_store()
+    frame  = reader.octant_frame
+
+    assert "light" not in frame.columns
+    assert len(frame) > len(reader.light_matrix)
+    assert set(frame["base_event_id"]) == set(range(len(reader.light_matrix)))
+    assert frame.groupby("base_event_id").size().min() >= 2
 
 
 def test_parquet_store_arrays(parquet_store):
     reader = ParquetEventReader(parquet_store).load_store()
     assert reader.light_matrix.shape[1] == len(reader.geometry_frame)
     assert reader.event_targets.shape[1] == 3
+
+
+def test_coordinate_transform_maps_target_to_detector_frame():
+    from pipelines.dataset.coordinate_correction import CoordinateTransform
+
+    assert CoordinateTransform().apply_to_target(1.0, 2.0, 3.0) == (2.0, -1.0, 3.0)
