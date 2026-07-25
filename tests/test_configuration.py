@@ -38,12 +38,6 @@ def test_sagpool_config_exposes_sag_ratio():
     assert "sag_ratio" in SagPoolConfig.tunable_params()
 
 
-def test_model_config_sections():
-    from configuration.architectures import BaseGNNConfig
-    assert "encoder" in BaseGNNConfig.SECTIONS
-    assert "head" in BaseGNNConfig.SECTIONS
-
-
 def test_gps_declares_lower_optimizer_overrides():
     overrides = GPSConfig().optimizer_overrides
     assert overrides["learning_rate_encoder"] < 1e-3

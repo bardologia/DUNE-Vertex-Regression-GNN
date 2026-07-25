@@ -31,13 +31,6 @@ class BaseGNNConfig:
 
     optimizer_overrides      : dict  = field(default_factory=dict)
 
-    SECTIONS = {
-        "dimensions" : ("input_dim", "edge_dim", "output_dim"),
-        "encoder"    : ("hidden_dim", "num_layers", "dropout", "activation", "normalization", "drop_path_rate", "heads", "attention_dropout", "ffn_ratio"),
-        "pooling"    : ("pooling", "pool_num_levels", "sag_ratio", "set2set_steps"),
-        "head"       : ("head_type", "hierarchical_feature_dim", "coord_embed_dim", "regression_hidden_dims", "regression_dropout"),
-    }
-
     @classmethod
     def _field_default(cls, field_name):
         for field_definition in fields(cls):

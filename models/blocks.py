@@ -74,12 +74,12 @@ class DropPath(nn.Module):
 
 
 class FeedForward(nn.Module):
-    def __init__(self, dimension: int, ffn_ratio: float = 4.0, dropout: float = 0.1):
+    def __init__(self, dimension: int, ffn_ratio: float = 4.0, dropout: float = 0.1, activation: str = "gelu"):
         super().__init__()
         hidden   = int(dimension * ffn_ratio)
         self.net = nn.Sequential(
             nn.Linear(dimension, hidden),
-            nn.GELU(),
+            ModuleFactory.activation(activation),
             nn.Dropout(dropout),
             nn.Linear(hidden, dimension),
             nn.Dropout(dropout),
@@ -148,17 +148,17 @@ class Set2SetPool(nn.Module):
 
 
 class GPSLayer(nn.Module):
-    def __init__(self, hidden_dim, edge_dim=7, heads=4, dropout=0.1, attention_dropout=0.1, ffn_ratio=4.0, drop_path=0.0):
+    def __init__(self, hidden_dim, edge_dim=7, heads=4, dropout=0.1, attention_dropout=0.1, ffn_ratio=4.0, drop_path=0.0, normalization="layer", activation="gelu"):
         super().__init__()
-        self.norm_local  = nn.LayerNorm(hidden_dim)
-        self.norm_global = nn.LayerNorm(hidden_dim)
-        self.norm_ffn    = nn.LayerNorm(hidden_dim)
+        self.norm_local  = ModuleFactory.norm(normalization, hidden_dim)
+        self.norm_global = ModuleFactory.norm(normalization, hidden_dim)
+        self.norm_ffn    = ModuleFactory.norm(normalization, hidden_dim)
 
         self.local_conv  = GATv2Conv(hidden_dim, hidden_dim, heads=heads, concat=False, dropout=dropout, edge_dim=edge_dim, add_self_loops=True, share_weights=False)
         self.global_attn = nn.MultiheadAttention(embed_dim=hidden_dim, num_heads=heads, dropout=attention_dropout, batch_first=True)
 
         self.gate        = nn.Sequential(nn.Linear(hidden_dim * 2, hidden_dim), nn.Sigmoid())
-        self.ffn         = FeedForward(hidden_dim, ffn_ratio, dropout)
+        self.ffn         = FeedForward(hidden_dim, ffn_ratio, dropout, activation)
         self.drop_path   = DropPath(drop_path)
 
         self._initialize_weights()
@@ -169,8 +169,9 @@ class GPSLayer(nn.Module):
                 nn.init.xavier_uniform_(module.weight)
                 nn.init.zeros_(module.bias)
         for norm_module in (self.norm_local, self.norm_global, self.norm_ffn):
-            nn.init.constant_(norm_module.weight, 1.0)
-            nn.init.constant_(norm_module.bias, 0.0)
+            if isinstance(norm_module, (nn.LayerNorm, nn.BatchNorm1d)):
+                nn.init.constant_(norm_module.weight, 1.0)
+                nn.init.constant_(norm_module.bias, 0.0)
 
     def forward(self, node_features, edge_index, batch, edge_attr=None) -> torch.Tensor:
         local_representation = self.local_conv(self.norm_local(node_features), edge_index, edge_attr=edge_attr)
@@ -210,7 +211,7 @@ class GPSLayer(nn.Module):
 class GPSEncoder(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.input_proj = nn.Sequential(nn.Linear(config.input_dim, config.hidden_dim), nn.LayerNorm(config.hidden_dim))
+        self.input_proj = nn.Sequential(nn.Linear(config.input_dim, config.hidden_dim), ModuleFactory.norm(config.normalization, config.hidden_dim))
         self._initialize_projection()
 
         drop_path_rates = [rate.item() for rate in torch.linspace(0, config.drop_path_rate, config.num_layers)]
@@ -223,6 +224,8 @@ class GPSEncoder(nn.Module):
                 attention_dropout = config.attention_dropout,
                 ffn_ratio         = config.ffn_ratio,
                 drop_path         = drop_path_rates[index],
+                normalization     = config.normalization,
+                activation        = config.activation,
             )
             for index in range(config.num_layers)
         ])
@@ -233,7 +236,7 @@ class GPSEncoder(nn.Module):
             if isinstance(module, nn.Linear):
                 nn.init.kaiming_uniform_(module.weight, nonlinearity="relu")
                 nn.init.zeros_(module.bias)
-            elif isinstance(module, nn.LayerNorm):
+            elif isinstance(module, (nn.LayerNorm, nn.BatchNorm1d)):
                 nn.init.constant_(module.weight, 1.0)
                 nn.init.constant_(module.bias, 0.0)
 
@@ -343,8 +346,13 @@ class CoordinateHead(nn.Module):
 
 
 class HierarchicalRegressionHead(nn.Module):
+    COORDINATE_COUNT = 3
+
     def __init__(self, input_dim: int, config):
         super().__init__()
+        if config.output_dim != self.COORDINATE_COUNT:
+            raise ValueError(f"head_type='hierarchical' predicts exactly {self.COORDINATE_COUNT} coordinates but output_dim={config.output_dim}; use head_type='mlp' for any other width.")
+
         feature_dim     = config.hierarchical_feature_dim
         hidden_dims     = config.regression_hidden_dims
         dropout         = config.regression_dropout
@@ -409,8 +417,13 @@ class MLPRegressionHead(nn.Module):
 
 
 class CascadeRegressionHead(nn.Module):
+    COORDINATE_COUNT = 3
+
     def __init__(self, input_dim: int, config):
         super().__init__()
+        if config.output_dim != self.COORDINATE_COUNT:
+            raise ValueError(f"head_type='cascade' predicts exactly {self.COORDINATE_COUNT} coordinates but output_dim={config.output_dim}; use head_type='mlp' for any other width.")
+
         feature_dim = config.hierarchical_feature_dim
         hidden_dims = config.regression_hidden_dims
         dropout     = config.regression_dropout
