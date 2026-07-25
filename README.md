@@ -102,7 +102,7 @@ Rather than predicting the three coordinates independently, the head exploits th
 
 ### 3.5 Optimisation
 
-Training uses **AdamW** with three discriminative parameter groups (regression head, pooling stage, and backbone) under a **linear-warmup → cosine-annealing** learning-rate schedule. The procedure further supports automatic mixed precision, gradient-norm clipping, an optional exponential moving average of the weights, and early stopping. Performance is reported in physical units via mean absolute error, root-mean-square error, the coefficient of determination $R^2$, median absolute error, and the mean Euclidean vertex error.
+Training uses **AdamW** with three discriminative parameter groups (regression head, pooling stage, and backbone). The learning rate follows **ReduceLROnPlateau** by default; cosine annealing and a constant schedule are available through `training.scheduler.type`, and an optional linear, cosine, polynomial, or exponential warmup runs on top of whichever is selected. The procedure further supports gradient-norm clipping (fixed or adaptive), early stopping, and restoration of the best checkpoint. Automatic mixed precision is exposed as `training.loop.use_amp`, though it measured slower than fp32 on the GTX 1650 this project trains on, which has no tensor cores. Performance is reported in physical units via mean absolute error, root-mean-square error, the coefficient of determination $R^2$, median absolute error, and the mean Euclidean vertex error.
 
 ---
 
