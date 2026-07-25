@@ -107,7 +107,17 @@ Rather than predicting the three coordinates independently, the head exploits th
 
 Sensor-level augmentation (`dataset.augmentation`) is applied to every split, not to training alone. Spurious activations, sensor dropout, photon thinning, and gain jitter all move the light statistics the model reads, so applying them on one side only teaches the network to invert a distortion that is absent when it is scored. Training resamples its realisation each epoch; validation and test are materialised once and stay frozen, so the checkpoint criterion is stable across epochs and inference reproduces the validation numbers exactly.
 
-Training uses **AdamW** with three discriminative parameter groups (regression head with the graph-scalar projection, pooling stage, and backbone). The learning rate follows **ReduceLROnPlateau** by default; cosine annealing and a constant schedule are available through `training.scheduler.type`, and an optional linear, cosine, polynomial, or exponential warmup runs on top of whichever is selected. The procedure further supports gradient-norm clipping (fixed or adaptive), early stopping, and restoration of the best checkpoint. Automatic mixed precision is exposed as `training.loop.use_amp`, though it measured slower than fp32 on the GTX 1650 this project trains on, which has no tensor cores. Performance is reported in physical units via mean absolute error, root-mean-square error, the coefficient of determination $R^2$, median absolute error, and the mean Euclidean vertex error.
+Training uses **AdamW** with three discriminative parameter groups (regression head with the graph-scalar projection, pooling stage, and backbone). The learning rate follows **ReduceLROnPlateau** by default; cosine annealing, linear, polynomial, exponential, step, and constant schedules are available through `training.scheduler.type`, and an optional linear, cosine, polynomial, or exponential warmup runs on top of whichever is selected. The procedure further supports gradient-norm clipping (fixed or adaptive, logged per parameter group), early stopping, and restoration of the best checkpoint. An exponential moving average of the weights (`training.loop.use_ema`) is evaluated in place of the raw weights at validation and test time when enabled. Automatic mixed precision is exposed as `training.loop.use_amp`, though it measured slower than fp32 on the GTX 1650 this project trains on, which has no tensor cores. Performance is reported in physical units via mean absolute error, root-mean-square error, the coefficient of determination $R^2$, median absolute error, and the mean Euclidean vertex error.
+
+Every epoch writes `last.pt` next to the run: model, optimiser, scheduler, warmup, early-stopping and clipper state, the loss history, and the Python, NumPy, Torch and loader RNG streams. Setting `training.loop.resume` restarts the run from that file instead of from scratch, and a finished run is stamped with `complete.json` so downstream tooling can tell a finished run from an interrupted one. A resource monitor samples RAM, swap, `/dev/shm`, disk throughput and per-GPU utilisation on a background thread throughout, warning when any of them crosses its configured threshold, and the epoch loop reports throughput and the fraction of step time the GPU spent waiting on the loader.
+
+### 3.6 Preflight
+
+Three checks run before the real training loop, all disabled by default.
+
+The **overfit gate** (`training.overfit_check`) takes a handful of examples, disables augmentation, weight decay, dropout, EMA and the learning-rate schedule, and trains a fresh model on that fixed batch. If the loss does not fall to `pass_loss_ratio` of its initial value the run is aborted with the verdict written to `metadata/overfit_report.json`, on the argument that a model that cannot memorise two events with regularisation removed has a defect no amount of real training will fix.
+
+The **batch-size finder** (`training.pretrain.find_batch_size`) walks powers of two, runs real optimiser steps at each size, and keeps the largest batch whose peak reserved VRAM stays inside `vram_budget_gb`. The **loader tuner** (`training.pretrain.tune_loader`) then measures loader-only throughput, the GPU compute ceiling on a fixed batch, and end-to-end throughput across worker counts, prefetch depths and pinning, and selects the cheapest configuration that keeps the GPU fed. Both write their trials to `pretrain/pretrain_report.json` and overwrite the corresponding fields in `training.loop` for the run that follows.
 
 ---
 
@@ -143,12 +153,14 @@ DUNE-GNN/
 │   ├── cross_validation/       # k-fold orchestration
 │   ├── tuning/                 # Optuna TPE + MedianPruner search
 │   ├── benchmark/              # benchmark stages, sizing, batch probe
-│   └── shared/                 # run metadata / run paths
+│   └── shared/                 # run metadata / run paths, overfit gate, pretrain preflight
 ├── tools/                    # reusable components (Logger, monitors, training utilities, runtime/config CLI)
 │   ├── monitoring/             # logger, resource monitor, tracker, inspection
-│   ├── training/               # scheduling, checkpoint, gradients, early stopping
+│   ├── training/               # scheduling, checkpoint + EMA + resumable state, gradients, early stopping, VRAM reservation
+│   │   └── pretraining/        # batch-size finder, dataloader tuner, preflight orchestrator
+│   ├── benchmarking/           # dataloader sweep, GPU feed benchmark, sweep report
 │   ├── reporting/              # markdown reporting
-│   └── runtime/                # ConfigCli, reproducibility
+│   └── runtime/                # ConfigCli, reproducibility, completion markers, run tags
 ├── webui/                    # local web UI for launching/monitoring runs and browsing results
 ├── tests/                    # pytest suite (driven by the Dune conda env)
 ├── data/                     # raw simulated events (pmod3_*.csv)
@@ -223,12 +235,16 @@ The project is **configuration-driven**: every hyperparameter is declared as a f
 | `PhysicsConfig` (`configuration/data`) | `scale_factor`, `detection_efficiency`, `efficiency_seed` |
 | `HotChannelConfig` (`configuration/data`) | `active_fraction`, `median_factor`, `neighbor_count` |
 | Model config (`configuration/architectures`, per model in `MODEL_CONFIG_REGISTRY`) | `hidden_dim`, `num_layers`, `heads`, `pooling`, `head_type` |
-| `TrainingLoopConfig` (`configuration/training`) | `epochs`, `batch_size`, `use_amp`, `gradient_accumulation_steps` |
+| `TrainingLoopConfig` (`configuration/training`) | `epochs`, `batch_size`, `use_amp`, `gradient_accumulation_steps`, `validation_frequency`, `use_ema`, `resume` |
 | `OptimizerConfig` / `SchedulerConfig` / `WarmupConfig` | discriminative learning rates, `eta_min`, warmup schedule |
 | `EarlyStoppingConfig` | `patience`, `min_delta`, `restore_best` |
+| `MemoryConfig` / `ResourceConfig` | allocator cache clearing, VRAM reservation, monitor poll interval and warning thresholds |
+| `OverfitCheckConfig` / `PretrainConfig` | `n_examples`, `pass_loss_ratio`, `find_batch_size`, `tune_loader`, `vram_budget_gb` |
 | `TuningConfig` (`configuration/tuning`) | `n_trials`, `startup_trials`, `warmup_trials` |
 
 Hyperparameter search (`pipelines/tuning/tuner.py`) employs the Optuna **Tree-structured Parzen Estimator** with a **median pruner**, exploring a joint space spanning model, optimiser, and training configuration. The best trial is written to `<tuner_dir>/<model>/best_trial.json`.
+
+The same configuration tree drives the local console (`python webui/serve.py`). `webui/launch_layout.py` declares, per entry script, which fields are run essentials, how the rest are grouped into sections, panels and titled field groups, which fields gate which others, and what widget each one gets. The console refuses to serve a layout that leaves a field unclaimed or claims one twice, so a new config field surfaces as a loud failure rather than quietly disappearing from the launch form.
 
 ---
 
