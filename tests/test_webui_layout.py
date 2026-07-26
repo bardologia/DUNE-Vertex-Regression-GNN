@@ -56,3 +56,34 @@ def test_layout_widgets_only_reference_known_paths():
         known  = {leaf["path"] for leaf in leaves}
 
         assert set(layout["widgets"]) <= known
+
+
+@pytest.mark.parametrize("script_key", sorted(ENTRY_CONFIGS))
+def test_layout_widgets_declare_a_renderable_kind(script_key):
+    layout = LaunchLayout().build(script_key, list(_leaves(ENTRY_CONFIGS[script_key]())))
+
+    for path, widget in layout["widgets"].items():
+        assert widget["kind"] in ("choice", "multi", "number", "run"), path
+
+        if widget["kind"] == "choice":
+            assert widget["options"], path
+        if widget["kind"] == "multi":
+            assert widget["choices"], path
+        if widget["kind"] == "number":
+            assert {"min", "max", "presets"} <= set(widget), path
+            assert widget["presets"], path
+
+
+@pytest.mark.parametrize("script_key", sorted(ENTRY_CONFIGS))
+def test_special_panels_declare_a_renderable_panel(script_key):
+    leaves = list(_leaves(ENTRY_CONFIGS[script_key]()))
+    layout = LaunchLayout().build(script_key, leaves)
+    known  = {leaf["path"] for leaf in leaves}
+
+    for section in layout["sections"]:
+        for panel in section["panels"]:
+            if panel["kind"] != "special":
+                continue
+            assert panel["panel"] in ("model_card", "model_toggle"), panel["panel"]
+            assert panel["fields"]
+            assert set(panel["fields"]) <= known

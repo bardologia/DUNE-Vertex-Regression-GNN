@@ -31,10 +31,42 @@ class ModelLibrary:
         "print(json.dumps({'models': models}))\n"
     )
 
+    FAMILIES = [
+        {
+            "family": "Attention and transformer",
+            "models": [
+                {"key": "gps",           "name": "GPS",               "blurb": "Local message passing plus global self-attention", "recommended": True},
+                {"key": "gps_lite",      "name": "GPS Lite",          "blurb": "Narrow GPS variant for fast iteration"},
+                {"key": "gps_cascade",   "name": "GPS Cascade",       "blurb": "GPS trunk with a cascade regression head"},
+                {"key": "gatv2",         "name": "GATv2",             "blurb": "Dynamic attention over neighbours"},
+                {"key": "gatv2_cascade", "name": "GATv2 Cascade",     "blurb": "GATv2 trunk with a cascade regression head"},
+                {"key": "transformer",   "name": "Graph Transformer", "blurb": "Full transformer convolution with edge features"},
+            ],
+        },
+        {
+            "family": "Message passing",
+            "models": [
+                {"key": "gcn",          "name": "GCN",          "blurb": "Spectral graph convolution baseline"},
+                {"key": "graphsage",    "name": "GraphSAGE",    "blurb": "Sampled neighbour aggregation"},
+                {"key": "gine",         "name": "GINE",         "blurb": "Isomorphism network with edge features"},
+                {"key": "gine_cascade", "name": "GINE Cascade", "blurb": "GINE trunk with a cascade regression head"},
+                {"key": "general_conv", "name": "GeneralConv",  "blurb": "Configurable general-purpose convolution"},
+                {"key": "res_gated",    "name": "ResGated",     "blurb": "Residual gated graph convolution"},
+            ],
+        },
+        {
+            "family": "Aggregation and dynamic graphs",
+            "models": [
+                {"key": "pna",      "name": "PNA",      "blurb": "Principal neighbourhood aggregation, multi-aggregator"},
+                {"key": "edgeconv", "name": "EdgeConv", "blurb": "Dynamic k-NN graph rebuilt in feature space"},
+            ],
+        },
+    ]
+
     def __init__(self, paths: ProjectPaths) -> None:
-        self.paths  = paths
-        self.cache  = None
-        self.lock   = threading.Lock()
+        self.paths = paths
+        self.cache = None
+        self.lock  = threading.Lock()
 
     def _signature(self) -> tuple:
         watched  = sorted((self.paths.repo_root / "models").rglob("*.py"))
@@ -67,6 +99,43 @@ class ModelLibrary:
 
         return {"ok": True, "models": payload["models"]}
 
+    def _capacity(self, defaults: dict) -> str:
+        hidden = defaults.get("hidden_dim")
+        layers = defaults.get("num_layers")
+        if hidden is None or layers is None:
+            return ""
+        return f"{hidden} dim · {layers} layers"
+
+    def _families(self, models: list[dict]) -> dict:
+        defaults  = {model["name"]: model["config_defaults"] for model in models}
+        described = {entry["key"] for family in self.FAMILIES for entry in family["models"]}
+
+        missing = sorted(set(defaults) - described)
+        unknown = sorted(described - set(defaults))
+        if missing or unknown:
+            problems = []
+            if missing:
+                problems.append(f"models with no family entry: {', '.join(missing)}")
+            if unknown:
+                problems.append(f"family entries for unknown models: {', '.join(unknown)}")
+            return {"ok": False, "error": "; ".join(problems)}
+
+        families = []
+        for family in self.FAMILIES:
+            entries = []
+            for entry in family["models"]:
+                entries.append({
+                    "key"         : entry["key"],
+                    "name"        : entry["name"],
+                    "blurb"       : entry["blurb"],
+                    "capacity"    : self._capacity(defaults[entry["key"]]),
+                    "recommended" : bool(entry.get("recommended")),
+                    "head_type"   : defaults[entry["key"]].get("head_type", ""),
+                })
+            families.append({"family": family["family"], "models": entries})
+
+        return {"ok": True, "families": families}
+
     def list(self, interpreter: str) -> dict:
         signature = self._signature()
 
@@ -74,7 +143,11 @@ class ModelLibrary:
             if self.cache is not None and self.cache[0] == signature:
                 return self.cache[1]
 
-        result = self._run_bootstrap(interpreter)
+        introspected = self._run_bootstrap(interpreter)
+        if not introspected.get("ok"):
+            return introspected
+
+        result = self._families(introspected["models"])
         if result.get("ok"):
             with self.lock:
                 self.cache = (signature, result)

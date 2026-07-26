@@ -9,31 +9,33 @@ class LayoutError(Exception):
 
 class LaunchLayout:
 
-    MODEL_PICK = {"kind": "model"}
-    RUN_PICK   = {"kind": "runpick"}
+    PICK_RUN = {"kind": "run"}
 
-    SEG_DEVICE    = {"kind": "segmented", "options": ["cuda", "cpu"]}
-    SEG_DATA_TERM = {"kind": "segmented", "options": ["mse", "huber"]}
-    SEG_PLATEAU   = {"kind": "segmented", "options": ["min", "max"]}
-    SEG_NOISE     = {"kind": "segmented", "options": ["multiplicative", "additive"]}
-    SEG_SPLIT     = {"kind": "segmented", "options": ["test", "val", "train"]}
+    CH_DEVICE    = {"kind": "choice", "options": ["cuda", "cpu"]}
+    CH_DATA_TERM = {"kind": "choice", "options": ["mse", "huber"]}
+    CH_PLATEAU   = {"kind": "choice", "options": ["min", "max"]}
+    CH_NOISE     = {"kind": "choice", "options": ["multiplicative", "additive"]}
+    CH_SPLIT     = {"kind": "choice", "options": ["test", "val", "train"]}
+    CH_SCHEDULER = {"kind": "choice", "options": ["reduce_on_plateau", "cosine_annealing", "linear", "polynomial", "exponential", "step", "constant"]}
+    CH_WARMUP    = {"kind": "choice", "options": ["linear", "cosine", "exponential", "polynomial"]}
+    CH_CLIP      = {"kind": "choice", "options": ["fixed", "adaptive_percentile", "adaptive_mean_std", "disabled"]}
 
-    SEL_SCHEDULER = {"kind": "select", "options": ["reduce_on_plateau", "cosine_annealing", "linear", "polynomial", "exponential", "step", "constant"]}
-    SEL_WARMUP    = {"kind": "select", "options": ["linear", "cosine", "exponential", "polynomial"]}
-    SEL_CLIP      = {"kind": "select", "options": ["fixed", "adaptive_percentile", "adaptive_mean_std", "disabled"]}
+    MULTI_SPLITS = {"kind": "multi", "empty": "select at least one split", "choices": [
+        {"value": "train", "label": "train"},
+        {"value": "val",   "label": "val"},
+        {"value": "test",  "label": "test"},
+    ]}
 
-    MULTI_SPLITS = {"kind": "multi", "options": ["train", "val", "test"]}
-
-    NUM_EPOCHS   = {"presets": [25, 50, 100, 200, 300]}
-    NUM_BATCH    = {"presets": [8, 16, 32, 64, 128, 256]}
-    NUM_WORKERS  = {"presets": [0, 2, 4, 8]}
-    NUM_SEED     = {"presets": [0, 42, 1234]}
-    NUM_PATIENCE = {"presets": [5, 10, 15, 25]}
-    NUM_NEIGHBOR = {"presets": [4, 8, 16, 32]}
-    NUM_RBF      = {"presets": [8, 16, 32]}
-    NUM_CPU      = {"presets": [4, 8, 10, 16]}
-    NUM_TRIALS   = {"presets": [20, 50, 100, 200]}
-    NUM_FOLDS    = {"presets": [3, 5, 10]}
+    NUM_EPOCHS   = {"kind": "number", "int": True, "min": 1, "max": 1000, "presets": [25, 50, 100, 200, 300]}
+    NUM_BATCH    = {"kind": "number", "int": True, "min": 1, "max": 4096, "presets": [8, 16, 32, 64, 128, 256]}
+    NUM_WORKERS  = {"kind": "number", "int": True, "min": 0, "max": 64,   "presets": [0, 2, 4, 8, 16]}
+    NUM_SEED     = {"kind": "number", "int": True, "min": 0, "max": 9999, "presets": [0, 1, 42, 1234]}
+    NUM_PATIENCE = {"kind": "number", "int": True, "min": 1, "max": 200,  "presets": [5, 10, 15, 25, 50]}
+    NUM_NEIGHBOR = {"kind": "number", "int": True, "min": 2, "max": 64,   "presets": [4, 8, 16, 32]}
+    NUM_RBF      = {"kind": "number", "int": True, "min": 4, "max": 64,   "presets": [8, 16, 32]}
+    NUM_CPU      = {"kind": "number", "int": True, "min": 1, "max": 64,   "presets": [4, 8, 10, 16]}
+    NUM_TRIALS   = {"kind": "number", "int": True, "min": 1, "max": 1000, "presets": [20, 50, 100, 200]}
+    NUM_FOLDS    = {"kind": "number", "int": True, "min": 2, "max": 20,   "presets": [3, 5, 10]}
 
     TEMPLATES = {
         "dataset": [
@@ -88,7 +90,7 @@ class LaunchLayout:
             {"title": "Sensor effects", "fields": [
                 {"gate": "augmentation.sensor_dropout_enabled", "fields": ["augmentation.sensor_dropout_probability"]},
                 {"gate": "augmentation.spurious_activation_enabled", "fields": ["augmentation.spurious_activation_probability", "augmentation.spurious_activation_max_light"]},
-                {"gate": "augmentation.light_noise_enabled", "fields": ["augmentation.light_noise_sigma", {"path": "augmentation.light_noise_mode", "widget": SEG_NOISE}]},
+                {"gate": "augmentation.light_noise_enabled", "fields": ["augmentation.light_noise_sigma", {"path": "augmentation.light_noise_mode", "widget": CH_NOISE}]},
                 {"gate": "augmentation.photon_thinning_enabled", "fields": ["augmentation.photon_thinning_survival"]},
                 {"gate": "augmentation.gain_jitter_enabled", "fields": ["augmentation.gain_jitter_sigma"]},
             ]},
@@ -111,14 +113,14 @@ class LaunchLayout:
         ],
         "schedule": [
             {"title": "Scheduler", "fields": [
-                {"path": "scheduler.type", "widget": SEL_SCHEDULER},
+                {"path": "scheduler.type", "widget": CH_SCHEDULER},
                 "scheduler.eta_min",
                 "scheduler.power",
                 "scheduler.step_size",
                 "scheduler.gamma",
             ]},
             {"title": "Plateau", "fields": [
-                {"path": "scheduler.mode", "widget": SEG_PLATEAU},
+                {"path": "scheduler.mode", "widget": CH_PLATEAU},
                 "scheduler.factor",
                 "scheduler.patience",
                 "scheduler.threshold",
@@ -129,7 +131,7 @@ class LaunchLayout:
                 {"gate": "warmup.warmup_enabled", "fields": [
                     "warmup.warmup_steps",
                     "warmup.warmup_start_factor",
-                    {"path": "warmup.warmup_mode", "widget": SEL_WARMUP},
+                    {"path": "warmup.warmup_mode", "widget": CH_WARMUP},
                     "warmup.warmup_poly_power",
                 ]},
             ]},
@@ -141,7 +143,7 @@ class LaunchLayout:
         ],
         "gradients": [
             {"title": "Clipping", "fields": [
-                {"path": "gradient_clipper.clip_mode", "widget": SEL_CLIP},
+                {"path": "gradient_clipper.clip_mode", "widget": CH_CLIP},
                 "gradient_clipper.max_grad_norm",
                 "gradient_clipper.clip_epsilon",
             ]},
@@ -156,7 +158,7 @@ class LaunchLayout:
         ],
         "loss": [
             {"title": "Data term", "fields": [
-                {"path": "loss.data_term", "widget": SEG_DATA_TERM},
+                {"path": "loss.data_term", "widget": CH_DATA_TERM},
                 "loss.huber_delta",
                 "loss.data_weight",
             ]},
@@ -278,7 +280,7 @@ class LaunchLayout:
     UNIVERSAL_ESSENTIALS = [
         {"path": "dataset.data.parquet_store_dir"},
         {"path": "training.io.log_base_dir"},
-        {"path": "training.loop.device", "widget": SEG_DEVICE},
+        {"path": "training.loop.device", "widget": CH_DEVICE},
         {"path": "training.loop.epochs", "widget": NUM_EPOCHS},
         {"path": "training.loop.batch_size", "widget": NUM_BATCH},
     ]
@@ -287,13 +289,13 @@ class LaunchLayout:
         "train": {
             "essentials": [
                 "run_name",
-                {"path": "model_name", "widget": MODEL_PICK},
                 {"path": "seed", "widget": NUM_SEED},
                 "tensorboard",
                 "infer_after",
             ] + UNIVERSAL_ESSENTIALS,
             "sections": [
                 {"key": "model", "title": "Model", "panels": [
+                    {"kind": "special", "panel": "model_card", "fields": ["model_name"]},
                     {"kind": "fields", "title": "Architecture", "groups": [
                         {"title": "Overrides", "fields": ["model_overrides"]},
                     ]},
@@ -302,14 +304,16 @@ class LaunchLayout:
         },
         "tune": {
             "essentials": [
-                {"path": "model_name", "widget": MODEL_PICK},
                 {"path": "tuning.n_trials", "widget": NUM_TRIALS},
                 {"path": "tuning.epochs", "widget": NUM_EPOCHS},
                 {"path": "tuning.batch_size", "widget": NUM_BATCH},
                 {"path": "dataset.data.parquet_store_dir"},
-                {"path": "training.loop.device", "widget": SEG_DEVICE},
+                {"path": "training.loop.device", "widget": CH_DEVICE},
             ],
             "sections": [
+                {"key": "model", "title": "Model", "panels": [
+                    {"kind": "special", "panel": "model_card", "fields": ["model_name"]},
+                ]},
                 {"key": "search", "title": "Search", "panels": [
                     {"kind": "fields", "title": "Optuna study", "groups": [
                         {"title": "Sampler", "fields": ["tuning.startup_trials", "tuning.warmup_trials", "tuning.warmup_steps", "tuning.random_state"]},
@@ -325,15 +329,19 @@ class LaunchLayout:
         "cross_validate": {
             "essentials": [
                 "run_name",
-                {"path": "model_name", "widget": MODEL_PICK},
                 {"path": "seed", "widget": NUM_SEED},
                 {"path": "cross_validation.n_folds", "widget": NUM_FOLDS},
             ] + UNIVERSAL_ESSENTIALS,
             "sections": [
+                {"key": "model", "title": "Model", "panels": [
+                    {"kind": "special", "panel": "model_card", "fields": ["model_name"]},
+                    {"kind": "fields", "title": "Architecture", "groups": [
+                        {"title": "Overrides", "fields": ["model_overrides"]},
+                    ]},
+                ]},
                 {"key": "folds", "title": "Folds", "panels": [
                     {"kind": "fields", "title": "Fold plan", "groups": [
                         {"title": "Partitioning", "fields": ["cross_validation.validation_fraction", "cross_validation.stratified", "cross_validation.shuffle", "cross_validation.random_state"]},
-                        {"title": "Model", "fields": ["model_overrides"]},
                     ]},
                 ]},
             ] + TRAINING_SECTIONS,
@@ -345,12 +353,12 @@ class LaunchLayout:
                 "resume",
                 {"path": "dataset.data.parquet_store_dir"},
                 {"path": "training.io.log_base_dir"},
-                {"path": "training.loop.device", "widget": SEG_DEVICE},
+                {"path": "training.loop.device", "widget": CH_DEVICE},
             ],
             "sections": [
                 {"key": "zoo", "title": "Model zoo", "panels": [
+                    {"kind": "special", "panel": "model_toggle", "fields": ["skip_models"]},
                     {"kind": "fields", "title": "Capacity matching", "groups": [
-                        {"title": "Selection", "fields": ["skip_models"]},
                         {"title": "Size match", "fields": [
                             {"gate": "size_match.enabled", "fields": [
                                 "size_match.reference_model",
@@ -402,9 +410,9 @@ class LaunchLayout:
             "sections": [
                 {"key": "inference", "title": "Inference", "panels": [
                     {"kind": "fields", "title": "Inference", "groups": [
-                        {"title": "Run", "fields": [{"path": "run_directory", "widget": RUN_PICK}]},
+                        {"title": "Run", "fields": [{"path": "run_directory", "widget": PICK_RUN}]},
                         {"title": "Evaluation", "fields": [
-                            {"path": "device", "widget": SEG_DEVICE},
+                            {"path": "device", "widget": CH_DEVICE},
                             {"path": "splits", "widget": MULTI_SPLITS},
                             {"path": "batch_size", "widget": NUM_BATCH},
                         ]},
@@ -414,9 +422,9 @@ class LaunchLayout:
         },
         "explain": {
             "essentials": [
-                {"path": "run_directory", "widget": RUN_PICK},
-                {"path": "device", "widget": SEG_DEVICE},
-                {"path": "split", "widget": SEG_SPLIT},
+                {"path": "run_directory", "widget": PICK_RUN},
+                {"path": "device", "widget": CH_DEVICE},
+                {"path": "split", "widget": CH_SPLIT},
                 {"path": "batch_size", "widget": NUM_BATCH},
                 "run_name",
                 "max_events",
@@ -488,6 +496,12 @@ class LaunchLayout:
         return [{"title": group.get("title"), "fields": [self._field_entry(item, prefix, widgets) for item in group["fields"]]} for group in groups]
 
     def _expand_panel(self, panel, widgets: dict) -> dict:
+        if panel["kind"] == "special":
+            return {"kind": "special", "panel": panel["panel"], "fields": list(panel["fields"])}
+
+        if panel["kind"] == "hidden":
+            return {"kind": "hidden", "fields": list(panel["fields"])}
+
         groups = self.TEMPLATES[panel["template"]] if "template" in panel else panel["groups"]
         return {"kind": "fields", "title": panel.get("title"), "groups": self._expand_groups(groups, panel.get("at", ""), widgets)}
 
@@ -517,6 +531,10 @@ class LaunchLayout:
 
         for section in layout["sections"]:
             for panel in section["panels"]:
+                if panel["kind"] in ("special", "hidden"):
+                    claimed.extend(panel["fields"])
+                    continue
+
                 for group in panel["groups"]:
                     for entry in group["fields"]:
                         self._entry_claims(entry, claimed)
