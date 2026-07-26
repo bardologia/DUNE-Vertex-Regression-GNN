@@ -266,6 +266,14 @@ class DatasetPipeline:
         split_dataset = self._make_dataset(split_samples, self._augmentation(), self.stats)
         return CachedGraphDataset(split_dataset, self.logger)
 
+    def run_split_samples(self):
+        self.logger.section("[Dataset Pipeline | Split Samples]")
+        self.prepare_samples()
+
+        train_base, validation_samples, test_samples = self._split_samples(self.samples)
+        train_samples = self._prepare_train_samples(train_base)
+        return {"train": train_samples, "val": validation_samples, "test": test_samples}
+
     def run(self):
         self.logger.section("[Dataset Pipeline]")
         self.prepare_samples()
