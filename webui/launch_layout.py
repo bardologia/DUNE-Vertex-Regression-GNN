@@ -26,6 +26,11 @@ class LaunchLayout:
         {"value": "test",  "label": "test"},
     ]}
 
+    MULTI_BASELINES = {"kind": "multi", "empty": "select at least one model", "choices": [
+        {"value": "lightgbm", "label": "LightGBM"},
+        {"value": "xgboost",  "label": "XGBoost"},
+    ]}
+
     NUM_EPOCHS   = {"kind": "number", "int": True, "min": 1, "max": 1000, "presets": [25, 50, 100, 200, 300]}
     NUM_BATCH    = {"kind": "number", "int": True, "min": 1, "max": 4096, "presets": [8, 16, 32, 64, 128, 256]}
     NUM_WORKERS  = {"kind": "number", "int": True, "min": 0, "max": 64,   "presets": [0, 2, 4, 8, 16]}
@@ -36,6 +41,9 @@ class LaunchLayout:
     NUM_CPU      = {"kind": "number", "int": True, "min": 1, "max": 64,   "presets": [4, 8, 10, 16]}
     NUM_TRIALS   = {"kind": "number", "int": True, "min": 1, "max": 1000, "presets": [20, 50, 100, 200]}
     NUM_FOLDS    = {"kind": "number", "int": True, "min": 2, "max": 20,   "presets": [3, 5, 10]}
+    NUM_TREES    = {"kind": "number", "int": True, "min": 100, "max": 20000, "presets": [1000, 2000, 3000, 5000]}
+    NUM_ROUNDS   = {"kind": "number", "int": True, "min": 10, "max": 1000,  "presets": [50, 100, 200]}
+    NUM_TOPCHAN  = {"kind": "number", "int": True, "min": 1, "max": 32,     "presets": [3, 5, 8, 12]}
 
     TEMPLATES = {
         "dataset": [
@@ -405,6 +413,40 @@ class LaunchLayout:
                     ]},
                 ]},
             ] + TRAINING_SECTIONS,
+        },
+        "baseline": {
+            "essentials": [
+                "run_name",
+                {"path": "seed", "widget": NUM_SEED},
+                {"path": "models", "widget": MULTI_BASELINES},
+                {"path": "baseline.search.n_trials", "widget": NUM_TRIALS},
+                {"path": "dataset.data.parquet_store_dir"},
+                {"path": "baseline.io.log_base_dir"},
+            ],
+            "sections": [
+                {"key": "search", "title": "Search", "panels": [
+                    {"kind": "fields", "title": "Optuna study", "groups": [
+                        {"title": "Sampler", "fields": ["baseline.search.startup_trials", "baseline.search.random_state"]},
+                        {"title": "Boosting budget", "fields": [
+                            {"path": "baseline.booster.max_estimators", "widget": NUM_TREES},
+                            {"path": "baseline.booster.early_stopping_rounds", "widget": NUM_ROUNDS},
+                            {"path": "baseline.booster.thread_count", "widget": NUM_CPU},
+                            {"path": "baseline.booster.device", "widget": CH_DEVICE},
+                        ]},
+                    ]},
+                ]},
+                {"key": "features", "title": "Features", "panels": [
+                    {"kind": "fields", "title": "Summary features", "groups": [
+                        {"title": "Aggregates", "fields": [
+                            {"path": "baseline.features.top_channel_count", "widget": NUM_TOPCHAN},
+                            "baseline.features.quantiles",
+                        ]},
+                    ]},
+                ]},
+                {"key": "data", "title": "Dataset", "panels": [
+                    {"kind": "fields", "title": "Dataset", "template": "dataset", "at": "dataset"},
+                ]},
+            ],
         },
         "infer": {
             "sections": [
