@@ -5,8 +5,9 @@ from pathlib     import Path
 
 import torch
 
+from configuration.baseline.general         import BaselineConfig
 from configuration.cross_validation.general import CrossValidationConfig
-from configuration.data.general             import DatasetConfig, HotChannelConfig
+from configuration.data.general             import DataConfig, DatasetConfig, HotChannelConfig
 from configuration.training.general         import TrainingConfig
 from configuration.tuning.general           import TuningConfig
 
@@ -62,6 +63,15 @@ class TuneEntryConfig:
     dataset    : DatasetConfig  = field(default_factory=DatasetConfig)
     tuning     : TuningConfig   = field(default_factory=TuningConfig)
     training   : TrainingConfig = field(default_factory=TrainingConfig)
+
+
+@dataclass
+class BaselineEntryConfig:
+    run_name : str            = ""
+    seed     : int            = 42
+    models   : tuple          = ("lightgbm", "xgboost")
+    dataset  : DatasetConfig  = field(default_factory=lambda: DatasetConfig(data=DataConfig(augment_octants=True)))
+    baseline : BaselineConfig = field(default_factory=BaselineConfig)
 
 
 @dataclass
