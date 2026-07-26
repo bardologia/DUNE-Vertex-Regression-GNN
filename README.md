@@ -134,6 +134,7 @@ DUNE-GNN/
 │   ├── tune.py                 # Optuna hyperparameter search
 │   ├── sweep.py                # energy/efficiency robustness sweep on a trained run
 │   ├── benchmark.py            # throughput / batch-size benchmarking
+│   ├── baseline.py             # tuned LightGBM/XGBoost baselines on tabular summary features
 │   ├── export_events.py        # export raw/preprocessed events
 │   ├── export_dataset_events.py
 │   └── _bootstrap.py           # environment pinning (GPU, sys.path)
@@ -207,13 +208,18 @@ python main/sweep.py --run_directory runs/<model>_<stamp> \
 # 7. Attribute graph node/edge feature importance on a trained run
 python main/explain.py --run_directory runs/<model>_<stamp>
 
-# 8. Monitor training in real time
+# 8. Tune and train the gradient-boosted baselines (LightGBM + XGBoost)
+python main/baseline.py
+
+# 9. Monitor training in real time
 tensorboard --logdir=runs/
 ```
 
 The **energy/efficiency sweep** (`main/sweep.py`) re-evaluates a trained checkpoint on its own held-out split while regenerating the optical signal under a Cartesian grid of light scale factors (`PhysicsConfig.scale_factor`) and binomial detection efficiencies (`PhysicsConfig.detection_efficiency`). The split membership and the training-split normalisation statistics are held fixed, so the sweep isolates the model's robustness to a shift in the photon-counting regime. Each axis is given as `minimum`, `maximum`, and `step`; every grid cell runs a full inference pass. Outputs are written under `runs/<run>/sweeps/energy_efficiency_<stamp>/`: a `report.md`, machine-readable `results.json` / `results.csv`, and per-metric heatmaps plus marginal line plots in `plots/`.
 
 The **feature-importance attribution** (`main/explain.py`) explains which components of the event-graph representation a trained checkpoint relies on, evaluated on its own held-out split with the training-split normalisation statistics held fixed. It reports five complementary attributions over the node and edge feature columns (individually and grouped by semantic block): **permutation importance** — the held-out degradation when a feature is shuffled across every node or edge, averaged over `--permutation_repeats` seeds with a standard deviation; **occlusion (mean-ablation) importance** — the degradation when a feature is replaced by its dataset mean; **gradient saliency** — the mean magnitude of the gradient of the squared prediction error with respect to each normalised input feature, alongside its gradient×input variant; **expected gradients** — a SHAP-consistent, axiomatic attribution that integrates the gradient of each predicted coordinate along paths from data-distribution baselines, reported per coordinate `(x, y, z)` with a completeness check (`--eg_samples`, `--eg_events`); and **Kernel SHAP** — Shapley values computed with the `shap` library over the feature channels (absent channel = dataset mean), per coordinate, with the local-accuracy property verified by a completeness ratio (`--shap_nsamples`, `--shap_events`); the per-event SHAP matrices are retained and rendered as `shap`'s native beeswarm and bar-summary plots under `plots/shap/`. Outputs are written under `runs/<run>/explainability/feature_importance_<stamp>/`: a `report.md` with ranked tables and a cross-method consensus ranking, machine-readable `results.json`, per-feature `node_importance.csv` / `edge_importance.csv`, and one publication-quality horizontal bar chart per method in `plots/`. Use `--max_events` to cap the evaluation set for a fast pass and `--split` to target `val`/`train`/`test`.
+
+The **gradient-boosted baseline** (`main/baseline.py`) trains the strongest standard-ML reference the GNNs have to beat. It reuses the exact dataset pipeline of the graph models (same persisted split logic, same frozen photon realization, octant expansion of the training split on by default), collapses each event into per-event summary features of the realized light (light scale, weighted centroids and moments, inertia eigenvalues, per-axis weighted quantiles, brightest channels), and fits one booster per coordinate with early stopping on the validation split. Hyperparameters for LightGBM and XGBoost are searched with Optuna (TPE, objective = validation Euclidean mean in metres). Each family is written as its own run under `runs/baseline_<family>_<stamp>/` with the standard `metadata/metrics.json`, `metadata/split_base_ids.json`, saved boosters in `checkpoints/`, and a `report.md` plus gain-importance plot in `analysis/`, so baseline runs appear in the web console's results browser next to the GNN runs.
 
 Every entry point wraps its configuration in a `ConfigCli`, so any nested config field can be overridden from the command line without editing source — for example:
 
