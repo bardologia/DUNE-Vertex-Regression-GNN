@@ -29,6 +29,11 @@ class ProjectPaths:
             "entry_config_module" : "configuration.benchmark.general",
             "entry_config_class"  : "BenchmarkConfig",
         },
+        "baseline": {
+            "file"                : "baseline.py",
+            "entry_config_module" : "configuration.entry.general",
+            "entry_config_class"  : "BaselineEntryConfig",
+        },
         "infer": {
             "file"                : "infer.py",
             "entry_config_module" : "configuration.entry.general",

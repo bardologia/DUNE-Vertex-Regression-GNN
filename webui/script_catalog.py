@@ -26,6 +26,11 @@ class ScriptCatalog:
             "category" : "Training",
             "purpose"  : "Benchmark the whole model zoo: capacity matching, overfit gate, max-batch probe, training, and a ranked comparison report.",
         },
+        "baseline": {
+            "label"    : "Baseline",
+            "category" : "Training",
+            "purpose"  : "Tune and train the LightGBM and XGBoost baselines on tabular summary features of the same splits, writing leaderboard-comparable runs.",
+        },
         "build_parquet_store": {
             "label"    : "Build Parquet Store",
             "category" : "Data",
@@ -51,6 +56,7 @@ class ScriptCatalog:
         "tune",
         "cross_validate",
         "benchmark",
+        "baseline",
     ]
 
     def __init__(self, paths: ProjectPaths) -> None:

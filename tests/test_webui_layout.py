@@ -10,7 +10,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "webui"))
 from launch_layout import LaunchLayout
 
 from configuration.benchmark      import BenchmarkConfig
-from configuration.entry          import CrossValidationEntryConfig, DatasetEntryConfig, InferenceEntryConfig, TrainEntryConfig, TuneEntryConfig
+from configuration.entry          import BaselineEntryConfig, CrossValidationEntryConfig, DatasetEntryConfig, InferenceEntryConfig, TrainEntryConfig, TuneEntryConfig
 from configuration.explainability import FeatureImportanceConfig
 
 
@@ -19,6 +19,7 @@ ENTRY_CONFIGS = {
     "tune"                : TuneEntryConfig,
     "cross_validate"      : CrossValidationEntryConfig,
     "benchmark"           : BenchmarkConfig,
+    "baseline"            : BaselineEntryConfig,
     "infer"               : InferenceEntryConfig,
     "explain"             : FeatureImportanceConfig,
     "build_parquet_store" : DatasetEntryConfig,
