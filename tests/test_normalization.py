@@ -61,6 +61,19 @@ def test_stats_roundtrip(tmp_path):
     assert np.allclose(loaded.target.scale, target.scale)
 
 
+def test_align_channels_copies_the_reference_frame():
+    generator = np.random.default_rng(5)
+    group     = FeatureGroupNormalizer.fit(generator.normal(size=(500, 6)).astype(np.float32))
+    reference = FeatureGroupNormalizer.fit_isotropic(generator.normal(0.0, 12.0, size=(500, 3)).astype(np.float32))
+
+    group.align_channels([1, 2, 3], reference)
+
+    assert group.methods[1:4] == ["isotropic"] * 3
+    assert np.allclose(group.center[1:4], reference.center)
+    assert np.allclose(group.scale[1:4],  reference.scale)
+    assert len(set(group.scale[1:4].tolist())) == 1
+
+
 def test_empty_group_normalizes_nothing():
     group = FeatureGroupNormalizer.fit_empty()
 

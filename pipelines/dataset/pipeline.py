@@ -162,7 +162,7 @@ class DatasetPipeline:
         else:
             stats_source = clean_train_dataset
 
-        self.stats = StatsEstimator(stats_source, self.config.data.stats_sample_size, self.logger).fit()
+        self.stats = StatsEstimator(stats_source, self.config.data.stats_sample_size, self.logger, self.config).fit()
 
     def _train_dataset(self, train_samples, augmentation):
         if self.raw_train_graphs is not None:

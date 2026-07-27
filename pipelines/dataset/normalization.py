@@ -85,6 +85,16 @@ class FeatureGroupNormalizer:
 
         return cls(methods, centers.astype(np.float32), scales, log_masks)
 
+    def align_channels(self, channels, reference):
+        for axis, index in enumerate(channels):
+            self.methods[index]  = reference.methods[axis]
+            self.center[index]   = reference.center[axis]
+            self.scale[index]    = reference.scale[axis]
+            self.log_mask[index] = reference.log_mask[axis]
+
+        self.device_tensors = {}
+        return self
+
     def forward_numpy(self, matrix):
         matrix      = np.asarray(matrix, dtype=np.float32)
         transformed = np.where(self.log_mask, np.log1p(np.maximum(matrix, 0.0)), matrix)
