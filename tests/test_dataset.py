@@ -2,7 +2,7 @@ import numpy as np
 import torch
 
 from configuration import DatasetConfig
-from pipelines.dataset import DatasetPipeline, Graph
+from pipelines.dataset import DatasetPipeline, FeatureLayout, Graph
 
 
 def test_graph_builder_shapes():
@@ -93,6 +93,35 @@ def test_dataset_pipeline_produces_splits(dataset_config, quiet_logger):
     assert len(stats.target.methods)  == 3
     assert len(stats.node.methods)    == 17
     assert len(stats.graph.methods)   == 9
+
+
+def test_spatial_channels_share_the_target_scale(dataset_config, quiet_logger):
+    _, stats = DatasetPipeline(dataset_config, quiet_logger).run()
+
+    layout          = FeatureLayout(dataset_config)
+    node_positions  = FeatureLayout.group_index(layout.node_features())["position"]
+    graph_centroid  = FeatureLayout.group_index(layout.graph_features())["light_centroid"]
+    target_scale    = float(stats.target.scale[0])
+
+    assert np.allclose(stats.node.scale[node_positions],  target_scale)
+    assert np.allclose(stats.graph.scale[graph_centroid], target_scale)
+    assert np.allclose(stats.node.center[node_positions],  stats.target.center)
+    assert np.allclose(stats.graph.center[graph_centroid], stats.target.center)
+    assert not np.allclose(stats.node.scale[node_positions[0]], stats.node.scale[len(node_positions)])
+
+
+def test_light_centroid_maps_onto_the_normalized_target(dataset_config, quiet_logger):
+    datasets, stats = DatasetPipeline(dataset_config, quiet_logger).run()
+
+    layout         = FeatureLayout(dataset_config)
+    graph_centroid = FeatureLayout.group_index(layout.graph_features())["light_centroid"]
+    sample         = datasets["test"][0]
+
+    centroid  = sample.graph_attr[0, graph_centroid].numpy()
+    recovered = stats.target.inverse_torch(torch.tensor(centroid).unsqueeze(0), "cpu").numpy()[0]
+    raw       = stats.graph.inverse_torch(sample.graph_attr, "cpu").numpy()[0, graph_centroid]
+
+    assert np.allclose(recovered, raw, atol=1e-3, rtol=1e-3)
 
 
 def test_augmentation_reaches_every_split(parquet_store, quiet_logger):

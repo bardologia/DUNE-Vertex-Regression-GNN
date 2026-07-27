@@ -6,6 +6,8 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
+from pipelines.dataset.graph import FeatureLayout
+
 
 class GraphNormalizer:
     def __init__(self, stats):
@@ -133,10 +135,24 @@ class CachedGraphDataset(Dataset):
 
 
 class StatsEstimator:
-    def __init__(self, dataset, sample_size, logger):
-        self.dataset     = dataset
-        self.sample_size = sample_size
-        self.logger      = logger
+    NODE_SPATIAL_GROUP  = "position"
+    GRAPH_SPATIAL_GROUP = "light_centroid"
+
+    def __init__(self, dataset, sample_size, logger, dataset_config):
+        self.dataset        = dataset
+        self.sample_size    = sample_size
+        self.logger         = logger
+        self.dataset_config = dataset_config
+
+    def _align_spatial_frames(self, node_group, graph_group, target_group):
+        layout = FeatureLayout(self.dataset_config)
+
+        node_group.align_channels(FeatureLayout.group_index(layout.node_features())[self.NODE_SPATIAL_GROUP], target_group)
+
+        if layout.graph_scalar_features:
+            graph_group.align_channels(FeatureLayout.group_index(layout.graph_features())[self.GRAPH_SPATIAL_GROUP], target_group)
+
+        self.logger.subsection(f"Spatial channels tied to the isotropic target frame (scale {float(target_group.scale[0]):.4f} m)")
 
     def fit(self):
         from pipelines.dataset.normalization import FeatureGroupNormalizer, NormalizationStats
@@ -167,6 +183,7 @@ class StatsEstimator:
         target_group = FeatureGroupNormalizer.fit_isotropic(np.concatenate(target_segments, axis=0))
 
         self.logger.subsection(f"Fitted normalization on {count} events")
+        self._align_spatial_frames(node_group, graph_group, target_group)
 
         rows = []
         for group_name, group in [("node", node_group), ("edge", edge_group), ("graph", graph_group), ("target", target_group)]:
