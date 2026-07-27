@@ -72,6 +72,19 @@ class FeatureGroupNormalizer:
         return cls([], np.zeros(0, dtype=np.float32), np.zeros(0, dtype=np.float32), np.zeros(0, dtype=bool))
 
     @classmethod
+    def fit_axiswise(cls, matrix):
+        matrix             = np.asarray(matrix, dtype=np.float64)
+        number_of_channels = matrix.shape[1]
+
+        centers = matrix.mean(axis=0)
+        scales  = matrix.std(axis=0) + ChannelStrategySelector.EPSILON
+
+        methods   = ["axiswise"] * number_of_channels
+        log_masks = np.zeros(number_of_channels, dtype=bool)
+
+        return cls(methods, centers.astype(np.float32), scales.astype(np.float32), log_masks)
+
+    @classmethod
     def fit_isotropic(cls, matrix):
         matrix             = np.asarray(matrix, dtype=np.float64)
         number_of_channels = matrix.shape[1]

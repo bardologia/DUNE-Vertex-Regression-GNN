@@ -19,6 +19,7 @@ class LaunchLayout:
     CH_SCHEDULER = {"kind": "choice", "options": ["reduce_on_plateau", "cosine_annealing", "linear", "polynomial", "exponential", "step", "constant"]}
     CH_WARMUP    = {"kind": "choice", "options": ["linear", "cosine", "exponential", "polynomial"]}
     CH_CLIP      = {"kind": "choice", "options": ["fixed", "adaptive_percentile", "adaptive_mean_std", "disabled"]}
+    CH_FRAME     = {"kind": "choice", "options": ["isotropic", "axiswise"]}
 
     MULTI_SPLITS = {"kind": "multi", "empty": "select at least one split", "choices": [
         {"value": "train", "label": "train"},
@@ -52,6 +53,7 @@ class LaunchLayout:
                 "data.build_store",
                 {"path": "data.store_worker_count", "widget": NUM_CPU},
                 "data.stats_sample_size",
+                {"path": "data.target_frame", "widget": CH_FRAME},
             ]},
             {"title": "Sampling", "fields": [
                 "data.augment_octants",
