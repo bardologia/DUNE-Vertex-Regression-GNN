@@ -96,7 +96,8 @@ def test_dataset_pipeline_produces_splits(dataset_config, quiet_logger):
     assert len(stats.graph.methods)   == 9
 
 
-def test_spatial_channels_share_the_target_scale(dataset_config, quiet_logger):
+def test_isotropic_target_frame_shares_one_scale(dataset_config, quiet_logger):
+    dataset_config.data.target_frame = "isotropic"
     _, stats = DatasetPipeline(dataset_config, quiet_logger).run()
 
     layout          = FeatureLayout(dataset_config)
@@ -106,9 +107,20 @@ def test_spatial_channels_share_the_target_scale(dataset_config, quiet_logger):
 
     assert np.allclose(stats.node.scale[node_positions],  target_scale)
     assert np.allclose(stats.graph.scale[graph_centroid], target_scale)
+    assert not np.allclose(stats.node.scale[node_positions[0]], stats.node.scale[len(node_positions)])
+
+
+def test_spatial_channels_adopt_the_target_frame(dataset_config, quiet_logger):
+    _, stats = DatasetPipeline(dataset_config, quiet_logger).run()
+
+    layout         = FeatureLayout(dataset_config)
+    node_positions = FeatureLayout.group_index(layout.node_features())["position"]
+    graph_centroid = FeatureLayout.group_index(layout.graph_features())["light_centroid"]
+
+    assert np.allclose(stats.node.scale[node_positions],   stats.target.scale)
+    assert np.allclose(stats.graph.scale[graph_centroid],  stats.target.scale)
     assert np.allclose(stats.node.center[node_positions],  stats.target.center)
     assert np.allclose(stats.graph.center[graph_centroid], stats.target.center)
-    assert not np.allclose(stats.node.scale[node_positions[0]], stats.node.scale[len(node_positions)])
 
 
 def test_axiswise_target_frame_whitens_each_axis(dataset_config, quiet_logger):
