@@ -18,9 +18,15 @@ class BoostedAxisEnsemble:
 
     def fit(self, features, targets, validation_features, validation_targets, params):
         self.models = []
+
+        features            = np.ascontiguousarray(features)
+        validation_features = np.ascontiguousarray(validation_features)
+
         for axis_index in range(targets.shape[1]):
-            model = self._fit_axis(features, targets[:, axis_index], validation_features, validation_targets[:, axis_index], params, axis_index)
-            self.models.append(model)
+            target            = np.ascontiguousarray(targets[:, axis_index])
+            validation_target = np.ascontiguousarray(validation_targets[:, axis_index])
+
+            self.models.append(self._fit_axis(features, target, validation_features, validation_target, params, axis_index))
         return self
 
     def predict(self, features):
@@ -60,7 +66,8 @@ class LightGbmBaseline(BoostedAxisEnsemble):
         )
         model.fit(
             features, target,
-            eval_set    = [(validation_features, validation_target)],
+            eval_X      = validation_features,
+            eval_y      = validation_target,
             eval_metric = "l2",
             callbacks   = [lightgbm.early_stopping(self.booster.early_stopping_rounds, verbose=False), lightgbm.log_evaluation(period=0)],
         )
