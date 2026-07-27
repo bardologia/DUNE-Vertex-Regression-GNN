@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import torch
 
 from configuration import DatasetConfig
@@ -108,6 +109,28 @@ def test_spatial_channels_share_the_target_scale(dataset_config, quiet_logger):
     assert np.allclose(stats.node.center[node_positions],  stats.target.center)
     assert np.allclose(stats.graph.center[graph_centroid], stats.target.center)
     assert not np.allclose(stats.node.scale[node_positions[0]], stats.node.scale[len(node_positions)])
+
+
+def test_axiswise_target_frame_whitens_each_axis(dataset_config, quiet_logger):
+    dataset_config.data.target_frame = "axiswise"
+    datasets, stats = DatasetPipeline(dataset_config, quiet_logger).run()
+
+    layout         = FeatureLayout(dataset_config)
+    node_positions = FeatureLayout.group_index(layout.node_features())["position"]
+    targets        = np.concatenate([datasets["train"][index].y.numpy() for index in range(len(datasets["train"]))])
+
+    assert stats.target.methods == ["axiswise"] * 3
+    assert len(set(stats.target.scale.tolist())) == 3
+    assert np.allclose(targets.mean(axis=0), 0.0, atol=0.2)
+    assert np.allclose(targets.std(axis=0),  1.0, atol=0.3)
+    assert np.allclose(stats.node.scale[node_positions], stats.target.scale)
+
+
+def test_unknown_target_frame_raises(dataset_config, quiet_logger):
+    dataset_config.data.target_frame = "spherical"
+
+    with pytest.raises(ValueError, match="Unknown data.target_frame"):
+        DatasetPipeline(dataset_config, quiet_logger).run()
 
 
 def test_light_centroid_maps_onto_the_normalized_target(dataset_config, quiet_logger):

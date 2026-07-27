@@ -137,12 +137,24 @@ class CachedGraphDataset(Dataset):
 class StatsEstimator:
     NODE_SPATIAL_GROUP  = "position"
     GRAPH_SPATIAL_GROUP = "light_centroid"
+    TARGET_FRAMES       = ("isotropic", "axiswise")
 
     def __init__(self, dataset, sample_size, logger, dataset_config):
         self.dataset        = dataset
         self.sample_size    = sample_size
         self.logger         = logger
         self.dataset_config = dataset_config
+
+    def _fit_target_frame(self, matrix):
+        from pipelines.dataset.normalization import FeatureGroupNormalizer
+
+        frame = self.dataset_config.data.target_frame
+        if frame not in self.TARGET_FRAMES:
+            raise ValueError(f"Unknown data.target_frame '{frame}'. Expected any of {self.TARGET_FRAMES}.")
+
+        if frame == "isotropic":
+            return FeatureGroupNormalizer.fit_isotropic(matrix)
+        return FeatureGroupNormalizer.fit_axiswise(matrix)
 
     def _align_spatial_frames(self, node_group, graph_group, target_group):
         layout = FeatureLayout(self.dataset_config)
@@ -152,7 +164,8 @@ class StatsEstimator:
         if layout.graph_scalar_features:
             graph_group.align_channels(FeatureLayout.group_index(layout.graph_features())[self.GRAPH_SPATIAL_GROUP], target_group)
 
-        self.logger.subsection(f"Spatial channels tied to the isotropic target frame (scale {float(target_group.scale[0]):.4f} m)")
+        scales = ", ".join(f"{float(value):.4f}" for value in target_group.scale)
+        self.logger.subsection(f"Spatial channels tied to the {self.dataset_config.data.target_frame} target frame (scale {scales} m)")
 
     def fit(self):
         from pipelines.dataset.normalization import FeatureGroupNormalizer, NormalizationStats
@@ -180,7 +193,7 @@ class StatsEstimator:
         node_group   = FeatureGroupNormalizer.fit(np.concatenate(node_segments, axis=0))
         edge_group   = FeatureGroupNormalizer.fit(np.concatenate(edge_segments, axis=0))
         graph_group  = FeatureGroupNormalizer.fit(np.concatenate(graph_segments, axis=0)) if graph_segments else FeatureGroupNormalizer.fit_empty()
-        target_group = FeatureGroupNormalizer.fit_isotropic(np.concatenate(target_segments, axis=0))
+        target_group = self._fit_target_frame(np.concatenate(target_segments, axis=0))
 
         self.logger.subsection(f"Fitted normalization on {count} events")
         self._align_spatial_frames(node_group, graph_group, target_group)
