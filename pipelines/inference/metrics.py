@@ -3,23 +3,24 @@ from __future__ import annotations
 import numpy as np
 import torch
 
+from pipelines.shared.coordinate_errors import CoordinateErrors
+
 
 class InferenceMetrics:
-    COORDINATE_NAMES = ("x", "y", "z")
+    COORDINATE_NAMES = CoordinateErrors.COORDINATE_NAMES
 
     def __init__(self, logger, tracker=None):
         self.logger  = logger
         self.tracker = tracker
 
     def _per_coordinate(self, difference, absolute_difference, targets):
-        results = {}
+        results = CoordinateErrors().update(difference).results()
+
         for index, name in enumerate(self.COORDINATE_NAMES):
             residual_sum_of_squares = torch.sum(difference[:, index] ** 2).item()
             total_sum_of_squares    = torch.sum((targets[:, index] - targets[:, index].mean()) ** 2).item()
             r_squared               = 1 - (residual_sum_of_squares / total_sum_of_squares) if total_sum_of_squares > 0 else float("nan")
 
-            results[f"mae_{name}"]    = float(absolute_difference[:, index].mean().item())
-            results[f"rmse_{name}"]   = float(torch.sqrt((difference[:, index] ** 2).mean()).item())
             results[f"median_{name}"] = float(absolute_difference[:, index].median().item())
             results[f"std_{name}"]    = float(absolute_difference[:, index].std(correction=0).item())
             results[f"bias_{name}"]   = float(difference[:, index].mean().item())
