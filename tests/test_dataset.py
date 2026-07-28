@@ -96,6 +96,44 @@ def test_dataset_pipeline_produces_splits(dataset_config, quiet_logger):
     assert len(stats.graph.methods)   == 9
 
 
+def test_global_node_reaches_every_node_in_two_hops():
+    generator = np.random.default_rng(0)
+    positions = generator.normal(size=(40, 3)).astype(np.float32)
+    light     = generator.exponential(size=40).astype(np.float32)
+
+    config = DatasetConfig()
+    plain  = Graph(config).build_from_arrays(positions, light)
+
+    config.graph.global_node = True
+    with_global              = Graph(config).build_from_arrays(positions, light)
+
+    global_index = with_global.x.shape[0] - 1
+    source       = with_global.edge_index[0]
+    target       = with_global.edge_index[1]
+
+    assert with_global.x.shape[0]  == plain.x.shape[0] + 1
+    assert with_global.x.shape[1]  == plain.x.shape[1]
+    assert with_global.edge_attr.shape[1] == plain.edge_attr.shape[1]
+    assert int((target == global_index).sum()) == global_index
+    assert int((source == global_index).sum()) == global_index
+    assert torch.allclose(with_global.graph_attr, plain.graph_attr)
+
+
+def test_global_node_sits_at_the_light_centroid():
+    generator = np.random.default_rng(1)
+    positions = generator.normal(size=(30, 3)).astype(np.float32)
+    light     = generator.exponential(size=30).astype(np.float32)
+
+    config = DatasetConfig()
+    config.graph.active_only = False
+    config.graph.global_node = True
+
+    data     = Graph(config).build_from_arrays(positions, light)
+    centroid = (light[:, None] * positions).sum(axis=0) / light.sum()
+
+    assert np.allclose(data.x[-1, 0:3].numpy(), centroid, atol=1e-4)
+
+
 def test_isotropic_target_frame_shares_one_scale(dataset_config, quiet_logger):
     dataset_config.data.target_frame = "isotropic"
     _, stats = DatasetPipeline(dataset_config, quiet_logger).run()

@@ -41,6 +41,7 @@ class GraphConfig:
 
     active_only        : bool  = True
     max_active_nodes   : int   = 0
+    global_node        : bool  = False
 
     direction_features    : bool  = True
     inertia_features      : bool  = True
