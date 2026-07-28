@@ -15,6 +15,8 @@ from tools.training.scheduling         import Scheduler, Warmup
 from tools.training.stopping           import EarlyStopping
 from tools.training.vram_reservation   import VramReservation
 
+from pipelines.shared.coordinate_errors import CoordinateErrors
+
 from pipelines.training.loss import Loss
 
 
@@ -224,17 +226,25 @@ class Trainer:
         self.tracker.log_scalar("throughput/epoch_time_s",   epoch_time,            epoch)
         self.tracker.log_scalar("throughput/data_wait_frac", data_wait / elapsed,   epoch)
 
+    def _physical_residual(self, predictions, targets):
+        physical_predictions = self.stats.target.inverse_torch(predictions, self.device)
+        physical_targets     = self.stats.target.inverse_torch(targets, self.device)
+        return physical_predictions - physical_targets
+
     def evaluate(self, loader):
         self.model.eval()
 
-        weighted_loss = 0.0
-        graph_count   = 0
+        weighted_loss     = 0.0
+        graph_count       = 0
+        coordinate_errors = CoordinateErrors()
 
         try:
             with torch.no_grad():
                 for data in loader:
-                    data          = data.to(self.device, non_blocking=True)
-                    _, loss_dict  = self.forward(data)
+                    data                   = data.to(self.device, non_blocking=True)
+                    predictions, loss_dict = self.forward(data)
+
+                    coordinate_errors.update(self._physical_residual(predictions, data.y))
 
                     weighted_loss += loss_dict["total_loss"].item() * data.num_graphs
                     graph_count   += data.num_graphs
@@ -242,7 +252,7 @@ class Trainer:
             if self.config.memory.clear_cache_after_eval:
                 self._clear_memory()
 
-        return {"avg_loss": weighted_loss / max(1, graph_count)}
+        return {"avg_loss": weighted_loss / max(1, graph_count), "coordinate_errors": coordinate_errors.results()}
 
     def _validates_at(self, epoch: int) -> bool:
         return ((epoch + 1) % self.validation_frequency == 0) or ((epoch + 1) == self.epochs)
@@ -255,13 +265,32 @@ class Trainer:
         train_loss = self.train_epoch(train_loader, epoch)
 
         if not self._validates_at(epoch):
-            return train_loss, float("nan")
+            return train_loss, float("nan"), {}
 
         with self.ema.applied(self.model):
-            validation_loss = self.evaluate(val_loader)["avg_loss"]
+            evaluation = self.evaluate(val_loader)
 
-        self.scheduler.step_metric(validation_loss)
-        return train_loss, validation_loss
+        self.scheduler.step_metric(evaluation["avg_loss"])
+        return train_loss, evaluation["avg_loss"], evaluation["coordinate_errors"]
+
+    def _log_coordinate_errors(self, coordinate_errors, epoch):
+        if not coordinate_errors:
+            return
+
+        for metric in CoordinateErrors.METRIC_NAMES:
+            for name in CoordinateErrors.COORDINATE_NAMES:
+                self.tracker.log_scalar(f"val_{metric}/{name}", coordinate_errors[f"{metric}_{name}"], epoch)
+
+            self.logger.subsection(f"Epoch {epoch + 1} val {metric.upper():<4} x/y/z (m) = {self._coordinate_row(coordinate_errors, metric)}")
+
+    def _monitor_fields(self, coordinate_errors):
+        if not coordinate_errors:
+            return {}
+
+        return {f"val_{metric} x/y/z (m)": self._coordinate_row(coordinate_errors, metric) for metric in CoordinateErrors.METRIC_NAMES}
+
+    def _coordinate_row(self, coordinate_errors, metric):
+        return " / ".join(f"{coordinate_errors[f'{metric}_{name}']:.3f}" for name in CoordinateErrors.COORDINATE_NAMES)
 
     def train(self, train_loader, val_loader):
         self.logger.section("[Training Loop]")
@@ -285,8 +314,8 @@ class Trainer:
         try:
             with self.logger.live_monitor("Training Progress", enabled=not self.tuning_mode) as live_monitor:
                 for epoch in range(start_epoch, self.epochs):
-                    last_epoch                  = epoch
-                    train_loss, validation_loss = self.run_epoch(train_loader, val_loader, epoch)
+                    last_epoch                                     = epoch
+                    train_loss, validation_loss, coordinate_errors = self.run_epoch(train_loader, val_loader, epoch)
 
                     self.train_losses.append(train_loss)
                     self.val_losses.append(validation_loss)
@@ -296,6 +325,7 @@ class Trainer:
 
                     if self._validates_at(epoch):
                         self.tracker.log_scalar("loss/val", validation_loss, epoch)
+                        self._log_coordinate_errors(coordinate_errors, epoch)
                         self.checkpoint.step(validation_loss, epoch, self)
                         stopped = self.early_stopping(validation_loss, epoch)
 
@@ -311,6 +341,7 @@ class Trainer:
                         best_val_loss = self.checkpoint.best_val_loss,
                         best_epoch    = self.checkpoint.best_epoch + 1,
                         lr            = self.scheduler.effective_lrs()[0],
+                        **self._monitor_fields(coordinate_errors),
                     )
 
                     if stopped:

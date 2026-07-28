@@ -77,8 +77,8 @@ class Tuner:
 
         best_validation_loss = float("inf")
         for epoch in range(self.tuning.epochs):
-            _, validation_loss   = trainer.run_epoch(self.train_loader, self.val_loader, epoch)
-            best_validation_loss = min(best_validation_loss, validation_loss)
+            _, validation_loss, _ = trainer.run_epoch(self.train_loader, self.val_loader, epoch)
+            best_validation_loss  = min(best_validation_loss, validation_loss)
 
             trial.report(validation_loss, epoch)
             if trial.should_prune():
