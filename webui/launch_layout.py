@@ -74,6 +74,7 @@ class LaunchLayout:
                 "graph.bidirectional",
                 "graph.active_only",
                 "graph.max_active_nodes",
+                "graph.global_node",
                 {"path": "graph.edge_rbf_count", "widget": NUM_RBF},
                 "graph.edge_rbf_max",
             ]},

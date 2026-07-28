@@ -148,14 +148,32 @@ class EdgeFeatures(GraphAssembler):
         edge_attr  = torch.tensor(interleaved_features, dtype=torch.float32)
         return edge_index, edge_attr
 
-    def build(self, positions, light, neighbor_distances, neighbor_indices):
-        number_of_nodes                 = int(positions.shape[0])
+    def _neighbor_pairs(self, number_of_nodes, neighbor_distances, neighbor_indices):
         neighbor_indices_without_self   = neighbor_indices[:, 1:]
         neighbor_distances_without_self = neighbor_distances[:, 1:]
 
-        destination_node_indices = np.repeat(np.arange(number_of_nodes), neighbor_indices_without_self.shape[1]).astype(np.int64)
-        source_node_indices      = neighbor_indices_without_self.reshape(-1).astype(np.int64)
-        distance                 = neighbor_distances_without_self.reshape(-1).astype(np.float64)
+        destination = np.repeat(np.arange(number_of_nodes), neighbor_indices_without_self.shape[1]).astype(np.int64)
+        source      = neighbor_indices_without_self.reshape(-1).astype(np.int64)
+        distance    = neighbor_distances_without_self.reshape(-1).astype(np.float64)
+        return source, destination, distance
+
+    def _append_pairs(self, positions, pairs, source_node_indices, destination_node_indices, distance):
+        extra_source, extra_destination = pairs
+        extra_distance                  = np.linalg.norm(positions[extra_destination] - positions[extra_source], axis=1).astype(np.float64)
+
+        return (
+            np.concatenate([source_node_indices,      extra_source]),
+            np.concatenate([destination_node_indices, extra_destination]),
+            np.concatenate([distance,                 extra_distance]),
+        )
+
+    def build(self, positions, light, neighbor_distances, neighbor_indices, extra_pairs=None):
+        number_of_nodes = int(neighbor_indices.shape[0])
+
+        source_node_indices, destination_node_indices, distance = self._neighbor_pairs(number_of_nodes, neighbor_distances, neighbor_indices)
+
+        if extra_pairs is not None:
+            source_node_indices, destination_node_indices, distance = self._append_pairs(positions, extra_pairs, source_node_indices, destination_node_indices, distance)
 
         source_positions      = positions[source_node_indices]
         destination_positions = positions[destination_node_indices]
@@ -199,6 +217,39 @@ class GraphFeatures(GraphAssembler):
         return torch.tensor(graph_features, dtype=torch.float32).unsqueeze(0)
 
 
+class GlobalNode(GraphAssembler):
+    def __init__(self, config):
+        super().__init__(config)
+        self.enabled = config.graph.global_node
+
+    def append(self, positions, light):
+        total_light = light.sum() + self.EPSILON
+        centroid    = self._light_centroid(positions, light, total_light)
+
+        positions = np.vstack([positions, centroid[None, :]]).astype(np.float32)
+        light     = np.append(light, light.mean()).astype(np.float32)
+        return positions, light
+
+    def extend_neighbors(self, positions, light, neighbor_distances, neighbor_indices):
+        neighbor_count = neighbor_indices.shape[1] - 1
+        global_index   = positions.shape[0] - 1
+
+        brightest = np.argsort(light[:global_index])[::-1][:neighbor_count]
+        indices   = np.concatenate([[global_index], brightest]).astype(np.int64)
+        distances = np.linalg.norm(positions[indices] - positions[global_index][None, :], axis=1).astype(np.float64)
+
+        return np.vstack([neighbor_distances, distances[None, :]]), np.vstack([neighbor_indices, indices[None, :]])
+
+    def pairs(self, number_of_nodes):
+        real         = np.arange(number_of_nodes - 1, dtype=np.int64)
+        global_index = np.full(number_of_nodes - 1, number_of_nodes - 1, dtype=np.int64)
+
+        if self.bidirectional:
+            return real, global_index
+
+        return np.concatenate([real, global_index]), np.concatenate([global_index, real])
+
+
 class ActiveNodeSelector:
     MINIMUM_NODES = 2
 
@@ -235,6 +286,7 @@ class Graph:
     def __init__(self, config):
         self.config         = config
         self.node_selector  = ActiveNodeSelector(config)
+        self.global_node    = GlobalNode(config)
         self.node_features  = NodeFeatures(config)
         self.edge_features  = EdgeFeatures(config)
         self.graph_features = GraphFeatures(config)
@@ -247,13 +299,21 @@ class Graph:
         positions, light = self.node_selector.select(positions, light)
 
         neighbor_distances, neighbor_indices = self.node_features._nearest_neighbors(positions)
+        extra_pairs                          = None
+        scalar_positions, scalar_light       = positions, light
 
+        if self.global_node.enabled:
+            positions, light                     = self.global_node.append(positions, light)
+            neighbor_distances, neighbor_indices = self.global_node.extend_neighbors(positions, light, neighbor_distances, neighbor_indices)
+            extra_pairs                          = self.global_node.pairs(positions.shape[0])
+
+        real_count            = scalar_positions.shape[0]
         node_features         = self.node_features.build(positions, light, neighbor_indices)
-        edge_index, edge_attr = self.edge_features.build(positions, light, neighbor_distances, neighbor_indices)
+        edge_index, edge_attr = self.edge_features.build(positions, light, neighbor_distances[:real_count], neighbor_indices[:real_count], extra_pairs)
 
         data = Data(x=node_features, edge_index=edge_index, edge_attr=edge_attr)
         if self.graph_scalars:
-            data.graph_attr = self.graph_features.build(positions, light)
+            data.graph_attr = self.graph_features.build(scalar_positions, scalar_light)
         return data
 
 
