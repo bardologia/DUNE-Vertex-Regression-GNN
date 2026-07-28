@@ -14,6 +14,8 @@ class ResultsBrowser:
     MAX_DEPTH           = 6
     BEST_METRIC_SPLITS  = ("test", "val", "train")
     BEST_METRIC_NAME    = "euclidean_mean"
+    COORDINATE_NAMES    = ("x", "y", "z")
+    ERROR_METRIC_NAMES  = ("mae", "rmse")
 
     def __init__(self, paths: ProjectPaths, logger: ServerLogger) -> None:
         self.paths  = paths
@@ -34,17 +36,37 @@ class ResultsBrowser:
         config = json.loads(config_path.read_text(encoding="utf-8"))
         return str(config.get("model_name", "unknown"))
 
-    def _best_metric(self, run_directory: Path):
+    def _metrics_payload(self, run_directory: Path):
         metrics_path = run_directory / "metadata" / "metrics.json"
         if not metrics_path.is_file():
             return None
+        return json.loads(metrics_path.read_text(encoding="utf-8"))
 
-        payload = json.loads(metrics_path.read_text(encoding="utf-8"))
-        splits  = payload.get("splits", {})
+    def _best_metric(self, metrics):
+        if metrics is None:
+            return None
+
+        splits = metrics.get("splits", {})
         for split_name in self.BEST_METRIC_SPLITS:
             split_metrics = splits.get(split_name, {})
             if self.BEST_METRIC_NAME in split_metrics:
-                return {"name": f"{split_name}/{self.BEST_METRIC_NAME}", "value": split_metrics[self.BEST_METRIC_NAME], "unit": payload.get("unit")}
+                return {"name": f"{split_name}/{self.BEST_METRIC_NAME}", "value": split_metrics[self.BEST_METRIC_NAME], "unit": metrics.get("unit")}
+        return None
+
+    def _coordinate_errors(self, metrics):
+        if metrics is None:
+            return None
+
+        splits        = metrics.get("splits", {})
+        required_keys = [f"{metric}_{name}" for metric in self.ERROR_METRIC_NAMES for name in self.COORDINATE_NAMES]
+
+        for split_name in self.BEST_METRIC_SPLITS:
+            split_metrics = splits.get(split_name, {})
+            if not all(key in split_metrics for key in required_keys):
+                continue
+
+            values = {metric: {name: split_metrics[f"{metric}_{name}"] for name in self.COORDINATE_NAMES} for metric in self.ERROR_METRIC_NAMES}
+            return {"split": split_name, "unit": metrics.get("unit"), "values": values}
         return None
 
     def _timestamp(self, run_directory: Path) -> str:
@@ -75,13 +97,16 @@ class ResultsBrowser:
         return {"name": directory.name, "files": files, "children": children}
 
     def _run(self, run_directory: Path) -> dict:
+        metrics = self._metrics_payload(run_directory)
+
         return {
-            "name"        : run_directory.name,
-            "path"        : str(run_directory),
-            "model"       : self._model_name(run_directory),
-            "timestamp"   : self._timestamp(run_directory),
-            "best_metric" : self._best_metric(run_directory),
-            "tree"        : self._tree(run_directory, 0),
+            "name"              : run_directory.name,
+            "path"              : str(run_directory),
+            "model"             : self._model_name(run_directory),
+            "timestamp"         : self._timestamp(run_directory),
+            "best_metric"       : self._best_metric(metrics),
+            "coordinate_errors" : self._coordinate_errors(metrics),
+            "tree"              : self._tree(run_directory, 0),
         }
 
     def list_runs(self) -> dict:
