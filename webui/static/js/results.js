@@ -40,10 +40,33 @@ class ResultsPanel {
       item.innerHTML =
         `<div class="run-item__name">${window.escapeHtml(run.name)}</div>` +
         `<div class="run-item__meta"><span>${window.escapeHtml(run.model)}</span><span class="run-item__metric">${window.escapeHtml(String(metric))}</span></div>` +
+        this._errorRows(run.coordinate_errors) +
         `<div class="run-item__meta"><span>${window.escapeHtml(run.timestamp.replace("T", " "))}</span></div>`;
       item.addEventListener("click", () => this._select(run.name));
       this.listElement.appendChild(item);
     });
+  }
+
+  _errorRows(errors) {
+    if (!errors) return "";
+    return Object.entries(errors.values)
+      .map(([metric, axes]) => {
+        const cells = Object.entries(axes).map(([axis, value]) => `${axis} ${value.toFixed(2)}`).join("  ");
+        return `<div class="run-item__meta"><span>${window.escapeHtml(metric)}</span><span class="run-item__metric">${window.escapeHtml(cells)}</span></div>`;
+      })
+      .join("");
+  }
+
+  _errorSpecs(errors) {
+    if (!errors) return "";
+    const unit = errors.unit ? " " + errors.unit : "";
+    return Object.entries(errors.values)
+      .map(([metric, axes]) => {
+        const label = `${errors.split}/${metric} ${Object.keys(axes).join("/")}`;
+        const value = Object.values(axes).map((entry) => entry.toFixed(3)).join(" / ") + unit;
+        return `<div class="spec"><span class="spec__k">${window.escapeHtml(label)}</span><span class="spec__v">${window.escapeHtml(value)}</span></div>`;
+      })
+      .join("");
   }
 
   _select(name) {
@@ -75,6 +98,7 @@ class ResultsPanel {
       `<div class="spec"><span class="spec__k">model</span><span class="spec__v">${window.escapeHtml(run.model)}</span></div>` +
       `<div class="spec"><span class="spec__k">timestamp</span><span class="spec__v">${window.escapeHtml(run.timestamp.replace("T", " "))}</span></div>` +
       (run.best_metric ? `<div class="spec"><span class="spec__k">${window.escapeHtml(run.best_metric.name)}</span><span class="spec__v is-accent">${window.escapeHtml(String(run.best_metric.value))}</span></div>` : "") +
+      this._errorSpecs(run.coordinate_errors) +
       `<div class="spec"><span class="spec__k">path</span><span class="spec__v">${window.escapeHtml(run.path)}</span></div>` +
       `</div>` +
       gallery +
