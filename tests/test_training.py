@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 import torch
@@ -43,6 +44,23 @@ def test_training_pipeline_one_epoch(parquet_store, tmp_path):
 
     assert torch.isfinite(torch.tensor(summary["best_val_loss"]))
     assert len(list((tmp_path / "runs").rglob("best_model.pt"))) == 1
+
+
+def test_training_tracks_per_coordinate_errors(parquet_store, tmp_path):
+    from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
+
+    entry = _entry(parquet_store, tmp_path)
+
+    logger  = Logger(log_dir="", name="train_coord_errors", level="ERROR")
+    summary = TrainingPipeline(entry, logger=logger).run()
+
+    accumulator = EventAccumulator(str(Path(summary["run_directory"]) / "tensorboard"))
+    accumulator.Reload()
+    tags = set(accumulator.Tags()["scalars"])
+
+    assert {"val_mae/x", "val_mae/y", "val_mae/z"} <= tags
+    assert {"val_rmse/x", "val_rmse/y", "val_rmse/z"} <= tags
+    assert all(event.value >= 0.0 for event in accumulator.Scalars("val_mae/x"))
 
 
 def test_training_pipeline_pna_injects_degree_histogram(parquet_store, tmp_path):
