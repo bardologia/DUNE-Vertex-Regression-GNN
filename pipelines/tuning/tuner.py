@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 
 from copy    import deepcopy
 from pathlib import Path
@@ -61,9 +62,10 @@ class Tuner:
         training_config = deepcopy(self.training_config)
         for field_name, value in optimizer_overrides.items():
             setattr(training_config.optimizer, field_name, value)
-        training_config.loop.epochs      = self.tuning.epochs
-        training_config.loop.tuning_mode = True
-        training_config.loop.batch_size  = self.tuning.batch_size
+        training_config.loop.epochs               = self.tuning.epochs
+        training_config.loop.tuning_mode          = True
+        training_config.loop.batch_size           = self.tuning.batch_size
+        training_config.loop.validation_frequency = 1
 
         model_overrides = self.dataset_pipeline.inject_feature_dimensions(model_overrides, self.entry.dataset)
 
@@ -78,7 +80,12 @@ class Tuner:
         best_validation_loss = float("inf")
         for epoch in range(self.tuning.epochs):
             _, validation_loss, _ = trainer.run_epoch(self.train_loader, self.val_loader, epoch)
-            best_validation_loss  = min(best_validation_loss, validation_loss)
+
+            if not math.isfinite(validation_loss):
+                self.logger.warning(f"Trial {trial.number}: non-finite validation loss at epoch {epoch + 1}; pruning the trial.")
+                raise optuna.TrialPruned()
+
+            best_validation_loss = min(best_validation_loss, validation_loss)
 
             trial.report(validation_loss, epoch)
             if trial.should_prune():
