@@ -28,13 +28,14 @@ from pipelines.benchmark.sizing      import ModelSizer
 class BenchmarkStage:
     RESULT_FILE = None
 
-    def __init__(self, config, run_directory, pipeline_directory, logger, models, base_overrides):
+    def __init__(self, config, run_directory, pipeline_directory, logger, models, model_overrides, explicit_paths):
         self.config             = config
         self.run_directory      = Path(run_directory)
         self.pipeline_directory = Path(pipeline_directory)
         self.logger             = logger
         self.models             = list(models)
-        self.base_overrides     = dict(base_overrides)
+        self.model_overrides    = {model_name: dict(overrides) for model_name, overrides in model_overrides.items()}
+        self.explicit_paths     = set(explicit_paths or ())
         self.size_records       = {}
 
     def _result_path(self):
@@ -86,7 +87,7 @@ class SizeMatchStage(BenchmarkStage):
     RESULT_FILE = "size_match.json"
 
     def _prepare(self):
-        self.sizer  = ModelSizer(self.config, self.logger, self.base_overrides)
+        self.sizer  = ModelSizer(self.config, self.logger, self.model_overrides)
         self.target = self.sizer.reference_count()
         self.logger.section("[Benchmark | Capacity Matching]")
         self.logger.subsection(f"Reference '{self.config.size_match.reference_model}': {self.target:,} parameters")
@@ -94,7 +95,7 @@ class SizeMatchStage(BenchmarkStage):
     def _compute(self, model_name):
         if model_name == self.config.size_match.reference_model:
             parameters = self.target
-            result     = {"model": model_name, "width": None, "overrides": dict(self.sizer.base_overrides), "parameters": parameters, "target": self.target, "deviation_pct": 0.0, "iterations": 0, "flags": []}
+            result     = {"model": model_name, "width": None, "overrides": dict(self.sizer.model_overrides[model_name]), "parameters": parameters, "target": self.target, "deviation_pct": 0.0, "iterations": 0, "flags": []}
             self.logger.subsection(f"{model_name}: reference ({parameters:,} parameters)")
             return result
 
@@ -108,8 +109,8 @@ class SizeMatchStage(BenchmarkStage):
 class OverfitGateStage(BenchmarkStage):
     RESULT_FILE = "overfit_results.json"
 
-    def __init__(self, config, run_directory, pipeline_directory, logger, models, base_overrides, dataset, stats, size_records):
-        super().__init__(config, run_directory, pipeline_directory, logger, models, base_overrides)
+    def __init__(self, config, run_directory, pipeline_directory, logger, models, model_overrides, explicit_paths, dataset, stats, size_records):
+        super().__init__(config, run_directory, pipeline_directory, logger, models, model_overrides, explicit_paths)
         self.dataset      = dataset
         self.stats        = stats
         self.size_records = size_records
@@ -172,8 +173,8 @@ class OverfitGateStage(BenchmarkStage):
 class MaxBatchStage(BenchmarkStage):
     RESULT_FILE = "max_batch.json"
 
-    def __init__(self, config, run_directory, pipeline_directory, logger, models, base_overrides, dataset, stats, size_records):
-        super().__init__(config, run_directory, pipeline_directory, logger, models, base_overrides)
+    def __init__(self, config, run_directory, pipeline_directory, logger, models, model_overrides, explicit_paths, dataset, stats, size_records):
+        super().__init__(config, run_directory, pipeline_directory, logger, models, model_overrides, explicit_paths)
         self.dataset      = dataset
         self.stats        = stats
         self.size_records = size_records
@@ -197,8 +198,8 @@ class MaxBatchStage(BenchmarkStage):
 class TrainingStage(BenchmarkStage):
     RESULT_FILE = "training_results.json"
 
-    def __init__(self, config, run_directory, pipeline_directory, logger, models, base_overrides, datasets, stats, size_records, max_batch_records, split_base_ids):
-        super().__init__(config, run_directory, pipeline_directory, logger, models, base_overrides)
+    def __init__(self, config, run_directory, pipeline_directory, logger, models, model_overrides, explicit_paths, datasets, stats, size_records, max_batch_records, split_base_ids):
+        super().__init__(config, run_directory, pipeline_directory, logger, models, model_overrides, explicit_paths)
         self.datasets          = datasets
         self.stats             = stats
         self.size_records      = size_records
@@ -271,8 +272,8 @@ class TrainingStage(BenchmarkStage):
 class EvaluationStage(BenchmarkStage):
     RESULT_FILE = "evaluation_results.json"
 
-    def __init__(self, config, run_directory, pipeline_directory, logger, models, base_overrides, datasets, stats, size_records, training_records):
-        super().__init__(config, run_directory, pipeline_directory, logger, models, base_overrides)
+    def __init__(self, config, run_directory, pipeline_directory, logger, models, model_overrides, explicit_paths, datasets, stats, size_records, training_records):
+        super().__init__(config, run_directory, pipeline_directory, logger, models, model_overrides, explicit_paths)
         self.datasets         = datasets
         self.stats            = stats
         self.size_records     = size_records

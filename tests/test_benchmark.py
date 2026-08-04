@@ -4,19 +4,21 @@ from pathlib import Path
 from configuration.architectures import MODEL_CONFIG_REGISTRY
 from configuration.benchmark     import BenchmarkConfig
 from pipelines.benchmark         import BenchmarkPipeline, ComparisonReport, ModelSizer, TrialCollector
+from pipelines.benchmark.stages  import BenchmarkStage
 from pipelines.dataset.graph      import FeatureSchema
 
 
-def _base_overrides(config):
+def _model_overrides(config):
     node_dim, edge_dim, graph_dim = FeatureSchema(config.dataset).dimensions()
-    return {"input_dim": node_dim, "edge_dim": edge_dim, "graph_dim": graph_dim}
+    base = {"input_dim": node_dim, "edge_dim": edge_dim, "graph_dim": graph_dim}
+    return {model_name: dict(base) for model_name in MODEL_CONFIG_REGISTRY}
 
 
 def test_model_sizer_matches_reference(quiet_logger):
     config = BenchmarkConfig()
     config.size_match.reference_model = "gps"
 
-    sizer  = ModelSizer(config, quiet_logger, _base_overrides(config))
+    sizer  = ModelSizer(config, quiet_logger, _model_overrides(config))
     target = sizer.reference_count()
     result = sizer.match("graphsage", target)
 
@@ -29,7 +31,7 @@ def test_model_sizer_produces_head_divisible_width(quiet_logger):
     config = BenchmarkConfig()
     config.size_match.reference_model = "gps"
 
-    sizer  = ModelSizer(config, quiet_logger, _base_overrides(config))
+    sizer  = ModelSizer(config, quiet_logger, _model_overrides(config))
     target = sizer.reference_count()
     result = sizer.match("gps_lite", target)
 
@@ -66,6 +68,20 @@ def test_trial_collector_merges_stage_files(quiet_logger, tmp_path):
     assert records[0]["parameters"] == 100
     assert records[0]["train_status"] == "DONE"
     assert records[0]["metrics"]["euclidean_mean"] == 4.2
+
+
+def test_benchmark_model_overrides_isolate_the_pna_histogram(dataset_config, quiet_logger):
+    config         = BenchmarkConfig()
+    config.dataset = dataset_config
+
+    pipeline        = BenchmarkPipeline(config)
+    pipeline.logger = quiet_logger
+    pipeline.models = ["graphsage", "pna"]
+    pipeline._prepare_data()
+
+    assert "degree_histogram" in pipeline.model_overrides["pna"]
+    assert "degree_histogram" not in pipeline.model_overrides["graphsage"]
+    assert pipeline.model_overrides["graphsage"]["input_dim"] > 0
 
 
 def test_benchmark_pipeline_runs(dataset_config, quiet_logger, tmp_path):
