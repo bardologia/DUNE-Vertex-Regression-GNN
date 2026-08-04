@@ -135,8 +135,11 @@ class Trainer:
             self.tracker.log_scalar(f"lr/{group['name']}", learning_rate, self.global_step)
 
     def capture_state(self, epoch) -> dict:
+        with self.ema.applied(self.model):
+            params = {name: tensor.detach().clone() for name, tensor in self.model.state_dict().items()}
+
         return {
-            "params"      : self.model.state_dict(),
+            "params"      : params,
             "epoch"       : epoch,
             "global_step" : self.global_step,
         }
