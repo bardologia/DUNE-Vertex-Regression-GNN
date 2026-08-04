@@ -12,8 +12,9 @@ class BenchmarkEntry:
         self.config = BenchmarkConfig()
 
     def run(self):
-        self.config = ConfigCli(self.config, description="Benchmark the DUNE-GNN model zoo").apply()
-        return BenchmarkPipeline(self.config).run()
+        cli         = ConfigCli(self.config, description="Benchmark the DUNE-GNN model zoo")
+        self.config = cli.apply()
+        return BenchmarkPipeline(self.config, explicit_paths=set(cli.overrides)).run()
 
 
 if __name__ == "__main__":

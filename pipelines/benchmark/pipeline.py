@@ -17,9 +17,10 @@ from pipelines.benchmark.stages import ComparisonStage, EvaluationStage, MaxBatc
 
 
 class BenchmarkPipeline:
-    def __init__(self, config, logger=None):
+    def __init__(self, config, logger=None, explicit_paths=None):
         self.config          = config
         self.external_logger = logger
+        self.explicit_paths  = set(explicit_paths or ())
 
     def _prepare_run(self):
         torch.manual_seed(self.config.seed)
@@ -51,16 +52,18 @@ class BenchmarkPipeline:
         self.dataset_pipeline     = DatasetPipeline(self.config.dataset, self.logger)
         self.datasets, self.stats = self.dataset_pipeline.run()
 
-        self.base_overrides = DatasetPipeline.inject_feature_dimensions({}, self.config.dataset)
+        base_overrides       = DatasetPipeline.inject_feature_dimensions({}, self.config.dataset)
+        self.model_overrides = {}
         for model_name in self.models:
             degree_histogram = self.dataset_pipeline.pna_degree_histogram(model_name, self.datasets["train"])
-            if degree_histogram is not None:
-                self.base_overrides["degree_histogram"] = degree_histogram
+            extra            = {"degree_histogram": degree_histogram} if degree_histogram is not None else {}
+
+            self.model_overrides[model_name] = {**base_overrides, **extra}
 
     def _run_size_match(self):
         if not self.config.size_match.enabled:
             return {}
-        records = SizeMatchStage(self.config, self.run_directory, self.pipeline_directory, self.logger, self.models, self.base_overrides).run()
+        records = SizeMatchStage(self.config, self.run_directory, self.pipeline_directory, self.logger, self.models, self.model_overrides, self.explicit_paths).run()
         self._mark_stage("size_match", "completed")
         return records
 
@@ -68,7 +71,7 @@ class BenchmarkPipeline:
         if not self.config.overfit.enabled:
             return True
 
-        stage   = OverfitGateStage(self.config, self.run_directory, self.pipeline_directory, self.logger, self.models, self.base_overrides, self.datasets["train"], self.stats, self.size_records)
+        stage   = OverfitGateStage(self.config, self.run_directory, self.pipeline_directory, self.logger, self.models, self.model_overrides, self.explicit_paths, self.datasets["train"], self.stats, self.size_records)
         records = stage.run()
         passed  = stage.passed(records)
 
@@ -78,22 +81,22 @@ class BenchmarkPipeline:
     def _run_max_batch(self):
         if not self.config.max_batch.enabled or not torch.cuda.is_available():
             return {}
-        records = MaxBatchStage(self.config, self.run_directory, self.pipeline_directory, self.logger, self.models, self.base_overrides, self.datasets["train"], self.stats, self.size_records).run()
+        records = MaxBatchStage(self.config, self.run_directory, self.pipeline_directory, self.logger, self.models, self.model_overrides, self.explicit_paths, self.datasets["train"], self.stats, self.size_records).run()
         self._mark_stage("max_batch", "completed")
         return records
 
     def _run_training(self):
-        records = TrainingStage(self.config, self.run_directory, self.pipeline_directory, self.logger, self.models, self.base_overrides, self.datasets, self.stats, self.size_records, self.max_batch_records, self.dataset_pipeline.split_base_ids).run()
+        records = TrainingStage(self.config, self.run_directory, self.pipeline_directory, self.logger, self.models, self.model_overrides, self.explicit_paths, self.datasets, self.stats, self.size_records, self.max_batch_records, self.dataset_pipeline.split_base_ids).run()
         self._mark_stage("training", "completed")
         return records
 
     def _run_evaluation(self):
-        records = EvaluationStage(self.config, self.run_directory, self.pipeline_directory, self.logger, self.models, self.base_overrides, self.datasets, self.stats, self.size_records, self.training_records).run()
+        records = EvaluationStage(self.config, self.run_directory, self.pipeline_directory, self.logger, self.models, self.model_overrides, self.explicit_paths, self.datasets, self.stats, self.size_records, self.training_records).run()
         self._mark_stage("evaluation", "completed")
         return records
 
     def _run_comparison(self):
-        written = ComparisonStage(self.config, self.run_directory, self.pipeline_directory, self.logger, self.models, self.base_overrides).run()
+        written = ComparisonStage(self.config, self.run_directory, self.pipeline_directory, self.logger, self.models, self.model_overrides, self.explicit_paths).run()
         self._mark_stage("comparison", "completed")
         return written
 

@@ -19,24 +19,28 @@ class SizeMatchResult:
 
 
 class ModelSizer:
-    def __init__(self, config, logger, base_overrides):
-        self.config         = config.size_match
-        self.logger         = logger
-        self.attribute      = self.config.scaled_attribute
-        self.base_overrides = dict(base_overrides)
+    def __init__(self, config, logger, model_overrides):
+        self.config          = config.size_match
+        self.logger          = logger
+        self.attribute       = self.config.scaled_attribute
+        self.model_overrides = {model_name: dict(overrides) for model_name, overrides in model_overrides.items()}
 
     @staticmethod
     def parameter_count(model):
         return int(sum(parameter.numel() for parameter in model.parameters()))
 
     def _count_at(self, model_name, width):
-        model, _ = get_model(model_name, **{**self.base_overrides, self.attribute: int(width)})
+        model, _ = get_model(model_name, **{**self.model_overrides[model_name], self.attribute: int(width)})
         count    = self.parameter_count(model)
         del model
         return count
 
     def reference_count(self):
-        model, _ = get_model(self.config.reference_model, **self.base_overrides)
+        reference = self.config.reference_model
+        if reference not in self.model_overrides:
+            raise ValueError(f"size_match.reference_model '{reference}' is not among the benchmarked models; remove it from skip_models or choose another reference.")
+
+        model, _ = get_model(reference, **self.model_overrides[reference])
         return self.parameter_count(model)
 
     def _alignment(self, model_name):
@@ -99,7 +103,7 @@ class ModelSizer:
         return SizeMatchResult(
             model         = model_name,
             width         = int(best_width),
-            overrides     = {**self.base_overrides, self.attribute: int(best_width)},
+            overrides     = {**self.model_overrides[model_name], self.attribute: int(best_width)},
             parameters    = int(best_count),
             target        = int(target),
             deviation_pct = float(deviation_pct),
