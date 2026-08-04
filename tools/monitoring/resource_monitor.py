@@ -167,8 +167,10 @@ class ResourceMonitor:
             pass
 
     def _sample_gpu_nvml_metrics(self, metrics):
-        gpu_total = 0.0
-        gpu_used  = 0.0
+        busiest_used  = 0.0
+        busiest_total = 0.0
+        busiest_pct   = -1.0
+        busiest_index = -1
 
         if self._nvml_ok:
             for i, h in enumerate(self._gpu_handles):
@@ -199,19 +201,19 @@ class ResourceMonitor:
                     except Exception:
                         pass
 
-                    gpu_total += total_gb
-                    gpu_used += used_gb
+                    if pct > busiest_pct:
+                        busiest_used, busiest_total, busiest_pct, busiest_index = used_gb, total_gb, pct, i
                 except Exception:
                     continue
 
-        return gpu_used, gpu_total
+        return busiest_used, busiest_total, busiest_index
 
     def _update_peak_metrics(self, metrics):
         for k in list(self.peak.keys()):
             if k in metrics and metrics[k] > self.peak[k]:
                 self.peak[k] = float(metrics[k])
 
-    def _check_warnings(self, metrics, gpu_used, gpu_total):
+    def _check_warnings(self, metrics, gpu_used, gpu_total, gpu_index):
         if metrics["ram_pct"] >= self.warn_ram_pct:
             self._maybe_warn(
                 "ram",
@@ -226,7 +228,7 @@ class ResourceMonitor:
         if vram_pct >= self.warn_vram_pct and gpu_total > 0:
             self._maybe_warn(
                 "vram",
-                f"VRAM usage {vram_pct:.1f}% "
+                f"GPU{gpu_index} VRAM usage {vram_pct:.1f}% "
                 f"({gpu_used:.2f}/{gpu_total:.2f} GB) "
                 f">= threshold {self.warn_vram_pct:.1f}%",
             )
@@ -258,14 +260,13 @@ class ResourceMonitor:
         self._sample_shm_metrics(metrics)
         self._sample_disk_io_metrics(metrics)
 
-        gpu_used, gpu_total = self._sample_gpu_nvml_metrics(metrics)
+        gpu_used, gpu_total, gpu_index = self._sample_gpu_nvml_metrics(metrics)
 
-        vram_pct_overall = (100.0 * gpu_used / gpu_total) if gpu_total > 0 else 0.0
         metrics["vram_used_gb"] = gpu_used
-        metrics["vram_pct"]     = vram_pct_overall
+        metrics["vram_pct"]     = (100.0 * gpu_used / gpu_total) if gpu_total > 0 else 0.0
 
         self._update_peak_metrics(metrics)
-        self._check_warnings(metrics, gpu_used, gpu_total)
+        self._check_warnings(metrics, gpu_used, gpu_total, gpu_index)
 
         return metrics
 
