@@ -150,7 +150,7 @@ class GradientSaliency:
         data.edge_attr.requires_grad_(True)
 
         predictions = self.model(data)
-        loss        = ((predictions - data.y) ** 2).sum(dim=1).mean()
+        loss        = ((predictions - data.y) ** 2).sum(dim=1).sum()
 
         self.model.zero_grad(set_to_none=True)
         loss.backward()
