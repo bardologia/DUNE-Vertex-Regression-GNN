@@ -70,6 +70,26 @@ def test_trial_collector_merges_stage_files(quiet_logger, tmp_path):
     assert records[0]["metrics"]["euclidean_mean"] == 4.2
 
 
+def test_benchmark_stage_resume_retries_non_reusable_records(quiet_logger, tmp_path):
+    class ProbeStage(BenchmarkStage):
+        RESULT_FILE = "probe.json"
+
+        def _reusable(self, record):
+            return record.get("status") == "PASS"
+
+        def _compute(self, model_name):
+            return {"model": model_name, "status": "PASS", "recomputed": True}
+
+    config        = BenchmarkConfig()
+    config.resume = True
+    (tmp_path / "probe.json").write_text(json.dumps({"a": {"status": "FAILED"}, "b": {"status": "PASS"}}), encoding="utf-8")
+
+    records = ProbeStage(config, tmp_path, tmp_path, quiet_logger, ["a", "b"], {"a": {}, "b": {}}, set()).run()
+
+    assert records["a"] == {"model": "a", "status": "PASS", "recomputed": True}
+    assert records["b"] == {"status": "PASS"}
+
+
 def test_benchmark_model_overrides_isolate_the_pna_histogram(dataset_config, quiet_logger):
     config         = BenchmarkConfig()
     config.dataset = dataset_config
