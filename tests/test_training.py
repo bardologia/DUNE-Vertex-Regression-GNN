@@ -155,6 +155,24 @@ def test_ema_produces_a_finite_validation_loss(parquet_store, tmp_path):
     assert torch.isfinite(torch.tensor(summary["best_val_loss"]))
 
 
+def test_ema_checkpoint_stores_the_evaluated_shadow_weights(parquet_store, tmp_path):
+    entry = _entry(parquet_store, tmp_path)
+    entry.training.loop.use_ema   = True
+    entry.training.loop.ema_decay = 0.9
+
+    logger = Logger(log_dir="", name="train_ema_ckpt", level="ERROR")
+    TrainingPipeline(entry, logger=logger).run()
+
+    best_path = next((tmp_path / "runs").rglob("best_model.pt"))
+    last_path = next((tmp_path / "runs").rglob("last.pt"))
+    best      = torch.load(best_path, map_location="cpu", weights_only=False)
+    state     = torch.load(last_path, map_location="cpu", weights_only=False)
+    shadow    = state["ema"]["shadow"]
+
+    assert all(torch.equal(best["params"][name], tensor) for name, tensor in shadow.items())
+    assert any(not torch.equal(state["model"][name], tensor) for name, tensor in shadow.items())
+
+
 def test_resume_continues_from_the_saved_trainer_state(parquet_store, tmp_path):
     entry = _entry(parquet_store, tmp_path)
     entry.run_name = "resume_case"
