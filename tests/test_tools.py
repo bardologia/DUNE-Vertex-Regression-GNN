@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from configuration.entry import TrainEntryConfig
-from tools import EarlyStopping, MarkdownDoc, MarkdownTable, Scheduler, Tracker, Warmup
+from tools import EarlyStopping, GradientClipper, MarkdownDoc, MarkdownTable, Scheduler, Tracker, Warmup
 from tools.runtime.reproducibility import Reproducibility, RngSnapshot
 
 
@@ -89,6 +89,20 @@ def test_warmup_state_round_trips_the_step_counter():
 
     assert restored.current_step == 2
     assert restored.factor() == warmup.factor()
+
+
+def test_gradient_clipper_history_excludes_non_finite_norms():
+    config                            = TrainEntryConfig().training
+    config.gradient_clipper.clip_mode = "adaptive_percentile"
+
+    clipper = GradientClipper(config, SilentLogger(), Tracker(writer=None))
+
+    clipper.record(1.0, 0)
+    clipper.record(float("nan"), 1)
+    clipper.record(float("inf"), 2)
+    clipper.record(2.0, 3)
+
+    assert clipper.history == [1.0, 2.0]
 
 
 def test_early_stopping_state_round_trips():
