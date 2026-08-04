@@ -218,6 +218,23 @@ def test_augmentation_reaches_every_split(parquet_store, quiet_logger):
     assert torch.equal(augmented["test"][0].graph_attr, repeated["test"][0].graph_attr)
 
 
+def test_train_augmentation_toggle_takes_effect_per_item(parquet_store, quiet_logger):
+    config = DatasetConfig()
+    config.data.parquet_store_dir = parquet_store
+    config.data.stats_sample_size = 32
+    config.augmentation.enabled   = True
+
+    datasets, _ = DatasetPipeline(config, quiet_logger).run()
+    train       = datasets["train"]
+
+    augmented          = [train[index].x.clone() for index in range(4)]
+    train.augmentation = None
+    plain              = [train[index].x.clone() for index in range(4)]
+
+    assert any(not torch.equal(before, after) for before, after in zip(augmented, plain))
+    assert all(torch.equal(after, train[index].x) for index, after in enumerate(plain))
+
+
 def test_octant_split_has_no_base_event_leakage(parquet_store, quiet_logger):
     config = DatasetConfig()
     config.data.parquet_store_dir = parquet_store

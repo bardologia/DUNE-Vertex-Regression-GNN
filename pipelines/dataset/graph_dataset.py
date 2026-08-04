@@ -33,29 +33,26 @@ class GraphNormalizer:
 class LightRealization:
     EPOCH_SEED_STRIDE = 1_000_003
 
-    def __init__(self, light_matrix, physics_config, augmentation=None):
-        self.light_matrix = light_matrix
-        self.augmentation = augmentation if augmentation is not None and augmentation.active else None
-
+    def __init__(self, light_matrix, physics_config):
+        self.light_matrix         = light_matrix
         self.scale_factor         = physics_config.scale_factor
         self.detection_efficiency = physics_config.detection_efficiency
         self.efficiency_seed      = physics_config.efficiency_seed
-        self.augmentation_seed    = augmentation.config.seed if augmentation is not None else 0
 
     def _base_light(self, raw_counts, base_event_id):
         generator     = np.random.default_rng(self.efficiency_seed + int(base_event_id))
         scaled_counts = np.maximum(np.round(raw_counts * self.scale_factor), 0).astype(np.int64)
         return generator.binomial(scaled_counts, self.detection_efficiency).astype(np.float32)
 
-    def realize(self, light_row, base_event_id, epoch=0):
+    def realize(self, light_row, base_event_id, augmentation=None, epoch=0):
         raw_counts = self.light_matrix[base_event_id].astype(np.float64)
         light      = self._base_light(raw_counts, base_event_id)
 
-        if self.augmentation is not None:
-            augmentation_seed = self.augmentation_seed + int(light_row) + int(epoch) * self.EPOCH_SEED_STRIDE
+        if augmentation is not None and augmentation.active:
+            augmentation_seed = augmentation.config.seed + int(light_row) + int(epoch) * self.EPOCH_SEED_STRIDE
             generator         = np.random.default_rng(augmentation_seed)
-            light             = self.augmentation.apply_to_counts(light, generator)
-            light             = self.augmentation.apply_to_light(light, generator)
+            light             = augmentation.apply_to_counts(light, generator)
+            light             = augmentation.apply_to_light(light, generator)
 
         return light
 
@@ -69,7 +66,7 @@ class GraphDataset(Dataset):
         self.augmentation       = augmentation
         self.stats              = stats
         self.normalizer         = GraphNormalizer(stats) if stats is not None else None
-        self.light_realization  = LightRealization(light_matrix, physics_config, augmentation)
+        self.light_realization  = LightRealization(light_matrix, physics_config)
 
         self.epoch = mp.Value("q", 0, lock=False)
 
@@ -80,7 +77,7 @@ class GraphDataset(Dataset):
         self.epoch.value = int(epoch)
 
     def _light_for_sample(self, light_row, base_event_id):
-        return self.light_realization.realize(light_row, base_event_id, self.epoch.value)
+        return self.light_realization.realize(light_row, base_event_id, self.augmentation, self.epoch.value)
 
     def __getitem__(self, index):
         sample        = self.samples[index]
