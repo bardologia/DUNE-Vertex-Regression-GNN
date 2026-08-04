@@ -55,9 +55,10 @@ class Trainer:
         self.resume     = training_config.loop.resume
         self.state_path = TrainerState.path(run_metadata.run_directory)
 
-        self.global_step   = 0
-        self.train_losses  = []
-        self.val_losses    = []
+        self.global_step       = 0
+        self.pending_backwards = 0
+        self.train_losses      = []
+        self.val_losses        = []
 
         if not self.tuning_mode:
             self.logger.section("[Training Configuration]")
@@ -153,20 +154,32 @@ class Trainer:
     def backward(self, loss, do_step: bool):
         if self.scaler:
             self.scaler.scale(loss).backward()
-            if do_step:
-                self.scaler.unscale_(self.optimizer)
-                gradient_norm = self.gradient_clipper.maybe_clip(self.model, self.global_step)
-                self.gradient_clipper.record(gradient_norm, self.global_step)
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
-                self._finish_step()
         else:
             loss.backward()
-            if do_step:
-                gradient_norm = self.gradient_clipper.maybe_clip(self.model, self.global_step)
-                self.gradient_clipper.record(gradient_norm, self.global_step)
-                self.optimizer.step()
-                self._finish_step()
+
+        self.pending_backwards += 1
+        if do_step:
+            self._apply_step()
+
+    def _flush_pending_step(self):
+        if self.pending_backwards > 0:
+            self._apply_step()
+
+    def _apply_step(self):
+        if self.scaler:
+            self.scaler.unscale_(self.optimizer)
+
+        gradient_norm = self.gradient_clipper.maybe_clip(self.model, self.global_step)
+        self.gradient_clipper.record(gradient_norm, self.global_step)
+
+        if self.scaler:
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+        else:
+            self.optimizer.step()
+
+        self.pending_backwards = 0
+        self._finish_step()
 
     def _finish_step(self):
         self.optimizer.zero_grad(set_to_none=True)
@@ -199,17 +212,19 @@ class Trainer:
                 group_size  = min(self.accumulation_steps, number_of_batches - group_start)
                 batch_loss  = loss_dict["total_loss"]
 
-                do_step = (batch_index + 1) % self.accumulation_steps == 0 or (batch_index + 1) >= number_of_batches
-                self.backward(batch_loss / group_size, do_step)
-
+                do_step          = (batch_index + 1) % self.accumulation_steps == 0 or (batch_index + 1) >= number_of_batches
                 batch_loss_value = batch_loss.item()
-                if not math.isfinite(batch_loss_value):
-                    if self.abort_on_nonfinite_loss:
-                        raise RuntimeError(f"Non-finite loss at batch {batch_index}, step {self.global_step}.")
-                    self.logger.warning(f"Non-finite loss at batch {batch_index}, step {self.global_step}; batch skipped because abort_on_nonfinite_loss is disabled.")
-                else:
+
+                if math.isfinite(batch_loss_value):
+                    self.backward(batch_loss / group_size, do_step)
                     weighted_loss += batch_loss_value * data.num_graphs
                     graph_count   += data.num_graphs
+                elif self.abort_on_nonfinite_loss:
+                    raise RuntimeError(f"Non-finite loss at batch {batch_index}, step {self.global_step}.")
+                else:
+                    self.logger.warning(f"Non-finite loss at batch {batch_index}, step {self.global_step}; batch skipped because abort_on_nonfinite_loss is disabled.")
+                    if do_step:
+                        self._flush_pending_step()
 
                 if clear_every > 0 and self.global_step % clear_every == 0:
                     self._clear_memory()

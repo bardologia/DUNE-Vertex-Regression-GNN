@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import torch
 
@@ -130,6 +132,10 @@ class GradientClipper:
         return norm_before
 
     def record(self, grad_norm_value: float, global_step: int):
+        if not math.isfinite(grad_norm_value):
+            self.logger.warning(f"Non-finite gradient norm at step {global_step}; excluded from the adaptive clipping history.")
+            return
+
         self.history.append(float(grad_norm_value))
 
         if global_step % self.log_histogram_freq == 0 and len(self.history) >= self.log_histogram_freq:
