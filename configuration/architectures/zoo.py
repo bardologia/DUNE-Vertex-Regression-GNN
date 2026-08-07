@@ -14,10 +14,10 @@ class BaseGNNConfig:
 
     hidden_dim        : int   = 128
     num_layers        : int   = 4
-    dropout           : float = 0.1
+    dropout           : float = 0.0
     activation        : str   = "gelu"
     normalization     : str   = "layer"
-    drop_path_rate    : float = 0.1
+    drop_path_rate    : float = 0.0
 
     pooling           : str   = "mean_max_sum"
     pool_num_levels   : int   = 3
@@ -29,7 +29,7 @@ class BaseGNNConfig:
     hierarchical_feature_dim : int   = 256
     coord_embed_dim          : int   = 64
     regression_hidden_dims   : tuple = (128, 64)
-    regression_dropout       : float = 0.1
+    regression_dropout       : float = 0.0
 
     optimizer_overrides      : dict  = field(default_factory=dict)
 
@@ -74,7 +74,7 @@ class BaseGNNConfig:
 class GPSConfig(BaseGNNConfig):
     name              : str   = "gps"
     heads             : int   = 4
-    attention_dropout : float = 0.1
+    attention_dropout : float = 0.0
     ffn_ratio         : float = 4.0
     pooling           : str   = "mean_max_sum"
     drop_path_rate    : float = 0.0
@@ -92,7 +92,7 @@ class GPSLiteConfig(BaseGNNConfig):
     hidden_dim        : int   = 96
     num_layers        : int   = 3
     heads             : int   = 4
-    attention_dropout : float = 0.1
+    attention_dropout : float = 0.0
     ffn_ratio         : float = 2.0
     pooling           : str   = "mean_max_sum"
     pool_num_levels   : int   = 1
@@ -103,7 +103,7 @@ class GPSLiteConfig(BaseGNNConfig):
 class GATv2Config(BaseGNNConfig):
     name              : str   = "gatv2"
     heads             : int   = 4
-    attention_dropout : float = 0.1
+    attention_dropout : float = 0.0
 
 
 @dataclass
@@ -140,7 +140,7 @@ class GCNConfig(BaseGNNConfig):
 class TransformerConvConfig(BaseGNNConfig):
     name              : str   = "transformer"
     heads             : int   = 4
-    attention_dropout : float = 0.1
+    attention_dropout : float = 0.0
     beta              : bool  = True
 
 

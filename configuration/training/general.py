@@ -111,7 +111,7 @@ class TrainingLoopConfig:
     pin_memory                  : bool  = True
     persistent_workers          : bool  = True
 
-    use_ema                     : bool  = False
+    use_ema                     : bool  = True
     ema_decay                   : float = 0.999
     resume                      : bool  = False
     abort_on_nonfinite_loss     : bool  = True
