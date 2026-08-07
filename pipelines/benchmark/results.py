@@ -25,12 +25,12 @@ class TrialCollector:
             return payload
         return {record["model"]: record for record in payload}
 
-    def _record_for(self, model_name, size_match, overfit, max_batch, training, evaluation):
+    def _record_for(self, model_name, size_match, overfit, max_batch, training):
         size_entry     = size_match.get(model_name, {})
         overfit_entry  = overfit.get(model_name, {})
         max_batch_entry = max_batch.get(model_name, {})
         training_entry = training.get(model_name, {})
-        metrics        = evaluation.get(model_name, {})
+        metrics        = training_entry.get("metrics", {})
 
         return {
             "model"               : model_name,
@@ -55,9 +55,8 @@ class TrialCollector:
         overfit     = self._as_model_map(self._load("overfit_results.json"))
         max_batch   = self._as_model_map(self._load("max_batch.json"))
         training    = self._as_model_map(self._load("training_results.json"))
-        evaluation  = self._as_model_map(self._load("evaluation_results.json"))
 
-        return [self._record_for(model_name, size_match, overfit, max_batch, training, evaluation) for model_name in self.models]
+        return [self._record_for(model_name, size_match, overfit, max_batch, training) for model_name in self.models]
 
 
 class ComparisonReport:

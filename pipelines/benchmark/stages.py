@@ -218,9 +218,10 @@ class TrainingStage(BenchmarkStage):
     def _prepare(self):
         self.logger.section("[Benchmark | Training]")
         self.training_directory = self.run_directory / "training"
+        self.device             = self.config.training.loop.device if torch.cuda.is_available() else "cpu"
 
     def _reusable(self, record):
-        return record.get("status") == "DONE"
+        return record.get("status") == "DONE" and bool(record.get("metrics"))
 
     def _batch_size(self, model_name):
         record = self.max_batch_records.get(model_name, {})
@@ -237,8 +238,24 @@ class TrainingStage(BenchmarkStage):
         entry.training        = training_config
         return entry
 
+    def _evaluate(self, model_name, run_directory):
+        checkpoint_path = Path(run_directory) / "checkpoints" / self.config.training.io.checkpoint_name
+
+        model, _    = get_model(model_name, **self._overrides(model_name))
+        predictor   = Predictor(model, checkpoint_path, self.stats, self.device, self.logger).prepare()
+        test_loader = GraphDataLoader(self.datasets["test"], batch_size=self.config.training.loop.batch_size, shuffle=False)
+
+        predictions, targets = predictor.predict(test_loader)
+        return InferenceMetrics(self.logger).compute(predictions, targets, stage=f"benchmark_{model_name}")
+
+    def _write_metrics(self, run_directory, metrics):
+        metrics_path = Path(run_directory) / "metadata" / "metrics.json"
+        metrics_path.parent.mkdir(parents=True, exist_ok=True)
+        metrics_path.write_text(json.dumps({"unit": "m", "splits": {"test": metrics}}, indent=2), encoding="utf-8")
+        return metrics_path
+
     def _compute(self, model_name):
-        record       = {"model": model_name, "status": None, "best_val_loss": None, "best_epoch": None, "duration_s": None, "run_directory": None, "error": None}
+        record       = {"model": model_name, "status": None, "best_val_loss": None, "best_epoch": None, "duration_s": None, "run_directory": None, "metrics": {}, "error": None}
         run_metadata = None
 
         try:
@@ -262,14 +279,18 @@ class TrainingStage(BenchmarkStage):
             summary = trainer.train(train_loader, validation_loader)
             elapsed = time.perf_counter() - started
 
+            metrics = self._evaluate(model_name, summary["run_directory"])
+            self._write_metrics(summary["run_directory"], metrics)
+
             record.update({
                 "status"        : "DONE",
                 "best_val_loss" : summary["best_val_loss"],
                 "best_epoch"    : summary["best_epoch"],
                 "duration_s"    : float(elapsed),
                 "run_directory" : summary["run_directory"],
+                "metrics"       : metrics,
             })
-            self.logger.subsection(f"{model_name}: best val loss {summary['best_val_loss']:.4f} in {elapsed:.1f} s")
+            self.logger.subsection(f"{model_name}: best val loss {summary['best_val_loss']:.4f} in {elapsed:.1f} s | test euclidean {metrics['euclidean_mean']:.4f} m")
         except Exception:
             record["status"] = "FAILED"
             record["error"]  = traceback.format_exc().strip().splitlines()[-1]
@@ -279,42 +300,6 @@ class TrainingStage(BenchmarkStage):
                 run_metadata.close()
 
         return record
-
-
-class EvaluationStage(BenchmarkStage):
-    RESULT_FILE = "evaluation_results.json"
-
-    def __init__(self, config, run_directory, pipeline_directory, logger, models, model_overrides, explicit_paths, datasets, stats, size_records, training_records):
-        super().__init__(config, run_directory, pipeline_directory, logger, models, model_overrides, explicit_paths)
-        self.datasets         = datasets
-        self.stats            = stats
-        self.size_records     = size_records
-        self.training_records = training_records
-
-    def _prepare(self):
-        self.logger.section("[Benchmark | Evaluation]")
-        self.device     = self.config.training.loop.device if torch.cuda.is_available() else "cpu"
-        self.batch_size = self.config.training.loop.batch_size
-
-    def _reusable(self, record):
-        return bool(record)
-
-    def _compute(self, model_name):
-        training_record = self.training_records.get(model_name, {})
-        if training_record.get("status") != "DONE" or not training_record.get("run_directory"):
-            self.logger.subsection(f"{model_name}: skipped (no trained checkpoint)")
-            return {}
-
-        run_directory   = Path(training_record["run_directory"])
-        checkpoint_path = run_directory / "checkpoints" / self.config.training.io.checkpoint_name
-
-        model, _    = get_model(model_name, **self._overrides(model_name))
-        predictor   = Predictor(model, checkpoint_path, self.stats, self.device, self.logger).prepare()
-        test_loader = GraphDataLoader(self.datasets["test"], batch_size=self.batch_size, shuffle=False)
-
-        predictions, targets = predictor.predict(test_loader)
-        metrics              = InferenceMetrics(self.logger).compute(predictions, targets, stage=f"benchmark_{model_name}")
-        return metrics
 
 
 class ComparisonStage(BenchmarkStage):

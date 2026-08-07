@@ -59,8 +59,7 @@ def test_comparison_report_ranks_and_writes(quiet_logger, tmp_path):
 
 def test_trial_collector_merges_stage_files(quiet_logger, tmp_path):
     (tmp_path / "size_match.json").write_text(json.dumps({"a": {"model": "a", "parameters": 100, "width": 64, "deviation_pct": 0.5, "flags": []}}), encoding="utf-8")
-    (tmp_path / "training_results.json").write_text(json.dumps({"a": {"model": "a", "status": "DONE", "best_val_loss": 0.3, "run_directory": "r"}}), encoding="utf-8")
-    (tmp_path / "evaluation_results.json").write_text(json.dumps({"a": {"euclidean_mean": 4.2, "mae": 1.1}}), encoding="utf-8")
+    (tmp_path / "training_results.json").write_text(json.dumps({"a": {"model": "a", "status": "DONE", "best_val_loss": 0.3, "run_directory": "r", "metrics": {"euclidean_mean": 4.2, "mae": 1.1}}}), encoding="utf-8")
 
     records = TrialCollector(tmp_path, ["a"], quiet_logger).collect()
 
@@ -143,3 +142,4 @@ def test_benchmark_pipeline_runs(dataset_config, quiet_logger, tmp_path):
         assert record["train_status"] == "DONE"
         assert record["parameters"] is not None
         assert "euclidean_mean" in record["metrics"]
+        assert (Path(record["run_directory"]) / "metadata" / "metrics.json").exists()

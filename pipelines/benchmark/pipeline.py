@@ -13,7 +13,7 @@ from tools.runtime.config_cli     import ConfigCli
 
 from pipelines.dataset.pipeline import DatasetPipeline
 
-from pipelines.benchmark.stages import ComparisonStage, EvaluationStage, MaxBatchStage, OverfitGateStage, SizeMatchStage, TrainingStage
+from pipelines.benchmark.stages import ComparisonStage, MaxBatchStage, OverfitGateStage, SizeMatchStage, TrainingStage
 
 
 class BenchmarkPipeline:
@@ -90,11 +90,6 @@ class BenchmarkPipeline:
         self._mark_stage("training", "completed")
         return records
 
-    def _run_evaluation(self):
-        records = EvaluationStage(self.config, self.run_directory, self.pipeline_directory, self.logger, self.models, self.model_overrides, self.explicit_paths, self.datasets, self.stats, self.size_records, self.training_records).run()
-        self._mark_stage("evaluation", "completed")
-        return records
-
     def _run_comparison(self):
         written = ComparisonStage(self.config, self.run_directory, self.pipeline_directory, self.logger, self.models, self.model_overrides, self.explicit_paths).run()
         self._mark_stage("comparison", "completed")
@@ -119,8 +114,7 @@ class BenchmarkPipeline:
 
             self.max_batch_records = self._run_max_batch()
             self.training_records  = self._run_training()
-            self.evaluation_records = self._run_evaluation()
-            comparison              = self._run_comparison()
+            comparison             = self._run_comparison()
 
             self._mark_stage("pipeline", "completed")
 
