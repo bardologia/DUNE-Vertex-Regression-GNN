@@ -477,8 +477,8 @@ class CascadeRegressionHead(nn.Module):
 class GraphScalarEncoder(nn.Module):
     def __init__(self, input_dim: int, output_dim: int):
         super().__init__()
-        self.net     = nn.Sequential(nn.Linear(input_dim, output_dim), nn.LayerNorm(output_dim), nn.GELU())
-        self.out_dim = output_dim
+        self.net     = nn.Sequential(nn.Linear(input_dim, output_dim), nn.GELU())
+        self.out_dim = output_dim + input_dim
         self._initialize_weights()
 
     def _initialize_weights(self):
@@ -486,12 +486,9 @@ class GraphScalarEncoder(nn.Module):
             if isinstance(module, nn.Linear):
                 nn.init.kaiming_uniform_(module.weight, nonlinearity="relu")
                 nn.init.zeros_(module.bias)
-            elif isinstance(module, nn.LayerNorm):
-                nn.init.constant_(module.weight, 1.0)
-                nn.init.constant_(module.bias, 0.0)
 
     def forward(self, graph_attributes: torch.Tensor) -> torch.Tensor:
-        return self.net(graph_attributes)
+        return torch.cat([self.net(graph_attributes), graph_attributes], dim=-1)
 
 
 class GraphRegressor(nn.Module):

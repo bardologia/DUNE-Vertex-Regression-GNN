@@ -14,7 +14,7 @@ def test_feature_layout_matches_default_dimensions():
 
     assert len(layout.node_features())  == 17
     assert len(layout.edge_features())  == 23
-    assert len(layout.graph_features()) == 9
+    assert len(layout.graph_features()) == 33
 
     node_groups = FeatureLayout.group_index(layout.node_features())
     assert node_groups["position"] == [0, 1, 2]

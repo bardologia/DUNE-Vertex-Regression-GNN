@@ -37,34 +37,9 @@ class SummaryFeatureExtractor(GraphAssembler):
     def _scale_block(self, light, total_light):
         return np.array([total_light, float(light.shape[0]), float(light.max()), float(light.max()) / total_light], dtype=np.float64)
 
-    def _sharp_centroid(self, positions, light):
-        sharp_weights = light.astype(np.float64) ** 2
-        return (sharp_weights[:, None] * positions).sum(axis=0) / (sharp_weights.sum() + self.EPSILON)
-
-    def _axis_moments(self, positions, light, total_light, centroid):
-        centered = positions - centroid[None, :]
-        weights  = light.astype(np.float64)[:, None]
-
-        variance = (weights * centered ** 2).sum(axis=0) / total_light
-        spread   = np.sqrt(np.clip(variance, 0.0, None))
-        third    = (weights * centered ** 3).sum(axis=0) / total_light
-        skew     = third / (spread ** 3 + self.EPSILON)
-
-        return spread, skew
-
     def _brightest_offset(self, positions, light, centroid):
         offset = positions[int(np.argmax(light))] - centroid
         return np.concatenate([offset, [np.linalg.norm(offset)]])
-
-    def _weighted_quantiles(self, positions, light):
-        blocks = []
-        for axis_index in range(positions.shape[1]):
-            order             = np.argsort(positions[:, axis_index], kind="stable")
-            cumulative_weight = np.cumsum(light[order].astype(np.float64))
-            targets           = np.asarray(self.quantiles) * cumulative_weight[-1]
-            indices           = np.minimum(np.searchsorted(cumulative_weight, targets), positions.shape[0] - 1)
-            blocks.append(positions[order][indices, axis_index])
-        return np.stack(blocks, axis=1).reshape(-1)
 
     def _top_channels(self, positions, light, total_light, centroid):
         brightest_first = np.argsort(light, kind="stable")[::-1][: self.top_channel_count]
@@ -96,12 +71,12 @@ class SummaryFeatureExtractor(GraphAssembler):
         blocks = [
             self._scale_block(light, total_light),
             centroid,
-            self._sharp_centroid(positions, light),
+            self._sharp_light_centroid(positions, light),
             spread,
             skew,
             self._light_covariance_eigenvalues(positions, light, total_light),
             self._brightest_offset(positions, light, centroid),
-            self._weighted_quantiles(positions, light),
+            self._weighted_quantiles(positions, light, self.quantiles),
             self._top_channels(positions, light, total_light, centroid),
         ]
         return np.concatenate(blocks).astype(np.float32)

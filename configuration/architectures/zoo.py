@@ -9,7 +9,7 @@ class BaseGNNConfig:
 
     input_dim         : int   = 17
     edge_dim          : int   = 23
-    graph_dim         : int   = 9
+    graph_dim         : int   = 33
     output_dim        : int   = 3
 
     hidden_dim        : int   = 128
@@ -23,7 +23,7 @@ class BaseGNNConfig:
     pool_num_levels   : int   = 3
     sag_ratio         : float = 0.5
     set2set_steps     : int   = 3
-    graph_embed_dim   : int   = 32
+    graph_embed_dim   : int   = 128
 
     head_type                : str   = "hierarchical"
     hierarchical_feature_dim : int   = 256

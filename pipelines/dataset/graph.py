@@ -38,6 +38,31 @@ class GraphAssembler:
         covariance = (centered * light[:, None]).T @ centered / total_light
         return np.clip(np.linalg.eigvalsh(covariance)[::-1], 0.0, None)
 
+    def _sharp_light_centroid(self, positions, light):
+        sharp_weights = light.astype(np.float64) ** 2
+        return (sharp_weights[:, None] * positions).sum(axis=0) / (sharp_weights.sum() + self.EPSILON)
+
+    def _axis_moments(self, positions, light, total_light, centroid):
+        centered = positions - centroid[None, :]
+        weights  = light.astype(np.float64)[:, None]
+
+        variance = (weights * centered ** 2).sum(axis=0) / total_light
+        spread   = np.sqrt(np.clip(variance, 0.0, None))
+        third    = (weights * centered ** 3).sum(axis=0) / total_light
+        skew     = third / (spread ** 3 + self.EPSILON)
+
+        return spread, skew
+
+    def _weighted_quantiles(self, positions, light, quantiles):
+        blocks = []
+        for axis_index in range(positions.shape[1]):
+            order             = np.argsort(positions[:, axis_index], kind="stable")
+            cumulative_weight = np.cumsum(light[order].astype(np.float64))
+            targets           = np.asarray(quantiles) * cumulative_weight[-1]
+            indices           = np.minimum(np.searchsorted(cumulative_weight, targets), positions.shape[0] - 1)
+            blocks.append(positions[order][indices, axis_index])
+        return np.stack(blocks, axis=1).reshape(-1)
+
 
 class NodeFeatures(GraphAssembler):
     def _position(self, positions):
@@ -199,6 +224,11 @@ class EdgeFeatures(GraphAssembler):
 
 
 class GraphFeatures(GraphAssembler):
+    def __init__(self, config):
+        super().__init__(config)
+        self.moment_features = config.graph.graph_moment_features
+        self.quantiles       = tuple(float(quantile) for quantile in config.graph.graph_quantiles)
+
     def _light_scale(self, light, number_of_nodes):
         return np.array([light.sum(), float(number_of_nodes), light.max()], dtype=np.float64)
 
@@ -213,7 +243,18 @@ class GraphFeatures(GraphAssembler):
         light_scale   = self._light_scale(light, number_of_nodes)
         spread_scales = self._spread_scales(positions, light, total_light)
 
-        graph_features = np.concatenate([centroid, light_scale, spread_scales]).astype(np.float32)
+        blocks = [centroid, light_scale, spread_scales]
+
+        if self.moment_features:
+            axis_spread, axis_skew = self._axis_moments(positions, light, total_light, centroid)
+            blocks.append(self._sharp_light_centroid(positions, light))
+            blocks.append(axis_spread)
+            blocks.append(axis_skew)
+
+        if self.quantiles:
+            blocks.append(self._weighted_quantiles(positions, light, self.quantiles))
+
+        graph_features = np.concatenate(blocks).astype(np.float32)
         return torch.tensor(graph_features, dtype=torch.float32).unsqueeze(0)
 
 
@@ -342,6 +383,8 @@ class FeatureLayout:
         self.rank_features         = config.graph.rank_features
         self.edge_rbf_count        = int(config.graph.edge_rbf_count)
         self.graph_scalar_features = config.graph.graph_scalar_features
+        self.graph_moment_features = config.graph.graph_moment_features
+        self.graph_quantiles       = tuple(float(quantile) for quantile in config.graph.graph_quantiles)
 
     def node_features(self):
         layout  = [(f"position_{axis}", "position") for axis in self.AXES]
@@ -383,6 +426,14 @@ class FeatureLayout:
         layout += [("active_node_count", "light_scale")]
         layout += [("max_channel_light", "light_scale")]
         layout += [(f"light_spread_{index}", "light_spread") for index in (1, 2, 3)]
+
+        if self.graph_moment_features:
+            layout += [(f"sharp_centroid_{axis}", "sharp_centroid") for axis in self.AXES]
+            layout += [(f"axis_spread_{axis}",    "axis_spread")    for axis in self.AXES]
+            layout += [(f"axis_skew_{axis}",      "axis_skew")      for axis in self.AXES]
+
+        for quantile in self.graph_quantiles:
+            layout += [(f"light_quantile_{axis}_q{int(round(quantile * 100)):02d}", "light_quantile") for axis in self.AXES]
 
         return layout
 

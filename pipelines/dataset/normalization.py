@@ -99,7 +99,9 @@ class FeatureGroupNormalizer:
         return cls(methods, centers.astype(np.float32), scales, log_masks)
 
     def align_channels(self, channels, reference):
-        for axis, index in enumerate(channels):
+        width = len(reference.methods)
+        for position, index in enumerate(channels):
+            axis                 = position % width
             self.methods[index]  = reference.methods[axis]
             self.center[index]   = reference.center[axis]
             self.scale[index]    = reference.scale[axis]

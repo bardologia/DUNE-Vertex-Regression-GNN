@@ -132,9 +132,9 @@ class CachedGraphDataset(Dataset):
 
 
 class StatsEstimator:
-    NODE_SPATIAL_GROUP  = "position"
-    GRAPH_SPATIAL_GROUP = "light_centroid"
-    TARGET_FRAMES       = ("isotropic", "axiswise")
+    NODE_SPATIAL_GROUP   = "position"
+    GRAPH_SPATIAL_GROUPS = ("light_centroid", "sharp_centroid", "light_quantile")
+    TARGET_FRAMES        = ("isotropic", "axiswise")
 
     def __init__(self, dataset, sample_size, logger, dataset_config):
         self.dataset        = dataset
@@ -159,7 +159,10 @@ class StatsEstimator:
         node_group.align_channels(FeatureLayout.group_index(layout.node_features())[self.NODE_SPATIAL_GROUP], target_group)
 
         if layout.graph_scalar_features:
-            graph_group.align_channels(FeatureLayout.group_index(layout.graph_features())[self.GRAPH_SPATIAL_GROUP], target_group)
+            graph_groups = FeatureLayout.group_index(layout.graph_features())
+            for group_name in self.GRAPH_SPATIAL_GROUPS:
+                if group_name in graph_groups:
+                    graph_group.align_channels(graph_groups[group_name], target_group)
 
         scales = ", ".join(f"{float(value):.4f}" for value in target_group.scale)
         self.logger.subsection(f"Spatial channels tied to the {self.dataset_config.data.target_frame} target frame (scale {scales} m)")

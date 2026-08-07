@@ -30,7 +30,7 @@ def synthetic_batch():
         destination   = torch.randint(0, node_count, (node_count * neighbors,))
         edge_index    = torch.stack([source, destination])
         edge_attr     = torch.randn(node_count * neighbors, 23)
-        graph_attr    = torch.randn(1, 9)
+        graph_attr    = torch.randn(1, 33)
         target        = torch.randn(1, 3)
         return Data(x=node_features, edge_index=edge_index, edge_attr=edge_attr, graph_attr=graph_attr, y=target)
 

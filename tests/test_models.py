@@ -32,7 +32,8 @@ def test_graph_scalars_reach_the_head(synthetic_batch):
     model, config = get_model("gatv2")
 
     assert model.graph_scalars is not None
-    assert model.regression_head.feature_proj[0].in_features == model.pool.out_dim + config.graph_embed_dim
+    assert model.graph_scalars.out_dim == config.graph_embed_dim + config.graph_dim
+    assert model.regression_head.feature_proj[0].in_features == model.pool.out_dim + model.graph_scalars.out_dim
 
     model.eval()
     with torch.no_grad():
