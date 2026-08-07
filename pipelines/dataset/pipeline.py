@@ -97,6 +97,13 @@ class DatasetPipeline:
         base_ids    = member_rows["base_event_id"].values.astype(np.float32)
         return np.column_stack([light_index, signs, targets, base_ids]).astype(np.float32)
 
+    def _warn_on_budget_cuts(self, available_count, selected_count, row_count):
+        if selected_count < available_count:
+            self.logger.warning(f"subset_fraction={self.config.data.subset_fraction} drops {available_count - selected_count} of {available_count} training base events; the persisted split records only the {selected_count} retained events, so any comparison against a full-budget run (the tabular baseline included) is not like for like.")
+
+        if self.config.data.augment_octants:
+            self.logger.warning(f"augment_octants multiplies the epoch cost {row_count / max(selected_count, 1):.1f}x. All octants of a base event share its frozen photon draw, so the mirrors add pose coverage in octants that val and test never visit, not photon-noise diversity.")
+
     def _record_train_base_ids(self, train_samples):
         if self.split_base_ids is None:
             return
@@ -109,6 +116,7 @@ class DatasetPipeline:
         selected_base_samples = self._subsample(train_base_samples)
         train_samples         = self._octant_expand(selected_base_samples) if self.config.data.augment_octants else selected_base_samples
 
+        self._warn_on_budget_cuts(len(train_base_samples), len(selected_base_samples), len(train_samples))
         self._record_train_base_ids(train_samples)
         self.logger.subsection(f"Train samples: {len(train_samples)} rows from {len(selected_base_samples)} base events (octants={self.config.data.augment_octants}, subset_fraction={self.config.data.subset_fraction})")
         return train_samples
