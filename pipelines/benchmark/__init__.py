@@ -4,7 +4,6 @@ from .results      import ComparisonReport, TrialCollector
 from .sizing       import ModelSizer, SizeMatchResult
 from .stages       import (
     ComparisonStage,
-    EvaluationStage,
     MaxBatchStage,
     OverfitGateStage,
     SizeMatchStage,
@@ -19,7 +18,6 @@ __all__ = [
     "SizeMatchResult",
     "MaxBatchProbe",
     "ComparisonStage",
-    "EvaluationStage",
     "MaxBatchStage",
     "OverfitGateStage",
     "SizeMatchStage",
