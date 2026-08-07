@@ -47,6 +47,8 @@ class GraphConfig:
     inertia_features      : bool  = True
     rank_features         : bool  = True
     graph_scalar_features : bool  = True
+    graph_moment_features : bool  = True
+    graph_quantiles       : tuple = (0.1, 0.25, 0.5, 0.75, 0.9)
     edge_rbf_count        : int   = 16
     edge_rbf_max          : float = 7.0
 

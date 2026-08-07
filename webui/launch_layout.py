@@ -83,6 +83,8 @@ class LaunchLayout:
                 "graph.inertia_features",
                 "graph.rank_features",
                 "graph.graph_scalar_features",
+                "graph.graph_moment_features",
+                "graph.graph_quantiles",
             ]},
             {"title": "Readout physics", "fields": [
                 "physics.scale_factor",

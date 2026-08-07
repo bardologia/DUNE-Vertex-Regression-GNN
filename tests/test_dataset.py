@@ -14,7 +14,7 @@ def test_graph_builder_shapes():
     graph = Graph(DatasetConfig()).build_from_arrays(positions, light)
     assert graph.x.shape            == (30, 17)
     assert graph.edge_attr.shape[1] == 23
-    assert graph.graph_attr.shape   == (1, 9)
+    assert graph.graph_attr.shape   == (1, 33)
 
 
 def test_graph_scalars_carry_extensive_quantities():
@@ -29,11 +29,41 @@ def test_graph_scalars_carry_extensive_quantities():
     assert np.all(scalars[6:9] >= 0.0)
 
 
+def test_graph_scalars_carry_the_summary_moments():
+    positions = np.random.default_rng(7).normal(size=(40, 3)).astype(np.float32)
+    light     = np.random.default_rng(8).exponential(size=40).astype(np.float32)
+
+    config  = DatasetConfig()
+    scalars = Graph(config).build_from_arrays(positions, light).graph_attr[0].numpy()
+    groups  = FeatureLayout.group_index(FeatureLayout(config).graph_features())
+
+    sharp_weights  = light.astype(np.float64) ** 2
+    sharp_centroid = (sharp_weights[:, None] * positions).sum(axis=0) / sharp_weights.sum()
+    centroid       = (light[:, None] * positions).sum(axis=0) / light.sum()
+    spread         = np.sqrt((light[:, None] * (positions - centroid) ** 2).sum(axis=0) / light.sum())
+
+    assert np.allclose(scalars[groups["sharp_centroid"]], sharp_centroid, atol=1e-4)
+    assert np.allclose(scalars[groups["axis_spread"]],    spread,         atol=1e-4)
+    assert len(groups["axis_skew"])     == 3
+    assert len(groups["light_quantile"]) == 3 * len(config.graph.graph_quantiles)
+
+
+def test_graph_moment_toggles_change_dimensions():
+    from pipelines.dataset import FeatureSchema
+
+    config = DatasetConfig()
+    config.graph.graph_moment_features = False
+    config.graph.graph_quantiles       = ()
+
+    assert FeatureSchema(config).dimensions()[2] == 9
+    assert len(FeatureLayout(config).graph_features()) == 9
+
+
 def test_feature_toggles_change_dimensions():
     from configuration import DatasetConfig as _DatasetConfig
     from pipelines.dataset import FeatureSchema
 
-    assert FeatureSchema(_DatasetConfig()).dimensions() == (17, 23, 9)
+    assert FeatureSchema(_DatasetConfig()).dimensions() == (17, 23, 33)
 
     minimal = _DatasetConfig()
     minimal.graph.direction_features    = False
@@ -89,11 +119,11 @@ def test_dataset_pipeline_produces_splits(dataset_config, quiet_logger):
     sample = datasets["train"][0]
     assert sample.x.shape[1]          == 17
     assert sample.edge_attr.shape[1]  == 23
-    assert sample.graph_attr.shape    == (1, 9)
+    assert sample.graph_attr.shape    == (1, 33)
     assert sample.y.shape             == (1, 3)
     assert len(stats.target.methods)  == 3
     assert len(stats.node.methods)    == 17
-    assert len(stats.graph.methods)   == 9
+    assert len(stats.graph.methods)   == 33
 
 
 def test_global_node_reaches_every_node_in_two_hops():
@@ -181,6 +211,17 @@ def test_unknown_target_frame_raises(dataset_config, quiet_logger):
 
     with pytest.raises(ValueError, match="Unknown data.target_frame"):
         DatasetPipeline(dataset_config, quiet_logger).run()
+
+
+def test_spatial_graph_scalars_all_adopt_the_target_frame(dataset_config, quiet_logger):
+    _, stats = DatasetPipeline(dataset_config, quiet_logger).run()
+
+    groups = FeatureLayout.group_index(FeatureLayout(dataset_config).graph_features())
+
+    for group_name in ("light_centroid", "sharp_centroid", "light_quantile"):
+        channels = groups[group_name]
+        assert np.allclose(stats.graph.scale[channels],  np.tile(stats.target.scale,  len(channels) // 3))
+        assert np.allclose(stats.graph.center[channels], np.tile(stats.target.center, len(channels) // 3))
 
 
 def test_light_centroid_maps_onto_the_normalized_target(dataset_config, quiet_logger):
