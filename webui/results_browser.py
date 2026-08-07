@@ -12,6 +12,7 @@ class ResultsBrowser:
 
     SKIPPED_DIRECTORIES = {"__pycache__", ".git", ".ipynb_checkpoints"}
     MAX_DEPTH           = 6
+    NESTED_RUN_DEPTH    = 2
     BEST_METRIC_SPLITS  = ("test", "val", "train")
     BEST_METRIC_NAME    = "euclidean_mean"
     COORDINATE_NAMES    = ("x", "y", "z")
@@ -21,13 +22,40 @@ class ResultsBrowser:
         self.paths  = paths
         self.logger = logger
 
+    def _is_run(self, directory: Path) -> bool:
+        return (directory / "metadata" / "resolved_config.json").is_file()
+
+    def _collect_runs(self, directory: Path, depth: int) -> list[Path]:
+        if self._is_run(directory):
+            return [directory]
+        if depth >= self.NESTED_RUN_DEPTH:
+            return []
+
+        try:
+            entries = sorted(directory.iterdir())
+        except OSError:
+            return []
+
+        nested = []
+        for entry in entries:
+            if entry.is_dir() and entry.name not in self.SKIPPED_DIRECTORIES and not entry.name.startswith("."):
+                nested.extend(self._collect_runs(entry, depth + 1))
+        return nested
+
     def _run_directories(self) -> list[Path]:
         if not self.paths.runs_dir.is_dir():
             return []
 
-        directories = [entry for entry in self.paths.runs_dir.iterdir() if entry.is_dir() and entry.name not in self.SKIPPED_DIRECTORIES]
-        directories.sort(key=lambda entry: entry.stat().st_mtime, reverse=True)
+        directories = []
+        for entry in sorted(self.paths.runs_dir.iterdir()):
+            if entry.is_dir() and entry.name not in self.SKIPPED_DIRECTORIES:
+                directories.extend(self._collect_runs(entry, 0))
+
+        directories.sort(key=lambda directory: directory.stat().st_mtime, reverse=True)
         return directories
+
+    def _run_name(self, run_directory: Path) -> str:
+        return str(run_directory.relative_to(self.paths.runs_dir))
 
     def _model_name(self, run_directory: Path) -> str:
         config_path = run_directory / "metadata" / "resolved_config.json"
@@ -100,7 +128,7 @@ class ResultsBrowser:
         metrics = self._metrics_payload(run_directory)
 
         return {
-            "name"              : run_directory.name,
+            "name"              : self._run_name(run_directory),
             "path"              : str(run_directory),
             "model"             : self._model_name(run_directory),
             "timestamp"         : self._timestamp(run_directory),

@@ -83,3 +83,16 @@ def test_run_without_metrics_reports_no_coordinate_errors(browser):
 
     assert run["coordinate_errors"] is None
     assert run["best_metric"] is None
+
+
+def test_benchmark_sub_runs_are_listed(browser):
+    results, runs_dir = browser
+    _run_directory(runs_dir, "benchmark_case/training/edgeconv_run", {
+        "unit"   : "m",
+        "splits" : {"test": {"euclidean_mean": 3.7, "mae_x": 1.8, "mae_y": 1.7, "mae_z": 2.6, "rmse_x": 2.4, "rmse_y": 2.3, "rmse_z": 3.5}},
+    })
+
+    runs = results.list_runs()["runs"]
+
+    assert [run["name"] for run in runs] == ["benchmark_case/training/edgeconv_run"]
+    assert runs[0]["best_metric"]["value"] == 3.7
