@@ -42,7 +42,7 @@ class OptimizerConfig:
 
 @dataclass
 class SchedulerConfig:
-    type    : str   = "reduce_on_plateau"
+    type    : str   = "cosine_annealing"
     eta_min : float = 1e-6
 
     power     : float = 2.0
@@ -98,10 +98,10 @@ class LossConfig:
 
 @dataclass
 class TrainingLoopConfig:
-    epochs                      : int   = 100
+    epochs                      : int   = 65
     batch_size                  : int   = 15
     device                      : str   = "cuda" if torch.cuda.is_available() else "cpu"
-    use_amp                     : bool  = True
+    use_amp                     : bool  = False
     gradient_accumulation_steps : int   = 1
     validation_frequency        : int   = 1
 

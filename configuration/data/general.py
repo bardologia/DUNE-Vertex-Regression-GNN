@@ -23,7 +23,7 @@ class DataConfig:
     build_store        : bool  = False
     store_worker_count : int   = 10
 
-    augment_octants    : bool  = False
+    augment_octants    : bool  = True
     subset_fraction    : float = 1.0
     stats_sample_size  : int   = 8192
     target_frame       : str   = "axiswise"
@@ -43,7 +43,7 @@ class GraphConfig:
 
     active_only        : bool  = True
     max_active_nodes   : int   = 0
-    global_node        : bool  = False
+    global_node        : bool  = True
 
     direction_features    : bool  = True
     inertia_features      : bool  = True

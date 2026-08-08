@@ -12,7 +12,7 @@ def test_graph_builder_shapes():
     light     = generator.exponential(size=30).astype(np.float32)
 
     graph = Graph(DatasetConfig()).build_from_arrays(positions, light)
-    assert graph.x.shape            == (30, 17)
+    assert graph.x.shape            == (31, 17)
     assert graph.edge_attr.shape[1] == 23
     assert graph.graph_attr.shape   == (1, 33)
 
@@ -94,6 +94,7 @@ def test_active_only_prunes_dark_nodes():
 
     config        = DatasetConfig()
     config.graph.active_only = True
+    config.graph.global_node = False
     graph         = Graph(config).build_from_arrays(positions, light)
     assert graph.x.shape[0] == 12
 
@@ -104,6 +105,7 @@ def test_max_active_nodes_caps_to_brightest():
 
     config        = DatasetConfig()
     config.graph.active_only      = True
+    config.graph.global_node      = False
     config.graph.max_active_nodes = 8
     graph         = Graph(config).build_from_arrays(positions, light)
     assert graph.x.shape[0] == 8
@@ -132,6 +134,7 @@ def test_global_node_reaches_every_node_in_two_hops():
     light     = generator.exponential(size=40).astype(np.float32)
 
     config = DatasetConfig()
+    config.graph.global_node = False
     plain  = Graph(config).build_from_arrays(positions, light)
 
     config.graph.global_node = True
