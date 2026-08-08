@@ -15,9 +15,11 @@ class IOConfig:
 
 @dataclass
 class OptimizerConfig:
-    learning_rate_regression_head : float = 0.01
-    learning_rate_pool            : float = 0.001
-    learning_rate_encoder         : float = 0.001
+    learning_rate_regression_head : float = 0.005
+    learning_rate_pool            : float = 0.0005
+    learning_rate_encoder         : float = 0.0005
+
+    reference_batch_size : int = 128
 
     weight_decay_regression_head : float = 1e-5
     weight_decay_pool            : float = 1e-5

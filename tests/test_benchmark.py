@@ -143,3 +143,6 @@ def test_benchmark_pipeline_runs(dataset_config, quiet_logger, tmp_path):
         assert record["parameters"] is not None
         assert "euclidean_mean" in record["metrics"]
         assert (Path(record["run_directory"]) / "metadata" / "metrics.json").exists()
+
+        resolved = json.loads((Path(record["run_directory"]) / "metadata" / "resolved_config.json").read_text(encoding="utf-8"))
+        assert resolved["training.loop.batch_size"] == (record["max_batch"] or config.training.loop.batch_size)

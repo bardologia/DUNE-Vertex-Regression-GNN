@@ -114,6 +114,7 @@ class LaunchLayout:
                 "optimizer.learning_rate_regression_head",
                 "optimizer.learning_rate_pool",
                 "optimizer.learning_rate_encoder",
+                {"path": "optimizer.reference_batch_size", "widget": NUM_BATCH},
             ]},
             {"title": "Weight decay", "fields": [
                 "optimizer.weight_decay_regression_head",

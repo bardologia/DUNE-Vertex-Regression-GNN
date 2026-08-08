@@ -45,6 +45,8 @@ class TrialCollector:
             "max_batch_status"    : max_batch_entry.get("status"),
             "train_status"        : training_entry.get("status"),
             "best_val_loss"       : training_entry.get("best_val_loss"),
+            "train_batch_size"    : training_entry.get("batch_size"),
+            "lr_scale"            : training_entry.get("lr_scale"),
             "duration_s"          : training_entry.get("duration_s"),
             "run_directory"       : training_entry.get("run_directory"),
             "metrics"             : metrics,
@@ -87,12 +89,15 @@ class ComparisonReport:
         return table
 
     def _training_table(self):
-        table = MarkdownTable(["Model", "Status", "Best val loss", "Duration (s)"], align=["left", "left", "right", "right"])
+        table = MarkdownTable(["Model", "Status", "Best val loss", "Batch", "LR scale", "Duration (s)"], align=["left", "left", "right", "right", "right", "right"])
         for record in self.records:
+            lr_scale = f"{record['lr_scale']:.4f}" if record.get("lr_scale") is not None else "—"
             table.add_row(
                 record["model"],
                 record.get("train_status") or "—",
                 ScalarFormatter.format_scalar(record.get("best_val_loss")),
+                record.get("train_batch_size") or "—",
+                lr_scale,
                 ScalarFormatter.format_scalar(record.get("duration_s")),
             )
         return table

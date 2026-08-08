@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from configuration.entry import TrainEntryConfig
-from tools import EarlyStopping, GradientClipper, MarkdownDoc, MarkdownTable, Scheduler, Tracker, Warmup
+from tools import EarlyStopping, GradientClipper, LearningRateScaler, MarkdownDoc, MarkdownTable, Scheduler, Tracker, Warmup
 from tools.runtime.reproducibility import Reproducibility, RngSnapshot
 
 
@@ -129,6 +129,42 @@ def test_rng_snapshot_restores_the_global_streams():
     snapshot.restore()
 
     assert np.allclose(np.random.rand(3), expected)
+
+
+def test_learning_rates_scale_linearly_from_the_reference_batch():
+    config = TrainEntryConfig().training
+
+    config.loop.batch_size                  = 128
+    config.loop.gradient_accumulation_steps = 1
+
+    unscaled = LearningRateScaler(config.optimizer, config.loop)
+    assert unscaled.factor          == 1.0
+    assert unscaled.encoder         == config.optimizer.learning_rate_encoder
+    assert unscaled.pool            == config.optimizer.learning_rate_pool
+    assert unscaled.regression_head == config.optimizer.learning_rate_regression_head
+
+    config.loop.batch_size = 32
+    quartered              = LearningRateScaler(config.optimizer, config.loop)
+    assert quartered.factor  == 0.25
+    assert quartered.encoder == pytest.approx(config.optimizer.learning_rate_encoder * 0.25)
+
+    config.loop.gradient_accumulation_steps = 4
+    accumulated                             = LearningRateScaler(config.optimizer, config.loop)
+    assert accumulated.effective_batch_size == 128
+    assert accumulated.factor               == 1.0
+
+
+def test_pinning_the_reference_batch_neutralises_the_scaling():
+    config = TrainEntryConfig().training
+
+    config.loop.batch_size                  = 8
+    config.loop.gradient_accumulation_steps = 1
+
+    scaler = LearningRateScaler(config.optimizer, config.loop)
+    assert scaler.pin_to_effective_batch() == 8
+    assert config.optimizer.reference_batch_size == 8
+    assert scaler.factor  == 1.0
+    assert scaler.encoder == config.optimizer.learning_rate_encoder
 
 
 def test_markdown_document_renders():

@@ -85,9 +85,9 @@ class GPSConfig(BaseGNNConfig):
     drop_path_rate    : float = 0.0
 
     optimizer_overrides : dict = field(default_factory=lambda: {
-        "learning_rate_encoder"         : 3e-4,
-        "learning_rate_pool"            : 3e-4,
-        "learning_rate_regression_head" : 3e-3,
+        "learning_rate_encoder"         : 1.5e-4,
+        "learning_rate_pool"            : 1.5e-4,
+        "learning_rate_regression_head" : 1.5e-3,
     })
 
 

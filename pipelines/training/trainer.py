@@ -11,6 +11,7 @@ from tools.monitoring.resource_monitor import ResourceMonitor
 from tools.runtime.completion          import CompletionMarker
 from tools.training.checkpoint         import Checkpoint, TrainerState, WeightEma
 from tools.training.gradients          import GradientClipper
+from tools.training.optimization       import LearningRateScaler
 from tools.training.scheduling         import Scheduler, Warmup
 from tools.training.stopping           import EarlyStopping
 from tools.training.vram_reservation   import VramReservation
@@ -38,6 +39,8 @@ class Trainer:
         self.abort_on_nonfinite_loss = training_config.loop.abort_on_nonfinite_loss
         self.use_amp                 = training_config.loop.use_amp and str(self.device).startswith("cuda")
         self.scaler                  = torch.amp.GradScaler("cuda") if self.use_amp else None
+
+        self.learning_rates = LearningRateScaler(training_config.optimizer, training_config.loop)
 
         self.optimizer = torch.optim.AdamW(self._build_param_groups(), betas=training_config.optimizer.betas, eps=training_config.optimizer.eps)
         base_lrs       = [group["lr"] for group in self.optimizer.param_groups]
@@ -70,10 +73,11 @@ class Trainer:
                 "Grad accumulation" : self.accumulation_steps,
                 "EMA"               : f"{training_config.loop.use_ema} (decay {training_config.loop.ema_decay})",
                 "Resume"            : self.resume,
-                "LR (encoder)"      : training_config.optimizer.learning_rate_encoder,
-                "LR (pool)"         : training_config.optimizer.learning_rate_pool,
-                "LR (head)"         : training_config.optimizer.learning_rate_regression_head,
+                "LR (encoder)"      : self.learning_rates.encoder,
+                "LR (pool)"         : self.learning_rates.pool,
+                "LR (head)"         : self.learning_rates.regression_head,
                 "Optimizer betas"   : str(training_config.optimizer.betas),
+                **self.learning_rates.summary(),
             })
             summary = ModelSummary(self.logger, self.model)
             summary.run()
@@ -90,9 +94,9 @@ class Trainer:
 
         optimizer_config = self.config.optimizer
         groups = [
-            {"params": regression_head_parameters, "lr": optimizer_config.learning_rate_regression_head, "weight_decay": optimizer_config.weight_decay_regression_head, "name": "regression_head"},
-            {"params": pool_parameters,            "lr": optimizer_config.learning_rate_pool,            "weight_decay": optimizer_config.weight_decay_pool,            "name": "pool"},
-            {"params": encoder_parameters,         "lr": optimizer_config.learning_rate_encoder,         "weight_decay": optimizer_config.weight_decay_encoder,         "name": "encoder"},
+            {"params": regression_head_parameters, "lr": self.learning_rates.regression_head, "weight_decay": optimizer_config.weight_decay_regression_head, "name": "regression_head"},
+            {"params": pool_parameters,            "lr": self.learning_rates.pool,            "weight_decay": optimizer_config.weight_decay_pool,            "name": "pool"},
+            {"params": encoder_parameters,         "lr": self.learning_rates.encoder,         "weight_decay": optimizer_config.weight_decay_encoder,         "name": "encoder"},
         ]
 
         grouped_parameter_count = sum(parameter.numel() for group in groups for parameter in group["params"])
