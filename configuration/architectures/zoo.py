@@ -12,6 +12,11 @@ class BaseGNNConfig:
     graph_dim         : int   = 33
     output_dim        : int   = 3
 
+    output_clamp      : bool  = True
+    clamp_leak        : float = 0.01
+    clamp_lower       : tuple = ()
+    clamp_upper       : tuple = ()
+
     hidden_dim        : int   = 128
     num_layers        : int   = 4
     dropout           : float = 0.0

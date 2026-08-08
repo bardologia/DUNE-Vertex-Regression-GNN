@@ -52,7 +52,7 @@ class BenchmarkPipeline:
         self.dataset_pipeline     = DatasetPipeline(self.config.dataset, self.logger)
         self.datasets, self.stats = self.dataset_pipeline.run()
 
-        base_overrides       = DatasetPipeline.inject_feature_dimensions({}, self.config.dataset)
+        base_overrides       = self.dataset_pipeline.inject_model_overrides({})
         self.model_overrides = {}
         for model_name in self.models:
             degree_histogram = self.dataset_pipeline.pna_degree_histogram(model_name, self.datasets["train"])

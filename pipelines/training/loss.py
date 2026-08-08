@@ -11,15 +11,11 @@ class Loss:
         self.stats   = stats
         self.logger  = logger
 
-        self.containment_bounds = None
-
         self.logger.section("[Loss Function]")
         self.logger.kv_table({
-            "Data term"               : f"{self.config.data_term} (weight {self.config.data_weight})",
-            "Euclidean weight"        : self.config.euclidean_weight,
-            "Containment weight"      : self.config.containment_weight,
-            "Containment half extent" : str(tuple(self.config.containment_half_extent)),
-            "Light falloff weight"    : self.config.light_falloff_weight,
+            "Data term"            : f"{self.config.data_term} (weight {self.config.data_weight})",
+            "Euclidean weight"     : self.config.euclidean_weight,
+            "Light falloff weight" : self.config.light_falloff_weight,
         })
 
     def _data_term(self, predictions, targets):
@@ -31,15 +27,6 @@ class Loss:
 
     def _euclidean_term(self, predictions, targets):
         return torch.sqrt(((predictions - targets) ** 2).sum(dim=1) + 1e-12).mean()
-
-    def _containment_bounds(self, predictions):
-        if self.containment_bounds is None or self.containment_bounds.device != predictions.device:
-            self.containment_bounds = torch.tensor(self.config.containment_half_extent, dtype=predictions.dtype, device=predictions.device)
-        return self.containment_bounds
-
-    def _containment_term(self, predictions):
-        excess = torch.clamp(predictions.abs() - self._containment_bounds(predictions), min=0.0)
-        return (excess ** 2).mean()
 
     def _light_falloff_term(self, predictions, data):
         device         = predictions.device
@@ -69,17 +56,12 @@ class Loss:
         data_term  = self._data_term(predictions, targets)
         total_loss = self.config.data_weight * data_term
 
-        if self.config.euclidean_weight > 0.0 or self.config.containment_weight > 0.0:
+        if self.config.euclidean_weight > 0.0:
             physical_predictions = self.stats.target.inverse_torch(predictions, predictions.device)
             physical_targets     = self.stats.target.inverse_torch(targets, predictions.device)
 
-        if self.config.euclidean_weight > 0.0:
             euclidean  = self._euclidean_term(physical_predictions, physical_targets)
             total_loss = total_loss + self.config.euclidean_weight * euclidean
-
-        if self.config.containment_weight > 0.0:
-            containment = self._containment_term(physical_predictions)
-            total_loss  = total_loss + self.config.containment_weight * containment
 
         if self.config.light_falloff_weight > 0.0 and hasattr(data, "batch") and data.batch is not None:
             light_falloff = self._light_falloff_term(predictions, data)

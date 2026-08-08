@@ -36,7 +36,6 @@ def test_training_pipeline_one_epoch(parquet_store, tmp_path):
     entry.training.loop.num_workers           = 0
     entry.training.warmup.warmup_steps        = 2
     entry.training.loss.euclidean_weight      = 0.2
-    entry.training.loss.containment_weight    = 0.1
     entry.training.loss.light_falloff_weight  = 0.5
 
     logger  = Logger(log_dir="", name="train_test", level="ERROR")

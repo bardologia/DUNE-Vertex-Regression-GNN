@@ -491,6 +491,27 @@ class GraphScalarEncoder(nn.Module):
         return torch.cat([self.net(graph_attributes), graph_attributes], dim=-1)
 
 
+class LeakyClamp(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        lower = torch.tensor(config.clamp_lower, dtype=torch.float32).flatten()
+        upper = torch.tensor(config.clamp_upper, dtype=torch.float32).flatten()
+
+        if lower.numel() != config.output_dim or upper.numel() != config.output_dim:
+            raise ValueError(f"output_clamp needs one bound per output coordinate: got clamp_lower={tuple(config.clamp_lower)} and clamp_upper={tuple(config.clamp_upper)} for output_dim={config.output_dim}. Build the model through DatasetPipeline.inject_model_overrides so the detector envelope is mapped into the normalized target frame, or set output_clamp=false.")
+
+        if not bool((upper > lower).all()):
+            raise ValueError(f"output_clamp requires clamp_upper > clamp_lower on every axis: got lower={lower.tolist()} upper={upper.tolist()}.")
+
+        self.leak = float(config.clamp_leak)
+        self.register_buffer("lower", lower, persistent=False)
+        self.register_buffer("upper", upper, persistent=False)
+
+    def forward(self, predictions: torch.Tensor) -> torch.Tensor:
+        bounded = torch.maximum(torch.minimum(predictions, self.upper), self.lower)
+        return bounded + self.leak * (predictions - bounded)
+
+
 class GraphRegressor(nn.Module):
     def __init__(self, config, encoder: nn.Module):
         super().__init__()
@@ -500,6 +521,7 @@ class GraphRegressor(nn.Module):
         self.norm            = nn.LayerNorm(self.pool.out_dim)
         self.graph_scalars   = GraphScalarEncoder(config.graph_dim, config.graph_embed_dim) if config.graph_dim > 0 else None
         self.regression_head = ModuleFactory.head(config, self._readout_dim())
+        self.output_clamp    = LeakyClamp(config) if config.output_clamp else None
 
     def _readout_dim(self):
         if self.graph_scalars is None:
@@ -533,6 +555,8 @@ class GraphRegressor(nn.Module):
             graph_embedding = torch.cat([graph_embedding, self.graph_scalars(self._graph_attributes(data))], dim=-1)
 
         predictions = self.regression_head(graph_embedding)
+        if self.output_clamp is not None:
+            predictions = self.output_clamp(predictions)
 
         if return_features:
             return predictions, {"graph_embedding": graph_embedding, "predictions": predictions}

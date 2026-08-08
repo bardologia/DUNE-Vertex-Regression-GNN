@@ -90,9 +90,6 @@ class LossConfig:
 
     euclidean_weight : float = 0.0
 
-    containment_weight      : float = 0.0
-    containment_half_extent : tuple = (6.03, 6.67, 29.93)
-
     light_falloff_weight  : float = 0.0
     light_falloff_epsilon : float = 1.0
 
