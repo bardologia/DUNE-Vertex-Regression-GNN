@@ -206,13 +206,28 @@ class DatasetPipeline:
             self.datasets["test"] = CachedGraphDataset(self._make_dataset(test_samples, augmentation, self.stats), self.logger)
 
     @staticmethod
-    def build_loaders(datasets, batch_size, num_workers=0, pin_memory=False, persistent_workers=False, prefetch_factor=2, seed=0):
-        persistent     = persistent_workers and num_workers > 0
-        worker_options = {"prefetch_factor": prefetch_factor, "worker_init_fn": Reproducibility.worker_init(seed)} if num_workers > 0 else {}
+    def _split_workers(dataset, num_workers, logger, split_name):
+        if num_workers == 0 or not isinstance(dataset, CachedGraphDataset):
+            return num_workers
 
-        train_loader = GraphDataLoader(datasets["train"], batch_size=batch_size, shuffle=True,  num_workers=num_workers, pin_memory=pin_memory, persistent_workers=persistent, generator=Reproducibility.generator(seed), **worker_options)
-        val_loader   = GraphDataLoader(datasets["val"],   batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory, persistent_workers=persistent, **worker_options)
-        test_loader  = GraphDataLoader(datasets["test"],  batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory, persistent_workers=persistent, **worker_options)
+        if logger is not None:
+            logger.warning(f"{split_name} split is already materialised in RAM, so num_workers={num_workers} is overridden to 0: forked workers copy the {len(dataset)} cached graphs page by page as they walk them and the host runs out of memory long before the GPU does.")
+        return 0
+
+    @staticmethod
+    def _split_loader(dataset, batch_size, shuffle, num_workers, pin_memory, persistent_workers, prefetch_factor, seed, logger, split_name):
+        workers        = DatasetPipeline._split_workers(dataset, num_workers, logger, split_name)
+        persistent     = persistent_workers and workers > 0
+        worker_options = {"prefetch_factor": prefetch_factor, "worker_init_fn": Reproducibility.worker_init(seed)} if workers > 0 else {}
+        shuffle_option = {"generator": Reproducibility.generator(seed)} if shuffle else {}
+
+        return GraphDataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=workers, pin_memory=pin_memory, persistent_workers=persistent, **shuffle_option, **worker_options)
+
+    @staticmethod
+    def build_loaders(datasets, batch_size, num_workers=0, pin_memory=False, persistent_workers=False, prefetch_factor=2, seed=0, logger=None):
+        train_loader = DatasetPipeline._split_loader(datasets["train"], batch_size, True,  num_workers, pin_memory, persistent_workers, prefetch_factor, seed, logger, "train")
+        val_loader   = DatasetPipeline._split_loader(datasets["val"],   batch_size, False, num_workers, pin_memory, persistent_workers, prefetch_factor, seed, logger, "val")
+        test_loader  = DatasetPipeline._split_loader(datasets["test"],  batch_size, False, num_workers, pin_memory, persistent_workers, prefetch_factor, seed, logger, "test")
         return train_loader, val_loader, test_loader
 
     def _normalized_detector_bounds(self):

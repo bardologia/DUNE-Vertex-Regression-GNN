@@ -267,7 +267,7 @@ class TrainingStage(BenchmarkStage):
             training_config.loop.epochs = self.config.benchmark_training.epochs
             batch_size                  = self._batch_size(model_name)
 
-            loaders                          = DatasetPipeline.build_loaders(self.datasets, batch_size, num_workers=training_config.loop.num_workers, pin_memory=training_config.loop.pin_memory, persistent_workers=training_config.loop.persistent_workers)
+            loaders                          = DatasetPipeline.build_loaders(self.datasets, batch_size, num_workers=training_config.loop.num_workers, pin_memory=training_config.loop.pin_memory, persistent_workers=training_config.loop.persistent_workers, logger=self.logger)
             train_loader, validation_loader, _ = loaders
 
             run_metadata = TrainingRunMetadata(training_config, model_name, self.training_directory, run_name="run")
