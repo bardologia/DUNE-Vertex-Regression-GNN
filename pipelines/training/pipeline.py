@@ -60,7 +60,7 @@ class TrainingPipeline:
         })
 
     def _resolve_model_overrides(self, dataset_pipeline, train_dataset):
-        overrides        = DatasetPipeline.inject_feature_dimensions(self.entry.model_overrides, self.entry.dataset)
+        overrides        = dataset_pipeline.inject_model_overrides(self.entry.model_overrides)
         degree_histogram = dataset_pipeline.pna_degree_histogram(self.entry.model_name, train_dataset)
 
         if degree_histogram is None:

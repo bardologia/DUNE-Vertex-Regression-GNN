@@ -215,10 +215,28 @@ class DatasetPipeline:
         test_loader  = GraphDataLoader(datasets["test"],  batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory, persistent_workers=persistent, **worker_options)
         return train_loader, val_loader, test_loader
 
-    @staticmethod
-    def inject_feature_dimensions(model_overrides, dataset_config):
-        node_dimension, edge_dimension, graph_dimension = FeatureSchema(dataset_config).dimensions()
-        return {**model_overrides, "input_dim": node_dimension, "edge_dim": edge_dimension, "graph_dim": graph_dimension}
+    def _normalized_detector_bounds(self):
+        if self.stats is None:
+            raise ValueError("inject_model_overrides needs fitted normalization statistics: run the dataset pipeline (or hand it stats) before building the model, because the detector envelope is only meaningful once the target frame is known.")
+
+        half_extent = np.asarray(self.config.data.detector_half_extent, dtype=np.float64)
+        center      = np.asarray(self.stats.target.center, dtype=np.float64)
+        scale       = np.asarray(self.stats.target.scale,  dtype=np.float64)
+
+        if half_extent.shape != center.shape:
+            raise ValueError(f"data.detector_half_extent carries {half_extent.size} axes but the target frame carries {center.size}. Give one physical half extent (m) per predicted coordinate.")
+
+        lower = (-half_extent - center) / scale
+        upper = ( half_extent - center) / scale
+
+        self.logger.subsection(f"Output clamp envelope: +-{tuple(float(value) for value in half_extent)} m maps to [{lower.round(3).tolist()}, {upper.round(3).tolist()}] in the normalized target frame")
+        return tuple(lower.tolist()), tuple(upper.tolist())
+
+    def inject_model_overrides(self, model_overrides):
+        node_dimension, edge_dimension, graph_dimension = FeatureSchema(self.config).dimensions()
+        clamp_lower, clamp_upper                        = self._normalized_detector_bounds()
+
+        return {**model_overrides, "input_dim": node_dimension, "edge_dim": edge_dimension, "graph_dim": graph_dimension, "clamp_lower": clamp_lower, "clamp_upper": clamp_upper}
 
     def pna_degree_histogram(self, model_name, dataset):
         if model_name != "pna":

@@ -10,7 +10,7 @@ from pipelines.dataset.graph      import FeatureSchema
 
 def _model_overrides(config):
     node_dim, edge_dim, graph_dim = FeatureSchema(config.dataset).dimensions()
-    base = {"input_dim": node_dim, "edge_dim": edge_dim, "graph_dim": graph_dim}
+    base = {"input_dim": node_dim, "edge_dim": edge_dim, "graph_dim": graph_dim, "clamp_lower": (-2.0, -2.0, -2.0), "clamp_upper": (2.0, 2.0, 2.0)}
     return {model_name: dict(base) for model_name in MODEL_CONFIG_REGISTRY}
 
 

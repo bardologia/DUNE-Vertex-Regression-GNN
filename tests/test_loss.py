@@ -38,7 +38,7 @@ def _loss(config):
 def test_physics_loss_is_finite_and_differentiable():
     batch       = _batch()
     predictions = torch.randn(3, 3, requires_grad=True)
-    config      = LossConfig(euclidean_weight=0.5, containment_weight=0.1, light_falloff_weight=0.5)
+    config      = LossConfig(euclidean_weight=0.5, light_falloff_weight=0.5)
 
     result = _loss(config)(predictions, batch)
     result["total_loss"].backward()

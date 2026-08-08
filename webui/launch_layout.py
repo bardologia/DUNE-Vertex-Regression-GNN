@@ -60,6 +60,7 @@ class LaunchLayout:
                 "data.subset_fraction",
                 "data.coordinate_columns",
                 "data.position_columns",
+                "data.detector_half_extent",
             ]},
             {"title": "Hot channels", "fields": [
                 {"gate": "data.hot_channels.enabled", "fields": [
@@ -177,8 +178,6 @@ class LaunchLayout:
             ]},
             {"title": "Geometry", "fields": [
                 "loss.euclidean_weight",
-                "loss.containment_weight",
-                "loss.containment_half_extent",
             ]},
             {"title": "Light falloff", "fields": [
                 "loss.light_falloff_weight",

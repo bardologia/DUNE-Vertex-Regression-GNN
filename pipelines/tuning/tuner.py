@@ -67,7 +67,7 @@ class Tuner:
         training_config.loop.batch_size           = self.tuning.batch_size
         training_config.loop.validation_frequency = 1
 
-        model_overrides = self.dataset_pipeline.inject_feature_dimensions(model_overrides, self.entry.dataset)
+        model_overrides = self.dataset_pipeline.inject_model_overrides(model_overrides)
 
         degree_histogram = self.dataset_pipeline.pna_degree_histogram(self.entry.model_name, self.datasets["train"])
         if degree_histogram is not None:

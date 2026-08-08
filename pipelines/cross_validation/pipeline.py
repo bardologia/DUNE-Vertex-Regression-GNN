@@ -173,7 +173,7 @@ class CrossValidationPipeline:
         loaders         = DatasetPipeline.build_loaders(datasets, loop.batch_size, num_workers=loop.num_workers, pin_memory=loop.pin_memory, persistent_workers=loop.persistent_workers)
         train_loader, validation_loader, test_loader = loaders
 
-        self.entry.model_overrides = DatasetPipeline.inject_feature_dimensions(self.entry.model_overrides, self.entry.dataset)
+        self.entry.model_overrides = self.dataset_pipeline.inject_model_overrides(self.entry.model_overrides)
 
         degree_histogram = self.dataset_pipeline.pna_degree_histogram(self.entry.model_name, datasets["train"])
         if degree_histogram is not None:

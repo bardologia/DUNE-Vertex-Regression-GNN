@@ -31,6 +31,8 @@ class DataConfig:
     coordinate_columns : tuple = ("event_x", "event_y", "event_z")
     position_columns   : tuple = ("x", "y", "z")
 
+    detector_half_extent : tuple = (6.03, 6.67, 29.93)
+
     hot_channels       : HotChannelConfig = field(default_factory=HotChannelConfig)
 
 
