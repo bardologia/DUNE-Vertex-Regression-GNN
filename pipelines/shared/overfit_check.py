@@ -11,6 +11,7 @@ from torch_geometric.data import Batch
 
 from tools.runtime.completion      import CompletionMarker
 from tools.runtime.reproducibility import RngSnapshot
+from tools.training.optimization   import LearningRateScaler
 
 
 class RepeatedBatchLoader:
@@ -83,11 +84,14 @@ class OverfitCheck:
         config.resources.enabled           = False
         config.memory.reserve_vram         = False
 
-        self.record("optimizer.weight_decay",      0.0)
-        self.record("loop.use_ema",                False)
-        self.record("warmup.warmup_enabled",       False)
-        self.record("scheduler.type",              "constant")
-        self.record("early_stopping.restore_best", False)
+        gate_batch = LearningRateScaler(config.optimizer, config.loop).pin_to_effective_batch()
+
+        self.record("optimizer.weight_decay",         0.0)
+        self.record("optimizer.reference_batch_size", gate_batch)
+        self.record("loop.use_ema",                   False)
+        self.record("warmup.warmup_enabled",          False)
+        self.record("scheduler.type",                 "constant")
+        self.record("early_stopping.restore_best",    False)
 
         return config
 

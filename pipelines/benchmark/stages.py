@@ -14,6 +14,7 @@ from torch_geometric.loader import DataLoader as GraphDataLoader
 
 from configuration.entry              import TrainEntryConfig
 from models                          import get_model
+from tools.training.optimization      import LearningRateScaler
 from pipelines.dataset.pipeline       import DatasetPipeline
 from pipelines.inference.metrics      import InferenceMetrics
 from pipelines.inference.predictor    import Predictor
@@ -132,8 +133,11 @@ class OverfitGateStage(BenchmarkStage):
     def _train_tiny(self, model_name):
         training_config                     = deepcopy(self.config.training)
         training_config.loop.epochs         = self.gate.epochs
+        training_config.loop.batch_size     = self.gate.batch_size
         training_config.loop.tuning_mode    = True
         training_config.loop.use_amp        = False
+
+        LearningRateScaler(training_config.optimizer, training_config.loop).pin_to_effective_batch()
 
         context = LightweightRunContext(self.logger, self.run_directory / "overfit" / model_name / "best_model.pt")
         trainer = self._build_trainer(model_name, training_config, context)
@@ -257,17 +261,17 @@ class TrainingStage(BenchmarkStage):
         return metrics_path
 
     def _compute(self, model_name):
-        record       = {"model": model_name, "status": None, "best_val_loss": None, "best_epoch": None, "duration_s": None, "run_directory": None, "metrics": {}, "error": None}
+        record       = {"model": model_name, "status": None, "best_val_loss": None, "best_epoch": None, "duration_s": None, "batch_size": None, "lr_scale": None, "run_directory": None, "metrics": {}, "error": None}
         run_metadata = None
 
         try:
             torch.manual_seed(self.config.seed)
 
-            training_config             = deepcopy(self.config.training)
-            training_config.loop.epochs = self.config.benchmark_training.epochs
-            batch_size                  = self._batch_size(model_name)
+            training_config                 = deepcopy(self.config.training)
+            training_config.loop.epochs     = self.config.benchmark_training.epochs
+            training_config.loop.batch_size = self._batch_size(model_name)
 
-            loaders                          = DatasetPipeline.build_loaders(self.datasets, batch_size, num_workers=training_config.loop.num_workers, pin_memory=training_config.loop.pin_memory, persistent_workers=training_config.loop.persistent_workers, logger=self.logger)
+            loaders                          = DatasetPipeline.build_loaders(self.datasets, training_config.loop.batch_size, num_workers=training_config.loop.num_workers, pin_memory=training_config.loop.pin_memory, persistent_workers=training_config.loop.persistent_workers, logger=self.logger)
             train_loader, validation_loader, _ = loaders
 
             run_metadata = TrainingRunMetadata(training_config, model_name, self.training_directory, run_name="run")
@@ -289,6 +293,8 @@ class TrainingStage(BenchmarkStage):
                 "best_val_loss" : summary["best_val_loss"],
                 "best_epoch"    : summary["best_epoch"],
                 "duration_s"    : float(elapsed),
+                "batch_size"    : trainer.learning_rates.effective_batch_size,
+                "lr_scale"      : trainer.learning_rates.factor,
                 "run_directory" : summary["run_directory"],
                 "metrics"       : metrics,
             })
