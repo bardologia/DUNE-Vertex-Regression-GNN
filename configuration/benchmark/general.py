@@ -33,8 +33,8 @@ class MaxBatchConfig:
     enabled        : bool  = True
     vram_budget_gb : float = 3.0
     maximum_batch  : int   = 512
-    measure_steps  : int   = 3
-    sample_count   : int   = 256
+    measure_steps  : int   = 8
+    sample_count   : int   = 1024
 
 
 @dataclass

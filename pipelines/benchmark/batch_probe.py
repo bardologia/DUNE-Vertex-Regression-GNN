@@ -6,6 +6,7 @@ import torch
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
 from models                                  import get_model
+from tools.runtime.reproducibility           import Reproducibility
 from tools.training.pretraining.batch_finder import BatchSizeFinder
 
 from pipelines.training.loss import Loss
@@ -45,7 +46,7 @@ class MaxBatchProbe:
         return model, optimizer, criterion
 
     def _measure(self, model, optimizer, criterion, batch_size) -> float:
-        loader = GraphDataLoader(self.dataset, batch_size=batch_size, shuffle=False)
+        loader = GraphDataLoader(self.dataset, batch_size=batch_size, shuffle=True, generator=Reproducibility.generator(self.config.seed))
 
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats(self.device)

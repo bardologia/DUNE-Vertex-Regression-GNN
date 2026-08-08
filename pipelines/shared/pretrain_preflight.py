@@ -37,7 +37,7 @@ class PretrainPreflight:
             model          = model,
             to_model_input = feed.to_model_input,
             forward_loss   = feed.forward_loss,
-            trial_step     = TrainStepMemoryProbe(trainer, dataset, self.pretrain.measure_steps, device, context_gb),
+            trial_step     = TrainStepMemoryProbe(trainer, dataset, self.pretrain.measure_steps, device, context_gb, self.pretrain.seed),
             device         = device,
             use_amp        = trainer.use_amp,
             context_gb     = context_gb,

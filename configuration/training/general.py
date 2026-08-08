@@ -155,7 +155,7 @@ class PretrainConfig:
 
     vram_budget_gb : float = 3.5
     max_batch      : int   = 512
-    measure_steps  : int   = 3
+    measure_steps  : int   = 8
 
     worker_counts    : tuple = (0, 2, 4, 6, 8)
     prefetch_factors : tuple = (2, 4, 8)
