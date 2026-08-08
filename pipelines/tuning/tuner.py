@@ -35,7 +35,7 @@ class Tuner:
     def _prepare_data(self):
         self.dataset_pipeline     = DatasetPipeline(self.entry.dataset, self.logger)
         self.datasets, self.stats = self.dataset_pipeline.run()
-        self.train_loader, self.val_loader, _ = DatasetPipeline.build_loaders(self.datasets, self.tuning.batch_size, num_workers=0)
+        self.train_loader, self.val_loader, _ = DatasetPipeline.build_loaders(self.datasets, self.tuning.batch_size, num_workers=0, logger=self.logger)
 
     def _suggest(self, trial):
         return self._sample(trial, self.model_space), self._sample(trial, self.optimizer_space)

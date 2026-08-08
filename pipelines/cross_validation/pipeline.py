@@ -170,7 +170,7 @@ class CrossValidationPipeline:
 
         datasets, stats = self.dataset_pipeline.run_with_indices(train_indices, validation_indices, test_indices)
         loop            = self.training_config.loop
-        loaders         = DatasetPipeline.build_loaders(datasets, loop.batch_size, num_workers=loop.num_workers, pin_memory=loop.pin_memory, persistent_workers=loop.persistent_workers)
+        loaders         = DatasetPipeline.build_loaders(datasets, loop.batch_size, num_workers=loop.num_workers, pin_memory=loop.pin_memory, persistent_workers=loop.persistent_workers, logger=self.logger)
         train_loader, validation_loader, test_loader = loaders
 
         self.entry.model_overrides = self.dataset_pipeline.inject_model_overrides(self.entry.model_overrides)

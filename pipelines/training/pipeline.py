@@ -45,7 +45,7 @@ class TrainingPipeline:
         self.datasets, self.stats = self.dataset_pipeline.run()
 
         loop         = self.training_config.loop
-        self.loaders = DatasetPipeline.build_loaders(self.datasets, loop.batch_size, num_workers=loop.num_workers, pin_memory=loop.pin_memory, persistent_workers=loop.persistent_workers, prefetch_factor=loop.prefetch_factor, seed=self.entry.seed)
+        self.loaders = DatasetPipeline.build_loaders(self.datasets, loop.batch_size, num_workers=loop.num_workers, pin_memory=loop.pin_memory, persistent_workers=loop.persistent_workers, prefetch_factor=loop.prefetch_factor, seed=self.entry.seed, logger=self.logger)
 
         train_loader, val_loader, test_loader = self.loaders
         self.logger.section("[Data Loaders]")
@@ -54,7 +54,7 @@ class TrainingPipeline:
             "Val batches"     : len(val_loader),
             "Test batches"    : len(test_loader),
             "Batch size"      : loop.batch_size,
-            "Workers"         : loop.num_workers,
+            "Workers"         : train_loader.num_workers,
             "Pin memory"      : loop.pin_memory,
             "Prefetch factor" : loop.prefetch_factor,
         })
