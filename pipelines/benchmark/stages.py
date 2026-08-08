@@ -7,6 +7,7 @@ from copy        import deepcopy
 from dataclasses import asdict
 from pathlib     import Path
 
+import numpy as np
 import torch
 from torch.utils.data       import Subset
 from torch_geometric.loader import DataLoader as GraphDataLoader
@@ -188,7 +189,8 @@ class MaxBatchStage(BenchmarkStage):
     def _prepare(self):
         self.logger.section("[Benchmark | Maximum Batch Size]")
         subset_size = min(self.config.max_batch.sample_count, len(self.dataset))
-        self.subset = Subset(self.dataset, list(range(subset_size)))
+        selection   = np.random.default_rng(self.config.seed).choice(len(self.dataset), size=subset_size, replace=False)
+        self.subset = Subset(self.dataset, selection.tolist())
 
     def _reusable(self, record):
         return record.get("status") == "PASS"

@@ -6,16 +6,18 @@ import torch
 from torch.utils.data       import Dataset
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
-from tools.monitoring.logger import Logger
+from tools.monitoring.logger       import Logger
+from tools.runtime.reproducibility import Reproducibility
 
 
 class TrainStepMemoryProbe:
-    def __init__(self, trainer, dataset: Dataset, measure_steps: int, device: torch.device, context_gb: float = 0.0) -> None:
+    def __init__(self, trainer, dataset: Dataset, measure_steps: int, device: torch.device, context_gb: float = 0.0, seed: int = 0) -> None:
         self.trainer       = trainer
         self.dataset       = dataset
         self.measure_steps = int(measure_steps)
         self.device        = device
         self.context_gb    = float(context_gb)
+        self.seed          = int(seed)
 
     @staticmethod
     def measure_context(device: torch.device) -> float:
@@ -27,11 +29,12 @@ class TrainStepMemoryProbe:
         torch.cuda.empty_cache()
 
         free_bytes, total_bytes = torch.cuda.mem_get_info(device)
+        process_reserved        = torch.cuda.memory_reserved(device)
 
-        return (total_bytes - free_bytes) / (1024.0 ** 3)
+        return max(total_bytes - free_bytes - process_reserved, 0) / (1024.0 ** 3)
 
     def __call__(self, batch_size: int) -> float:
-        loader = GraphDataLoader(self.dataset, batch_size=batch_size, shuffle=False, drop_last=True, num_workers=0)
+        loader = GraphDataLoader(self.dataset, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=0, generator=Reproducibility.generator(self.seed))
         if len(loader) == 0:
             raise RuntimeError(f"dataset holds {len(self.dataset)} samples, fewer than one full batch of {batch_size} with drop_last=True")
 
