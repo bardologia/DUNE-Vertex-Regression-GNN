@@ -1,0 +1,25 @@
+\subsection{Codificadores e protocolo de treinamento}
+\label{sec:modelos}
+
+Os modelos (Figura~\ref{fig:arquitetura}) projetam os \num{17} atributos $\mathbf{f}_i$ de cada nó num estado inicial $\mathbf{h}_i^{(0)}$ de largura $D$ e aplicam $L = {}$\num{4} camadas residuais,
+\begin{equation}
+  \mathbf{h}_i^{(\ell)} = \mathbf{h}_i^{(\ell-1)} + \mathrm{GELU}\Big(\mathrm{Conv}^{(\ell)}\big(\mathrm{LN}^{(\ell)}(\mathbf{h}_i^{(\ell-1)}),\ \{(\mathrm{LN}^{(\ell)}(\mathbf{h}_j^{(\ell-1)}),\, \mathbf{e}_{ji})\}_{j \in \mathcal{N}(i)}\big)\Big), \quad \ell = 1, \dots, L,
+  \label{eq:camada}
+\end{equation}
+com normalização de camada $\mathrm{LN}^{(\ell)}$ de \citeonline{ba2016layer}, ativação GELU (unidade linear de erro gaussiano) de \citeonline{hendrycks2016gaussian} e operador $\mathrm{Conv}^{(\ell)}$, que lê $\mathbf{e}_{ji}$, exceto em EdgeConv, GraphSAGE e ResGatedGCN. Nos GPS, uma porta aprendida mistura um GATv2 local, sem GELU, e uma atenção global; um bloco denso residual completa a camada. A leitura concatena média, máximo e soma comprimida por logaritmo dos estados. Os \num{33} escalares $\mathbf{u}$ entram na cabeça de regressão diretamente e também codificados em \num{128} dimensões. A cabeça prevê $x$, depois $y$ dado o $x$ previsto e $z$ dados os $x$ e $y$ previstos, mesmo no treino, por modulação linear por atributo (FiLM) de \citeonline{perez2018film} ou, nos modelos de sufixo cascata, por concatenação; o sufixo designa só a cabeça. Uma limitação suave mantém a predição na caixa \textpm(\num{6.03};~\num{6.67};~\num{29.93})\,\unit{\m}, com inclinação pequena fora dela.
+
+\begin{figure}[H]
+  \centering
+  \input{figures/arquitetura.tex}
+  \caption{Estrutura comum aos \num{11} codificadores. O grafo do evento tem um nó por canal ativo e um nó global no centroide da luz; quatro camadas residuais atualizam os estados dos nós, que a leitura resume em média, máximo e soma comprimida por logaritmo; a cabeça recebe também os \num{33} escalares do evento e prevê $x$, depois $y$ dado o $x$ previsto ($\hat{x}$) e $z$ dados $\hat{x}$ e o $y$ previsto ($\hat{y}$); a limitação suave mantém o vértice previsto $\hat{\mathbf{v}}$, em metros, na caixa definida pelos canais. Entre os codificadores mudam só o operador (nos GPS, a camada inteira), a largura $D$ e, nos modelos de sufixo cascata, a cabeça.}
+  \label{fig:arquitetura}
+\end{figure}
+
+A largura $D$ de cada codificador foi escolhida \cite{dwivedi2023benchmarking} para aproximar o total de parâmetros do GPS, \num{1843395}. Dos \num{14} codificadores dimensionados, \num{11} foram treinados (Seção~\ref{sec:dificuldades}), com \num{1819019} a \num{1873531} parâmetros (desvio máximo de \qty{1.6}{\percent}) e $D$ de \num{132} a \num{685}, exceto no GPS (Tabela~\ref{tab:codificadores}). A capacidade equiparada é a do modelo inteiro: a parcela do codificador vai de \qty{58.3}{\percent} (EdgeConv) a \qty{85.4}{\percent} (\mbox{GPS-cascata}).
+
+A perda $\mathcal{L}$ é a distância euclidiana média, em metros, entre o vértice previsto $\hat{\mathbf{v}}_b$ e o verdadeiro $\mathbf{v}_b$ das $B$ linhas $b$ do lote,
+\begin{equation}
+  \mathcal{L} = \frac{1}{B} \sum_{b=1}^{B} \big\lVert \hat{\mathbf{v}}_b - \mathbf{v}_b \big\rVert,
+  \label{eq:perda}
+\end{equation}
+a mesma grandeza do erro 3-D médio. O otimizador AdamW \cite{loshchilov2019decoupled} usou coeficientes das médias móveis de \num{0.9} e \num{0.999}, decaimento de pesos de \num{e-4} no codificador e \num{e-5} na cabeça, e taxas de aprendizado de \num{5e-4} e \num{5e-3}, respectivamente, para lotes de \num{128} (\num{1.5e-4} e \num{1.5e-3} nos GPS), multiplicadas por $B$/\num{128} \cite{goyal2017accurate}. O lote $B$ foi a maior potência de dois, até \num{512}, que coube em \qty{20}{\gibi\byte} numa sonda de memória: \num{128} em quatro modelos, \num{256} em dois e \num{512} em cinco. Houve aquecimento linear de \num{100} passos de otimização a partir de \num{0.1} vez a taxa, decaimento cossenoidal até \num{e-6} em \num{50} épocas \cite{loshchilov2017sgdr} e limitação da norma do gradiente em \num{1.0}. O teste usou o ponto de verificação de menor erro de validação; não houve precisão mista, aumento de dados além do espelhamento nem média móvel dos pesos. Cada codificador foi treinado uma vez, com semente \num{42}, sem busca de hiperparâmetros. Os treinos somaram \qty{11.42}{\hour} numa unidade de processamento gráfico (GPU) de \qty{23.98}{\gibi\byte}, com \num{5600} a \num{22250} passos: a capacidade foi equiparada, mas o orçamento de otimização variou.

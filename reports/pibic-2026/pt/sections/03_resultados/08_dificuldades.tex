@@ -1,0 +1,10 @@
+\subsection{Dificuldades Encontradas}
+\label{sec:dificuldades}
+
+Os dados tinham dois defeitos de geometria, um escondido pelo outro: vértices e canais em referenciais diferentes; tampas giradas em torno de $x$, com $y$ e $z$ invertidos. Ambos foram identificados pelo padrão da luz, e os modelos existentes, retreinados. Mudanças de formato sem retrocompatibilidade inutilizaram os pontos de verificação antigos, e nenhuma execução anterior a 4 de agosto de 2026 permanece.
+
+Na primeira comparação, em 4 de agosto de 2026, os codificadores usaram um quarto dos eventos de treino (\num{1872}), sem espelhamento, e \num{9} escalares do evento; o menor MAE médio de teste foi de \qty{18.05}{\cm}, contra \qty{13.01}{\cm} do XGBoost, ambos em luz com aumento. Um diagnóstico registrado durante o projeto, não reproduzido neste relatório, atribuiu cerca de \qty{1.9}{\cm} da diferença ao tamanho do treino, \qty{1.9}{\cm} aos atributos agregados ausentes, \qty{1.0}{\cm} à busca de hiperparâmetros e ao espelhamento dos \textit{boosters}, e \qty{0.3}{\cm} ao restante, a contribuição conjunta de nós, arestas e passagem de mensagens. Medido nos eventos de teste da comparação final, ele levou ao treino completo, aos \num{33} escalares e à avaliação logo após cada treino. A comparação final mudou esses e outros ajustes de uma vez e usou luz limpa; nela, o menor MAE médio foi de \qty{12.63}{\cm}.
+
+A GPU local tinha \qty{3.63}{\gibi\byte}: nos modelos com atenção global, grafos com os \num{6912} canais só cabiam em lotes muito pequenos, daí a restrição aos canais ativos; na primeira comparação, GCN, TransformerConv e GPS-lite falharam por falta de memória. A comparação final, em outra GPU, de \qty{23.98}{\gibi\byte}, parou sem mensagem de erro após treinar \num{11} dos \num{14} codificadores; faltaram os mesmos três.
+
+Os \textit{boosters} foram avaliados em luz com aumento de dados, com luz média do teste \qty{4.1}{\percent} menor que a limpa; reavaliado na luz limpa neste relatório, o XGBoost tem MAE médio \qty{0.20}{\cm} maior (Seções~\ref{sec:protocolo_comparacao} e~\ref{sec:comparacao_referencias}).
