@@ -1,0 +1,10 @@
+\subsection{Difficulties Encountered}
+\label{sec:dificuldades}
+
+The data had two geometry defects, one hidden by the other: vertices and channels in different frames; end caps rotated about $x$, with $y$ and $z$ inverted. Both were identified from the light pattern, and the existing models were retrained. Format changes without backward compatibility made the old checkpoints unusable, and no run from before 4 August 2026 remains.
+
+In the first comparison, on 4 August 2026, the encoders used a quarter of the training events (\num{1872}), without mirroring, and \num{9} event-level scalars; the lowest mean test MAE was \qty{18.05}{\cm}, against \qty{13.01}{\cm} for XGBoost, both on augmented light. A diagnosis recorded during the project, not reproduced in this report, attributed about \qty{1.9}{\cm} of the gap to the size of the training set, \qty{1.9}{\cm} to the missing aggregated features, \qty{1.0}{\cm} to the hyperparameter search and the mirroring of the boosters, and \qty{0.3}{\cm} to the remainder, the joint contribution of nodes, edges and message passing. Measured on the test events of the final comparison, it led to the adoption of the full training set, the \num{33} scalars and the evaluation right after each training run. The final comparison changed these and other settings at once and used clean light; in it, the lowest mean MAE was \qty{12.63}{\cm}.
+
+The local GPU had \qty{3.63}{\gibi\byte}: in the models with global attention, graphs with all \num{6912} channels fitted only in very small batches, hence the restriction to the active channels; in the first comparison, GCN, TransformerConv and GPS-lite failed for lack of memory. The final comparison, on another GPU with \qty{23.98}{\gibi\byte}, stopped without an error message after training \num{11} of the \num{14} encoders; the same three were missing.
+
+The boosters were evaluated on light with data augmentation, with a mean test light \qty{4.1}{\percent} lower than that of clean light; re-evaluated on clean light in this report, XGBoost has a mean MAE \qty{0.20}{\cm} higher (Sections~\ref{sec:protocolo_comparacao} and~\ref{sec:comparacao_referencias}).

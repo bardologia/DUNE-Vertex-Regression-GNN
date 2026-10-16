@@ -1,0 +1,25 @@
+\subsection{Encoders and training protocol}
+\label{sec:modelos}
+
+The models (Figure~\ref{fig:arquitetura}) project the \num{17} features $\mathbf{f}_i$ of each node onto an initial state $\mathbf{h}_i^{(0)}$ of width $D$ and apply $L = {}$\num{4} residual layers,
+\begin{equation}
+  \mathbf{h}_i^{(\ell)} = \mathbf{h}_i^{(\ell-1)} + \mathrm{GELU}\Big(\mathrm{Conv}^{(\ell)}\big(\mathrm{LN}^{(\ell)}(\mathbf{h}_i^{(\ell-1)}),\ \{(\mathrm{LN}^{(\ell)}(\mathbf{h}_j^{(\ell-1)}),\, \mathbf{e}_{ji})\}_{j \in \mathcal{N}(i)}\big)\Big), \quad \ell = 1, \dots, L,
+  \label{eq:camada}
+\end{equation}
+with the layer normalisation $\mathrm{LN}^{(\ell)}$ of \citet{ba2016layer}, the GELU activation (Gaussian error linear unit) of \citet{hendrycks2016gaussian} and the operator $\mathrm{Conv}^{(\ell)}$, which reads $\mathbf{e}_{ji}$ except in EdgeConv, GraphSAGE and ResGatedGCN. In the GPS models, a learned gate mixes a local GATv2, without GELU, with global attention; a residual feed-forward block completes the layer. The readout concatenates the mean, maximum and log-compressed sum of the states. The \num{33} scalars $\mathbf{u}$ enter the regression head both directly and encoded in \num{128} dimensions. The head predicts $x$, then $y$ given the predicted $x$, and $z$ given the predicted $x$ and $y$, also in training, by the feature-wise linear modulation (FiLM) of \citet{perez2018film} or, in the models with the cascade suffix, by concatenation; the suffix designates only the head. A leaky clamp keeps the prediction inside the box \textpm(\num{6.03},~\num{6.67},~\num{29.93})\,\unit{\m}, with a small slope outside it.
+
+\begin{figure}[H]
+  \centering
+  \input{figures/arquitetura.tex}
+  \caption{Structure shared by the \num{11} encoders. The event graph has one node per active channel and one global node at the light centroid; four residual layers update the node states, which the readout summarises as their mean, maximum and log-compressed sum; the head also receives the \num{33} event-level scalars and predicts $x$, then $y$ given the predicted $x$ ($\hat{x}$), and $z$ given $\hat{x}$ and the predicted $y$ ($\hat{y}$); the leaky clamp keeps the predicted vertex $\hat{\mathbf{v}}$, in metres, inside the box defined by the channels. The encoders differ only in the operator (in the GPS models, the whole layer), the width $D$ and, in the models with the cascade suffix, the head.}
+  \label{fig:arquitetura}
+\end{figure}
+
+The width $D$ of each encoder was chosen \citep{dwivedi2023benchmarking} so that the parameter total approached that of GPS, \num{1843395}. Of the \num{14} sized encoders, \num{11} were trained (Section~\ref{sec:dificuldades}), with \num{1819019} to \num{1873531} parameters (maximum deviation of \qty{1.6}{\percent}) and $D$ from \num{132} to \num{685}, except for GPS (Table~\ref{tab:codificadores}). The matched capacity is that of the whole model: the encoder's share ranges from \qty{58.3}{\percent} (EdgeConv) to \qty{85.4}{\percent} (GPS-cascade).
+
+The loss $\mathcal{L}$ is the mean Euclidean distance, in metres, between the predicted vertex $\hat{\mathbf{v}}_b$ and the true vertex $\mathbf{v}_b$ of the $B$ rows $b$ of the batch,
+\begin{equation}
+  \mathcal{L} = \frac{1}{B} \sum_{b=1}^{B} \big\lVert \hat{\mathbf{v}}_b - \mathbf{v}_b \big\rVert,
+  \label{eq:perda}
+\end{equation}
+the same quantity as the mean 3-D error. The AdamW optimiser \citep{loshchilov2019decoupled} used moving-average coefficients of \num{0.9} and \num{0.999}, weight decay of \num{e-4} in the encoder and \num{e-5} in the head, and learning rates of \num{5e-4} and \num{5e-3}, respectively, for batches of \num{128} (\num{1.5e-4} and \num{1.5e-3} in the GPS models), with the rates multiplied by $B$/\num{128} \citep{goyal2017accurate}. The batch size $B$ was the largest power of two, up to \num{512}, that fitted in \qty{20}{\gibi\byte} during a memory probe: \num{128} for four models, \num{256} for two and \num{512} for five. Training used a linear warm-up over \num{100} optimisation steps starting from \num{0.1} times the rate, cosine annealing to \num{e-6} over \num{50} epochs \citep{loshchilov2017sgdr} and gradient-norm clipping at \num{1.0}. The test evaluation used the checkpoint with the lowest validation error; there was no mixed precision, no data augmentation beyond the mirroring and no moving average of the weights. Each encoder was trained once, with seed \num{42}, without a hyperparameter search. The training runs totalled \qty{11.42}{\hour} on a graphics processing unit (GPU) with \qty{23.98}{\gibi\byte} and took \num{5600} to \num{22250} steps: the capacity was matched, but the optimisation budget varied.

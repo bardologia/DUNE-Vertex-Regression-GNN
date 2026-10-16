@@ -1,0 +1,174 @@
+% Relatório Final PIBIC-ITA
+% Template baseado nas instruções oficiais do ITA
+\documentclass[12pt,a4paper]{article}
+
+% Pacotes necessários
+\usepackage{iftex}
+\ifPDFTeX
+\usepackage[utf8]{inputenc}
+\fi
+\usepackage[portuguese]{babel}
+\babelhyphenation{ad-vances}
+\babelhyphenation{laurent varoquaux}
+\ifPDFTeX
+\usepackage[T1]{fontenc}
+\fi
+\usepackage{geometry}
+\usepackage{setspace}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+\captionsetup[sub]{font=normalsize}
+\usepackage{tabularx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{tocloft}
+\usepackage{url}
+\usepackage{siunitx}
+\usepackage{tikz}
+\usepackage{hyperref}
+\usepackage[alf]{abntex2cite}
+
+% Configuração da página
+\geometry{
+    top=2cm,
+    bottom=2cm,
+    left=2cm,
+    right=2cm
+}
+
+% Fonte: Arial (Helvetica) 12
+\ifPDFTeX
+\usepackage{newtxtext,newtxmath}
+\else
+\usepackage[no-math]{fontspec}
+\setsansfont{texgyreheros}[Extension=.otf, UprightFont=*-regular, BoldFont=*-bold, ItalicFont=*-italic, BoldItalicFont=*-bolditalic]
+\renewcommand{\rmdefault}{minntx}
+\usepackage{newtxmath}
+\setmainfont{texgyreheros}[Extension=.otf, UprightFont=*-regular, BoldFont=*-bold, ItalicFont=*-italic, BoldItalicFont=*-bolditalic]
+\fi
+\renewcommand{\familydefault}{\sfdefault}
+
+% Unidades no padrão brasileiro
+\sisetup{
+    output-decimal-marker = {,},
+    per-mode              = symbol,
+    mode                  = match,
+    reset-text-family     = false,
+    list-final-separator  = {\ \text{e}\ },
+    list-pair-separator   = {\ \text{e}\ },
+    range-phrase          = {\ \text{a}\ }
+}
+\DeclareSIUnit{\pe}{p.e.}
+
+% Espaçamento 1,5
+\onehalfspacing
+\widowpenalty=10000
+
+% Configuração do hyperref
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    filecolor=magenta,
+    urlcolor=blue,
+    citecolor=black
+}
+
+% Configuração dos títulos das seções
+\titleformat{\section}{\normalfont\large\bfseries}{\thesection}{1em}{}
+\titleformat{\subsection}{\normalfont\normalsize\bfseries}{\thesubsection}{1em}{}
+
+% Configuração do cabeçalho e rodapé
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0pt}
+\cfoot{\thepage}
+
+% Variáveis do projeto
+\newcommand{\tituloprojeto}{Redes Neurais em Grafos para a Reconstrução do Vértice de Interação a partir da Luz de~Cintilação no Far Detector 3 do~Experimento~DUNE}
+\newcommand{\nomealuno}{Victor Elias Vicentin}
+\newcommand{\emailaluno}{victor.vicentin.8856@ga.ita.br}
+\newcommand{\telefonealuno}{}
+\newcommand{\nomeorientador}{Prof.~Dr.~Franciole da Cunha Marinho}
+\newcommand{\emailorientador}{franciole@ita.br}
+\newcommand{\telefoneorientador}{}
+\newcommand{\mesano}{Outubro / 2026}
+\newcommand{\datacompleta}{14 / 10 / 2026}
+
+\begin{document}
+\frenchspacing
+
+% ========== CAPA ==========
+\input{capa}
+
+% ========== FOLHA DE ASSINATURAS ==========
+\newpage
+\input{assinaturas}
+
+% ========== FORMULÁRIO DE APROVAÇÃO ==========
+\newpage
+\input{aprovacao}
+
+% ========== ÍNDICE ==========
+\newpage
+\tableofcontents
+\newpage
+
+% ========== RESUMO DO PLANO INICIAL ==========
+\phantomsection
+\section*{Resumo do Plano Inicial}
+\addcontentsline{toc}{section}{Resumo do Plano Inicial}
+
+\input{sections/resumo_plano}
+
+\newpage
+
+% ========== RESUMO DAS ATIVIDADES REALIZADAS ==========
+\phantomsection
+\section*{Resumo das Atividades Realizadas}
+\addcontentsline{toc}{section}{Resumo das Atividades Realizadas}
+
+\input{sections/resumo_atividades}
+
+\newpage
+
+% ========== DESCRIÇÃO DO PROBLEMA ==========
+\section{Descrição do Problema}
+
+\input{sections/01_problema}
+
+\section{Revisão de Literatura}
+
+\input{sections/02_revisao}
+
+% ========== RESULTADOS OBTIDOS ==========
+\section{Resultados}
+
+\input{sections/03_resultados}
+
+% ========== CONCLUSÕES ==========
+\section{Conclusões}
+
+\input{sections/04_conclusoes}
+
+% ========== AGRADECIMENTOS ==========
+\phantomsection
+\section*{Agradecimentos}
+\addcontentsline{toc}{section}{Agradecimentos}
+
+\input{sections/agradecimentos}
+
+% ========== BIBLIOGRAFIA ==========
+\newpage
+\phantomsection
+\addcontentsline{toc}{section}{\refname}
+\bibliography{referencias}
+
+\end{document}

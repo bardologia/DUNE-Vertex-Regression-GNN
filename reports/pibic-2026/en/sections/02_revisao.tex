@@ -1,0 +1,29 @@
+\label{sec:revisao}
+
+\subsection{Position reconstruction from light}
+\label{sec:rev_luz}
+
+In noble liquid detectors, the position of a deposit is obtained from the light pattern on the photosensors by light-weighted centroids (biased towards the centre of the array), maximum-likelihood fits to light response functions, or neural networks; in LUX, such a fit reaches a resolution of \qty{0.82}{\cm} in the horizontal position with \num{200} detected photons of electroluminescence (S2) in the gas next to the top array \citep{akerib2018position}. In XENONnT, dense, graph-constrained and convolutional networks estimate this position from the same signal; in simulation, the first two reach about \qty{1.5}{\cm} for an S2 of approximately \qty{100}{\pe} \citep{aprile2025xenonnt}. In DEAP-3600, a single-phase detector, each coordinate comes from a dense network fed by the charges of \num{255} photomultiplier tubes \citep{adhikari2025position}.
+
+In LArTPCs, the light usually provides the trigger and $t_0$ \citep{abratenko2024scintillation, paulucci2022dune}. In an FD2 simulation, the light barycentre has a resolution approximately inversely proportional to the square root of the number of photoelectrons and better than \qty{1}{\m} at low energy \citep{paulucci2022dune}. In SBND, for simulated neutrinos of hundreds of MeV, the position in the plane of the photon detectors comes from the light alone, with a resolution of about \qty{25}{\cm} in the interior and biases of up to \qty{50}{\cm} at the edge \citep{abratenko2024scintillation}. APEX estimates $z$ by the photoelectron-weighted barycentre of the channel coordinates $z_i$, $\bar{z} = \sum_i n_i z_i / \sum_i n_i$; it estimates the horizontal coordinate by the asymmetry between the light of the two long walls and the vertical one by a barycentre corrected by functions of the horizontal one. Its resolution, as a function of energy, is about half that obtained in a similar FD2 simulation \citep{marinho2025apex}.
+
+In JUNO, a liquid scintillator detector, convolutional networks fed by the signals of each photomultiplier tube reconstruct the vertex in simulation to about \qty{10}{\cm} per axis at \qty{1}{\MeV}, four times better than boosted decision trees (Section~\ref{sec:rev_arvores}) and dense networks fed by aggregated features; a graph network was used only for the energy \citep{qian2021vertex}.
+
+\subsection{Graph neural networks}
+\label{sec:rev_gnn}
+
+{\displaywidowpenalty=10000 \abovedisplayshortskip=\abovedisplayskip \belowdisplayshortskip=\belowdisplayskip A graph neural network (GNN) operates on a graph $G = (\mathcal{V}, \mathcal{E})$ of nodes $\mathcal{V}$ and directed edges~$\mathcal{E}$. In layer $\ell$, message passing \citep{gilmer2017neural} updates the state~$\mathbf{h}_i^{(\ell)}$ of each node~$i$,
+\begin{equation}
+  \mathbf{h}_i^{(\ell)} = U^{(\ell)}\Big(\mathbf{h}_i^{(\ell-1)},\ \bigoplus_{j \in \mathcal{N}(i)} M^{(\ell)}\big(\mathbf{h}_i^{(\ell-1)}, \mathbf{h}_j^{(\ell-1)}, \mathbf{e}_{ji}\big)\Big),
+  \label{eq:mensagens}
+\end{equation}
+where $\mathcal{N}(i)$ is the set of incoming neighbours of $i$, the nodes $j$ that have an edge $(j, i)$ with features $\mathbf{e}_{ji}$; $M^{(\ell)}$ and $U^{(\ell)}$ are the message and update functions; and $\oplus$ is a permutation-invariant aggregation. After $L$ layers, each state summarises the neighbourhood within $L$ edges, and a permutation-invariant readout reduces the states to an event vector, used for the regression. The scheme suits a detector, whose active channels vary in number and have no order.\par}
+
+The operators compared differ in the message and in the aggregation: EdgeConv takes the maximum of a network applied to the state and to the difference to each neighbour \citep{wang2019dynamic}; GraphSAGE, the mean \citep{hamilton2017inductive}; GINE, the sum with the edge features \citep{hu2020strategies}; GATv2, a sum weighted by dynamic attention \citep{brody2022how}; ResGatedGCN, a gated sum \citep{bresson2017residual}; GeneralConv, an attention-weighted sum over messages with edge features \citep{you2020design}; PNA combines four aggregators rescaled by the node degree \citep{corso2020principal}; and GPS adds global attention to the local message passing \citep{rampasek2022recipe}. The best design changes from task to task \citep{you2020design}, and comparisons between architectures fix the parameter budget so that the model size does not decide the result \citep{dwivedi2023benchmarking}.
+
+In IceCube, the dynedge network, based on EdgeConv over the pulses of the optical modules, reconstructs the energy, direction and vertex of simulated events between \num{1} and \qty{30}{\GeV} with resolutions on average \num{13} to \qty{20}{\percent} better than those of maximum-likelihood methods \citep{abbasi2022graph}. This work applies the same idea to the scintillation light of \qty{10}{\MeV} deposits in FD3.
+
+\subsection{Gradient-boosted trees}
+\label{sec:rev_arvores}
+
+Gradient boosting sums decision trees, each fitted to the residuals of the previous ones; XGBoost and LightGBM, here called boosters, are regularised, fast implementations \citep{chen2016xgboost, ke2017lightgbm}. On medium-sized tabular data, tree ensembles still outperform deep networks \citep{grinsztajn2022why}. Optuna \citep{akiba2019optuna} chooses hyperparameters by Bayesian search with the tree-structured Parzen estimator (TPE) of \citet{bergstra2011algorithms}. The previous stage filtered descriptors by variance, distance correlation, tree-based importance, ablation and Shapley values until the \num{60} inputs of the dense network remained \citep{vicentin2024study}.

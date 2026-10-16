@@ -168,6 +168,7 @@ DUNE-GNN/
 │   └── runtime/                # ConfigCli, reproducibility, completion markers, run tags
 ├── webui/                    # local web UI for launching/monitoring runs and browsing results
 ├── tests/                    # pytest suite (driven by the Dune conda env)
+├── reports/                  # PIBIC 2025/2026 final report, Portuguese original and English translation (LaTeX)
 ├── data/                     # raw simulated events (pmod3_*.csv)
 ├── data_frames/              # generated parquet store (gitignored)
 ├── runs/                     # training/inference run outputs (gitignored)
@@ -270,7 +271,13 @@ This repository adheres to a strict engineering standard, reflecting the reprodu
 
 ---
 
-## 9. Citation
+## 9. Reports
+
+[`reports/pibic-2026/`](reports/pibic-2026/) holds the final activity report of the PIBIC 2025/2026 undergraduate research grant (ITA and CNPq) that funded this work, as LaTeX sources in the Portuguese original and in English translation. It covers the matched-capacity benchmark of eleven message-passing encoders run on 8 August 2026 and compares the best of them with gradient-boosted trees, the dense network of 2024, a calibrated light barycentre and the APEX study.
+
+---
+
+## 10. Citation
 
 If this work informs your research, please cite it as:
 
@@ -286,7 +293,7 @@ If this work informs your research, please cite it as:
 
 ---
 
-## 10. Selected References
+## 11. Selected References
 
 1. DUNE Collaboration. *Deep Underground Neutrino Experiment (DUNE), Far Detector Technical Design Report.* JINST (2020).
 2. Rampášek, L. et al. *Recipe for a General, Powerful, Scalable Graph Transformer (GPS).* NeurIPS (2022).

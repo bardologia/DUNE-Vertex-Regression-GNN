@@ -1,0 +1,9 @@
+# Rendered reports and LaTeX build outputs; the figure PDFs under pt/figures and en/figures are sources
+/*.pdf
+main.pdf
+*.aux
+*.bbl
+*.blg
+*.toc
+*.out
+*.synctex.gz

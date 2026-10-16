@@ -1,0 +1,29 @@
+\label{sec:revisao}
+
+\subsection{Reconstrução de posição a partir da luz}
+\label{sec:rev_luz}
+
+Em detectores de líquidos nobres, a posição de um depósito é obtida do padrão de luz nos fotossensores por centroides ponderados pela luz (enviesados para o centro do arranjo), ajustes de máxima verossimilhança a funções de resposta luminosa ou redes neurais; no LUX, esse ajuste atinge \qty{0.82}{\cm} de resolução na posição horizontal com \num{200} fótons detectados de eletroluminescência (S2) no gás junto ao arranjo superior \cite{akerib2018position}. No XENONnT, redes densas, com restrição de grafo e convolucionais a estimam pelo mesmo sinal; em simulação, as duas primeiras chegam a cerca de \qty{1.5}{\cm} para S2 de aproximadamente \qty{100}{\pe} \cite{aprile2025xenonnt}. No DEAP-3600, de fase única, cada coordenada vem de uma rede densa sobre as cargas de \num{255} fotomultiplicadoras \cite{adhikari2025position}.
+
+Em LArTPCs, a luz costuma dar o gatilho e o $t_0$ \cite{abratenko2024scintillation, paulucci2022dune}. Em simulação do FD2, o baricentro da luz tem resolução aproximadamente inversamente proporcional à raiz do número de fotoelétrons e melhor que \qty{1}{\m} em baixa energia \cite{paulucci2022dune}. No SBND, para neutrinos simulados de centenas de MeV, a posição no plano dos fotodetectores vem só da luz, com cerca de \qty{25}{\cm} de resolução no interior e vieses de até \qty{50}{\cm} na borda \cite{abratenko2024scintillation}. O APEX estima $z$ pelo baricentro das coordenadas $z_i$ dos canais ponderado pelos fotoelétrons, $\bar{z} = \sum_i n_i z_i / \sum_i n_i$; estima a coordenada horizontal pela assimetria entre a luz das duas paredes longas e a vertical por um baricentro corrigido por funções da horizontal. Sua resolução, em função da energia, é cerca de metade da obtida numa simulação semelhante do FD2 \cite{marinho2025apex}.
+
+No JUNO, de cintilador líquido, redes convolucionais sobre os sinais de cada fotomultiplicadora reconstroem, em simulação, o vértice com cerca de \qty{10}{\cm} por eixo a \qty{1}{\MeV}, quatro vezes melhor que árvores de decisão com \textit{boosting} (Seção~\ref{sec:rev_arvores}) e redes densas sobre atributos agregados; uma rede em grafos foi aplicada só à energia \cite{qian2021vertex}.
+
+\subsection{Redes neurais em grafos}
+\label{sec:rev_gnn}
+
+{\displaywidowpenalty=10000 \abovedisplayshortskip=\abovedisplayskip \belowdisplayshortskip=\belowdisplayskip Uma rede neural em grafos (GNN) opera num grafo $G = (\mathcal{V}, \mathcal{E})$ de nós $\mathcal{V}$ e arestas dirigidas~$\mathcal{E}$. Na camada $\ell$, a passagem de mensagens \cite{gilmer2017neural} atualiza o estado~$\mathbf{h}_i^{(\ell)}$ de cada nó~$i$,
+\begin{equation}
+  \mathbf{h}_i^{(\ell)} = U^{(\ell)}\Big(\mathbf{h}_i^{(\ell-1)},\ \bigoplus_{j \in \mathcal{N}(i)} M^{(\ell)}\big(\mathbf{h}_i^{(\ell-1)}, \mathbf{h}_j^{(\ell-1)}, \mathbf{e}_{ji}\big)\Big),
+  \label{eq:mensagens}
+\end{equation}
+em que $\mathcal{N}(i)$ reúne os vizinhos de entrada de $i$, nós $j$ com aresta $(j, i)$ de atributos $\mathbf{e}_{ji}$; $M^{(\ell)}$ e $U^{(\ell)}$ são as funções de mensagem e de atualização; e $\oplus$ é uma agregação invariante à ordem. Após $L$ camadas, cada estado resume a vizinhança de até $L$ arestas, e uma leitura (\textit{readout}) invariante à ordem reduz os estados a um vetor do evento, usado na regressão. O~esquema convém a um detector, cujos canais ativos variam em número e não têm ordem.\par}
+
+Os operadores comparados diferem na mensagem e na agregação: EdgeConv toma o máximo de uma rede aplicada ao estado e à diferença para cada vizinho \cite{wang2019dynamic}; GraphSAGE, a média \cite{hamilton2017inductive}; GINE, a soma com os atributos de aresta \cite{hu2020strategies}; GATv2, uma soma ponderada por atenção dinâmica \cite{brody2022how}; ResGatedGCN, uma soma com portas \cite{bresson2017residual}; GeneralConv, uma soma ponderada por atenção sobre mensagens com atributos de aresta \cite{you2020design}; PNA combina quatro agregadores reescalados pelo grau do nó \cite{corso2020principal}; e GPS acrescenta à passagem local uma atenção global \cite{rampasek2022recipe}. O melhor desenho muda de tarefa para tarefa \cite{you2020design}, e comparações entre arquiteturas fixam o orçamento de parâmetros, para que o tamanho do modelo não decida o resultado \cite{dwivedi2023benchmarking}.
+
+No IceCube, a rede dynedge, baseada em EdgeConv sobre os pulsos dos módulos ópticos, reconstrói a energia, a direção e o vértice de eventos simulados entre \num{1} e \qty{30}{\GeV} com resoluções em média \num{13} a \qty{20}{\percent} melhores que as dos métodos de máxima verossimilhança \cite{abbasi2022graph}. Este trabalho aplica a mesma ideia à luz de cintilação de depósitos de \qty{10}{\MeV} no FD3.
+
+\subsection{Árvores com \texorpdfstring{\textit{gradient boosting}}{gradient boosting}}
+\label{sec:rev_arvores}
+
+O \textit{gradient boosting} soma árvores de decisão, cada uma ajustada aos resíduos das anteriores; XGBoost e LightGBM, aqui chamados \textit{boosters}, são implementações regularizadas e rápidas \cite{chen2016xgboost, ke2017lightgbm}. Em dados tabulares de tamanho médio, conjuntos de árvores ainda superam redes profundas \cite{grinsztajn2022why}. O Optuna \cite{akiba2019optuna} escolhe hiperparâmetros por busca bayesiana com o estimador de Parzen estruturado em árvore (TPE) de \citeonline{bergstra2011algorithms}. A etapa anterior filtrou descritores por variância, correlação de distância, importância em árvores, ablação e valores de Shapley até restarem as \num{60} entradas da rede densa \cite{vicentin2024study}.
