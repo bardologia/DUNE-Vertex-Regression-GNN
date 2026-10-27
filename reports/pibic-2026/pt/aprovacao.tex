@@ -44,8 +44,12 @@
 
 \vspace{0.5cm} % espaço pequeno após o título
 
+\ifdefined\ativarformularioeditavel
+\begin{Form}\noindent\TextField[name=aspectos, multiline=true, width=\linewidth, height=4.6cm, charsize=12pt, bordercolor={}, backgroundcolor={}]{}\end{Form}
+\else
  Espaço para preenchimento
 \vspace{4cm}
+\fi
 \end{minipage}
 }
 \end{center}
@@ -60,8 +64,12 @@
 
 \vspace{0.5cm}
 
+\ifdefined\ativarformularioeditavel
+\begin{Form}\noindent\TextField[name=apreciacoes, multiline=true, width=\linewidth, height=4.6cm, charsize=12pt, bordercolor={}, backgroundcolor={}]{}\end{Form}
+\else
  Espaço para preenchimento
 \vspace{4cm}
+\fi
 \end{minipage}
 }
 \end{center}

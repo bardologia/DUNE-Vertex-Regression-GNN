@@ -20,6 +20,6 @@ cd reports/pibic-2026/pt    # or en
 tectonic -X compile main.tex
 ```
 
-Tectonic is built on XeTeX, which the template needs for its TeX Gyre Heros body font, and it downloads the LaTeX packages it is missing on the first run. The Portuguese version cites in the ABNT author-date style of the template (`abntex2cite`), the English one with `natbib` and `abbrvnat`. The rendered PDFs are not tracked, since the repository keeps sources only.
+Tectonic is built on XeTeX, which the template needs for its TeX Gyre Heros body font, and it downloads the LaTeX packages it is missing on the first run. The Portuguese version cites in the ABNT author-date style of the template (`abntex2cite`), the English one with `natbib` and `abbrvnat`. The rendered PDFs are not tracked, since the repository keeps sources only. In `pt/`, `tectonic -X compile main_editavel.tex` builds the same report with fillable form fields in the two boxes of the supervisor's approval form and in the supervisor's telephone row, so the form can be completed in a PDF reader.
 
 The nine figure PDFs in `figures/` and the two tables in `tables/` were generated from the run records of this repository by the report's build scripts, which are kept with the author's notes outside the repository; they are committed here as generated. The TikZ diagram `figures/arquitetura.tex` is written by hand. File names and LaTeX labels keep their Portuguese form in both versions.

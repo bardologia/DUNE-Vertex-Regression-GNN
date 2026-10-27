@@ -52,17 +52,19 @@
 
 \vspace{1cm}
 
+\ifdefined\ativarformularioeditavel\begin{Form}\fi
 \begin{tabular}{|p{5cm}|p{10cm}|}
 \hline
 \textbf{Nome do orientador} & \nomeorientador \\
 \hline
 \textbf{Assinatura do orientador} & \\[0.9cm]
 \hline
-\textbf{Telefone do orientador} & \telefoneorientador \\
+\textbf{Telefone do orientador} & \ifdefined\ativarformularioeditavel\raisebox{-4pt}[0pt][0pt]{\TextField[name=telefone_orientador, width=9.6cm, height=17pt, charsize=12pt, bordercolor={}, backgroundcolor={}]{}}\else\telefoneorientador\fi \\
 \hline
 \textbf{E-mail do orientador} & \emailorientador \\
 \hline
 \end{tabular}
+\ifdefined\ativarformularioeditavel\end{Form}\fi
 
 \vspace{1cm}
 
