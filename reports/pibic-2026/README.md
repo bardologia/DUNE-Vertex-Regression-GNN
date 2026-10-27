@@ -4,10 +4,10 @@ This folder holds the final activity report of the PIBIC undergraduate research 
 
 | Folder | Version | Title | Pages |
 | --- | --- | --- | --- |
-| [`pt/`](pt/) | Portuguese original, on the PIBIC-ITA template | Redes Neurais em Grafos para a Reconstrução do Vértice de Interação a partir da Luz de Cintilação no Far Detector 3 do Experimento DUNE | 24 |
-| [`en/`](en/) | English translation | Graph Neural Networks for Reconstructing the Interaction Vertex from Scintillation Light in the Far Detector 3 of the DUNE Experiment | 25 |
+| [`pt/`](pt/) | Portuguese original, on the PIBIC-ITA template | Estudos de desempenho do sistema de fótons APE | 24 |
+| [`en/`](en/) | English translation | Performance Studies of the APE Photon System | 25 |
 
-Both copies are the version dated 14 October 2026. The English text follows the Portuguese paragraph by paragraph and keeps its numbers, figures, tables and references. Where the two differ, the Portuguese is the reference.
+The title is the one under which the grant project was registered in the ITA-PIBIC 2025/2026 results. Both copies are the version dated 14 October 2026. The English text follows the Portuguese paragraph by paragraph and keeps its numbers, figures, tables and references. Where the two differ, the Portuguese is the reference.
 
 ## Contents
 
