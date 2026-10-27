@@ -1,6 +1,8 @@
 # Rendered reports and LaTeX build outputs; the figure PDFs under pt/figures and en/figures are sources
 /*.pdf
 main.pdf
+main_editavel.pdf
+*.log
 *.aux
 *.bbl
 *.blg
