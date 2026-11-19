@@ -15,6 +15,7 @@ from pipelines.dataset.normalization import NormalizationStats
 from pipelines.dataset.pipeline      import DatasetPipeline
 from pipelines.inference.metrics     import InferenceMetrics
 from pipelines.inference.predictor   import Predictor
+from pipelines.shared.store_geometry import StoreGeometryRecord
 
 from pipelines.sweep.grid   import SweepGrid
 from pipelines.sweep.plots  import SweepPlots
@@ -27,6 +28,7 @@ class EnergyEfficiencySweepPipeline:
     def __init__(self, config, logger=None):
         self.config           = config
         self.run_directory    = Path(config.run_directory)
+        self.geometry_record  = StoreGeometryRecord.for_run(self.run_directory)
         self.logger           = logger if logger is not None else Logger(log_dir=str(self.run_directory / "logs"), name="sweep")
         self.device           = config.device
         self.split            = config.split
@@ -79,6 +81,7 @@ class EnergyEfficiencySweepPipeline:
     def _prepare_dataset_pipeline(self):
         self.dataset_pipeline = DatasetPipeline(self.entry.dataset, self.logger, stats=self.stats, evaluation_mode=True)
         self.dataset_pipeline.prepare_samples()
+        self.geometry_record.require(self.dataset_pipeline.store_geometry())
 
         self.grid = SweepGrid(self.config.scale, self.config.efficiency)
 

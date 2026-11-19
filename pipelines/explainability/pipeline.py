@@ -16,6 +16,7 @@ from pipelines.dataset.normalization import NormalizationStats
 from pipelines.dataset.pipeline      import DatasetPipeline
 from pipelines.inference.metrics     import InferenceMetrics
 from pipelines.inference.predictor   import Predictor
+from pipelines.shared.store_geometry import StoreGeometryRecord
 
 from pipelines.explainability.evaluation import EvaluationGraphTensors, SplitMetricEvaluator
 from pipelines.explainability.importance import ExpectedGradients, GradientSaliency, KernelShapImportance, OcclusionImportance, PermutationImportance
@@ -53,6 +54,7 @@ class FeatureImportancePipeline:
     def __init__(self, config, logger=None):
         self.config           = config
         self.run_directory    = Path(config.run_directory)
+        self.geometry_record  = StoreGeometryRecord.for_run(self.run_directory)
         self.logger           = logger if logger is not None else Logger(log_dir=str(self.run_directory / "logs"), name="explain")
         self.device           = config.device
         self.split            = config.split
@@ -133,7 +135,9 @@ class FeatureImportancePipeline:
     def _prepare_engine(self):
         dataset_pipeline = DatasetPipeline(self.entry.dataset, self.logger, stats=self.stats, evaluation_mode=True)
         dataset_pipeline.prepare_samples()
-        dataset          = dataset_pipeline.build_evaluation_split(self.split_base_ids, self.split)
+        self.geometry_record.require(dataset_pipeline.store_geometry())
+
+        dataset = dataset_pipeline.build_evaluation_split(self.split_base_ids, self.split)
 
         self.engine = EvaluationGraphTensors(dataset, self.batch_size, self.config.max_events, self.logger).prepare()
         self._assert_layout_consistency()

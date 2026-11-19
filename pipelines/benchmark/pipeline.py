@@ -11,12 +11,15 @@ from configuration.architectures import MODEL_CONFIG_REGISTRY
 from tools.monitoring.logger      import Logger
 from tools.runtime.config_cli     import ConfigCli
 
-from pipelines.dataset.pipeline import DatasetPipeline
+from pipelines.dataset.pipeline      import DatasetPipeline
+from pipelines.shared.store_geometry import StoreGeometryRecord
 
 from pipelines.benchmark.stages import ComparisonStage, MaxBatchStage, OverfitGateStage, SizeMatchStage, TrainingStage
 
 
 class BenchmarkPipeline:
+    RESUMABLE_STAGES = (SizeMatchStage, OverfitGateStage, MaxBatchStage, TrainingStage, ComparisonStage)
+
     def __init__(self, config, logger=None, explicit_paths=None):
         self.config          = config
         self.external_logger = logger
@@ -30,6 +33,9 @@ class BenchmarkPipeline:
         resolved_name      = self.config.run_name if self.config.run_name else stamp
         self.run_directory = Path(self.config.training.io.log_base_dir) / f"benchmark_{resolved_name}"
         self.pipeline_directory = self.run_directory / "pipeline"
+
+        if self._resumes_stage_results():
+            StoreGeometryRecord(self.pipeline_directory).recorded()
         self.pipeline_directory.mkdir(parents=True, exist_ok=True)
 
         self.logger = self.external_logger if self.external_logger is not None else Logger(log_dir=str(self.run_directory / "logs"), name="benchmark")
@@ -51,6 +57,7 @@ class BenchmarkPipeline:
     def _prepare_data(self):
         self.dataset_pipeline     = DatasetPipeline(self.config.dataset, self.logger)
         self.datasets, self.stats = self.dataset_pipeline.run()
+        self.store_geometry       = self.dataset_pipeline.store_geometry()
 
         base_overrides       = self.dataset_pipeline.inject_model_overrides({})
         self.model_overrides = {}
@@ -59,6 +66,23 @@ class BenchmarkPipeline:
             extra            = {"degree_histogram": degree_histogram} if degree_histogram is not None else {}
 
             self.model_overrides[model_name] = {**base_overrides, **extra}
+
+    def _record_store_geometry(self):
+        """Records the store geometry of the benchmark, after checking that resumed stage results were produced on the same one.
+
+        Raises:
+            FileNotFoundError : If resumed stage results exist without a record, as in every benchmark run before the documented channel mapping.
+            ValueError        : If resumed stage results were produced on another store geometry.
+        """
+        record = StoreGeometryRecord(self.pipeline_directory)
+        if self._resumes_stage_results():
+            record.require(self.store_geometry)
+        record.save(self.store_geometry)
+
+    def _resumes_stage_results(self):
+        """Returns whether the benchmark resumes into a pipeline directory that already holds stage results."""
+        results = [self.pipeline_directory / stage.RESULT_FILE for stage in self.RESUMABLE_STAGES]
+        return bool(self.config.resume) and any(path.is_file() for path in results)
 
     def _run_size_match(self):
         if not self.config.size_match.enabled:
@@ -86,7 +110,7 @@ class BenchmarkPipeline:
         return records
 
     def _run_training(self):
-        records = TrainingStage(self.config, self.run_directory, self.pipeline_directory, self.logger, self.models, self.model_overrides, self.explicit_paths, self.datasets, self.stats, self.size_records, self.max_batch_records, self.dataset_pipeline.split_base_ids).run()
+        records = TrainingStage(self.config, self.run_directory, self.pipeline_directory, self.logger, self.models, self.model_overrides, self.explicit_paths, self.datasets, self.stats, self.size_records, self.max_batch_records, self.dataset_pipeline.split_base_ids, self.store_geometry).run()
         self._mark_stage("training", "completed")
         return records
 
@@ -103,6 +127,7 @@ class BenchmarkPipeline:
         self._prepare_run()
         try:
             self._prepare_data()
+            self._record_store_geometry()
 
             self.size_records = self._run_size_match()
 

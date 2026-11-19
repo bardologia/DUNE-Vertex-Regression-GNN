@@ -12,6 +12,7 @@ from tools.monitoring.logger         import Logger
 from tools.runtime.config_cli        import ConfigCli
 from pipelines.dataset.pipeline       import DatasetPipeline
 from pipelines.dataset.normalization import NormalizationStats
+from pipelines.shared.store_geometry import StoreGeometryRecord
 
 from pipelines.inference.animations import AnalysisAnimations
 from pipelines.inference.metrics    import InferenceMetrics
@@ -25,6 +26,7 @@ class InferencePipeline:
         defaults = InferenceEntryConfig()
 
         self.run_directory   = Path(run_directory)
+        self.geometry_record = StoreGeometryRecord.for_run(self.run_directory)
         self.logger          = logger if logger is not None else Logger(log_dir=str(self.run_directory / "logs"), name="inference")
         self.device          = device if device is not None else ("cuda" if torch.cuda.is_available() else "cpu")
         self.splits          = DatasetPipeline.validate_split_names(splits if splits is not None else defaults.splits)
@@ -51,7 +53,13 @@ class InferencePipeline:
 
         self.stats          = NormalizationStats.load(self.run_directory / "metadata")
         split_base_ids      = json.loads((self.run_directory / "metadata" / "split_base_ids.json").read_text(encoding="utf-8"))
-        self.dataset_splits, _ = DatasetPipeline(self.entry.dataset, self.logger, stats=self.stats, evaluation_mode=True).run_with_base_ids(split_base_ids, split_names=self.splits)
+        dataset_pipeline    = DatasetPipeline(self.entry.dataset, self.logger, stats=self.stats, evaluation_mode=True)
+
+        dataset_pipeline.prepare_samples()
+        self.store_geometry = dataset_pipeline.store_geometry()
+        self.geometry_record.require(self.store_geometry)
+
+        self.dataset_splits, _ = dataset_pipeline.run_with_base_ids(split_base_ids, split_names=self.splits)
 
         model, _        = get_model(self.entry.model_name, **self.entry.model_overrides)
         checkpoint_path = self.run_directory / "checkpoints" / self.entry.training.io.checkpoint_name

@@ -102,6 +102,7 @@ class TrainingPipeline:
     def _train(self):
         OptimizerOverrideApplier(self.training_config, self.model_config, self.explicit_paths, self.logger).run()
 
+        self.run_metadata.save_store_geometry(self.dataset_pipeline.store_geometry())
         self.run_metadata.save_resolved_config(self.entry)
         self.run_metadata.save_normalization_stats(self.stats)
         self.run_metadata.save_split(self.dataset_pipeline.split_base_ids)

@@ -7,6 +7,10 @@ from pathlib  import Path
 
 import numpy as np
 
+from configuration.data.general      import DatasetConfig
+from pipelines.dataset.parquet_store import ParquetEventReader
+from pipelines.shared.store_geometry import CacheGeometryStamp, StoreGeometryRecord
+
 from project_paths     import ProjectPaths
 from server_logger     import ServerLogger
 from subprocess_runner import SubprocessRunner
@@ -190,7 +194,8 @@ class EventExplorer:
     def _load_worker(self, kind: str, name: str, split: str) -> None:
         try:
             if kind == "dataset":
-                cache = self.paths.explorer_cache_dir / f"{name}.npz"
+                fingerprint = ParquetEventReader(DatasetConfig().data.parquet_store_dir).load_geometry().geometry_fingerprint
+                cache       = self.paths.explorer_cache_dir / f"{name}.npz"
                 if not cache.is_file():
                     self._set_stage("building the dataset cache")
                     self._run_dataset_export(name)
@@ -198,9 +203,10 @@ class EventExplorer:
                     raise FileNotFoundError(f"export finished but {cache} was not produced; check the export log")
 
                 self._set_stage("loading event cache")
-                data, meta = self._read_dataset_cache(cache, name)
+                data, meta = self._read_dataset_cache(cache, name, fingerprint)
             else:
                 run_directory = self._run_directory(name)
+                fingerprint   = StoreGeometryRecord(run_directory / "metadata").recorded()["geometry_fingerprint"]
                 cache         = run_directory / "analysis" / split / self.FILENAME
                 if not cache.is_file():
                     self._set_stage("running the model over every split")
@@ -209,7 +215,7 @@ class EventExplorer:
                     raise FileNotFoundError(f"export finished but {cache} was not produced; check the export log")
 
                 self._set_stage("loading event cache")
-                data, meta = self._read_run_cache(cache, name, split)
+                data, meta = self._read_run_cache(cache, name, split, fingerprint)
 
             with self.lock:
                 self.loaded = {"kind": kind, "name": name, "split": split, "data": data, "meta": meta}
@@ -237,8 +243,9 @@ class EventExplorer:
         argv_tail = ["--kind", name]
         self.runner.spawn(script, argv_tail, f"dataset_export_{name}")
 
-    def _read_run_cache(self, cache: Path, name: str, split: str) -> tuple[dict, dict]:
+    def _read_run_cache(self, cache: Path, name: str, split: str, fingerprint: str) -> tuple[dict, dict]:
         archive = np.load(cache)
+        CacheGeometryStamp.require(archive, cache, fingerprint)
         data    = {key: archive[key] for key in archive.files}
 
         gt        = data["gt"]
@@ -262,8 +269,9 @@ class EventExplorer:
         }
         return data, meta
 
-    def _read_dataset_cache(self, cache: Path, name: str) -> tuple[dict, dict]:
+    def _read_dataset_cache(self, cache: Path, name: str, fingerprint: str) -> tuple[dict, dict]:
         archive = np.load(cache, allow_pickle=False)
+        CacheGeometryStamp.require(archive, cache, fingerprint)
         data    = {key: archive[key] for key in archive.files}
 
         gt        = data["gt"]

@@ -16,8 +16,9 @@ from tools.reporting.markdown      import MarkdownDoc, MarkdownTable
 from tools.runtime.config_cli      import ConfigCli
 from tools.runtime.reproducibility import Reproducibility
 
-from pipelines.inference.metrics import InferenceMetrics
-from pipelines.inference.plots   import PublicationStyle
+from pipelines.inference.metrics     import InferenceMetrics
+from pipelines.inference.plots       import PublicationStyle
+from pipelines.shared.store_geometry import StoreGeometryRecord
 
 from pipelines.baseline.boosters import BASELINE_MODEL_FAMILIES
 from pipelines.baseline.features import TabularSplitBuilder
@@ -76,6 +77,10 @@ class BaselineRunWriter:
 
     def write_resolved_config(self, model_name, entry_config):
         return self._write_json(self.metadata_directory / "resolved_config.json", {"model_name": model_name, **ConfigCli.to_mapping(entry_config)})
+
+    def write_store_geometry(self, store_geometry):
+        """Records the store geometry the boosters were fitted on, the ``geometry_fingerprint`` and ``channel_count`` of ``DatasetPipeline.store_geometry``, and returns the record path."""
+        return StoreGeometryRecord(self.metadata_directory).save(store_geometry)
 
     def write_split(self, split_base_ids):
         return self._write_json(self.metadata_directory / "split_base_ids.json", split_base_ids)
@@ -190,6 +195,7 @@ class BaselinePipeline:
         writer        = BaselineRunWriter(run_directory, self.logger)
 
         writer.write_resolved_config(f"baseline_{family.KEY}", self.entry)
+        writer.write_store_geometry(self.builder.store_geometry)
         writer.write_split(self.builder.split_base_ids)
         writer.write_best_trial({
             "model_name"        : f"baseline_{family.KEY}",

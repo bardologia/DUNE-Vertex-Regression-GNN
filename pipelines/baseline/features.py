@@ -90,6 +90,7 @@ class TabularSplitBuilder:
 
         self.feature_names  = self.extractor.names()
         self.split_base_ids = None
+        self.store_geometry = None
 
     def _features_for_split(self, split_name, samples, geometry_positions, realizer, augmentation):
         features = np.empty((len(samples), len(self.feature_names)), dtype=np.float32)
@@ -111,6 +112,7 @@ class TabularSplitBuilder:
         dataset_pipeline    = DatasetPipeline(self.config, self.logger)
         split_samples       = dataset_pipeline.run_split_samples()
         self.split_base_ids = dataset_pipeline.split_base_ids
+        self.store_geometry = dataset_pipeline.store_geometry()
 
         realizer     = LightRealization(dataset_pipeline.light_matrix, self.config.physics)
         augmentation = Augmentation(self.config.augmentation)

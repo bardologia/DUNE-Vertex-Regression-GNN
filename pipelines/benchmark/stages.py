@@ -213,13 +213,14 @@ class MaxBatchStage(BenchmarkStage):
 class TrainingStage(BenchmarkStage):
     RESULT_FILE = "training_results.json"
 
-    def __init__(self, config, run_directory, pipeline_directory, logger, models, model_overrides, explicit_paths, datasets, stats, size_records, max_batch_records, split_base_ids):
+    def __init__(self, config, run_directory, pipeline_directory, logger, models, model_overrides, explicit_paths, datasets, stats, size_records, max_batch_records, split_base_ids, store_geometry):
         super().__init__(config, run_directory, pipeline_directory, logger, models, model_overrides, explicit_paths)
         self.datasets          = datasets
         self.stats             = stats
         self.size_records      = size_records
         self.max_batch_records = max_batch_records
         self.split_base_ids    = split_base_ids
+        self.store_geometry    = store_geometry
 
     def _prepare(self):
         self.logger.section("[Benchmark | Training]")
@@ -275,6 +276,7 @@ class TrainingStage(BenchmarkStage):
             train_loader, validation_loader, _ = loaders
 
             run_metadata = TrainingRunMetadata(training_config, model_name, self.training_directory, run_name="run")
+            run_metadata.save_store_geometry(self.store_geometry)
             run_metadata.save_normalization_stats(self.stats)
             run_metadata.save_split(self.split_base_ids)
 

@@ -75,8 +75,11 @@ def test_tabular_split_builder_expands_train_octants(parquet_store, quiet_logger
     train_features, train_targets = splits["train"]
     val_features, val_targets     = splits["val"]
 
-    octant_frame = ParquetEventReader(parquet_store).load_store().octant_frame
+    reader        = ParquetEventReader(parquet_store).load_store()
+    octant_frame  = reader.octant_frame
     train_octants = int(octant_frame["base_event_id"].isin(set(builder.split_base_ids["train"])).sum())
+
+    assert builder.store_geometry == {"geometry_fingerprint": reader.geometry_fingerprint, "channel_count": len(reader.geometry_frame)}
 
     assert train_features.shape[1] == len(builder.feature_names)
     assert train_features.shape[0] == train_octants
@@ -111,6 +114,17 @@ def test_booster_tuner_returns_finished_study(quiet_logger):
     study = BoosterTuner(BASELINE_MODEL_FAMILIES["lightgbm"], booster, search, 0, splits, quiet_logger).optimize()
     assert len(study.trials) == 2
     assert np.isfinite(study.best_value)
+
+
+def test_baseline_run_records_the_store_geometry(tmp_path, quiet_logger):
+    from pipelines.baseline.pipeline import BaselineRunWriter
+    from pipelines.shared            import StoreGeometryRecord
+
+    store_geometry = {"geometry_fingerprint": "c" * 64, "channel_count": 6909}
+    writer         = BaselineRunWriter(tmp_path / "baseline_lightgbm_run", quiet_logger)
+
+    writer.write_store_geometry(store_geometry)
+    assert StoreGeometryRecord(writer.metadata_directory).recorded() == store_geometry
 
 
 def test_baseline_entry_defaults_enable_octants():

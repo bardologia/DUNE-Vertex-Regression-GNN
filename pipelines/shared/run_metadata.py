@@ -10,7 +10,8 @@ from tools.monitoring.logger  import Logger
 from tools.monitoring.tracker import NullTracker, Tracker
 from tools.runtime.config_cli import ConfigCli
 
-from pipelines.shared.run_paths import RunPaths
+from pipelines.shared.run_paths      import RunPaths
+from pipelines.shared.store_geometry import StoreGeometryRecord
 
 
 class LightweightRunContext:
@@ -38,7 +39,10 @@ class TrainingRunMetadata:
         self.logs_directory     = run_paths.logs_directory
         self.metadata_directory = run_paths.metadata_directory
         self.checkpoint_dir     = run_paths.checkpoint_dir
+        self.resuming           = self.run_directory.exists() and any(self.run_directory.iterdir())
 
+        if self.resuming and training_config.loop.resume:
+            StoreGeometryRecord(self.metadata_directory).recorded()
         run_paths.create(allow_existing=training_config.loop.resume)
 
         self.checkpoint_path = self.checkpoint_dir / training_config.io.checkpoint_name
@@ -54,6 +58,24 @@ class TrainingRunMetadata:
             "Tensorboard"   : str(self.tensorboard_dir),
             "Checkpoint"    : str(self.checkpoint_path),
         })
+
+    def save_store_geometry(self, store_geometry: dict) -> Path:
+        """Records the store geometry of the run, after checking that a resumed run was trained on the same one.
+
+        Args:
+            store_geometry : Mapping with the store ``geometry_fingerprint`` and ``channel_count``, from ``DatasetPipeline.store_geometry``.
+
+        Returns:
+            The record path.
+
+        Raises:
+            FileNotFoundError : If an existing run directory being resumed holds no record, as every run trained before the documented channel mapping.
+            ValueError        : If an existing run directory being resumed was trained on another store geometry.
+        """
+        record = StoreGeometryRecord(self.metadata_directory)
+        if self.resuming:
+            record.require(store_geometry)
+        return record.save(store_geometry)
 
     def save_resolved_config(self, config) -> Path:
         return ConfigCli.save_resolved(config, self.metadata_directory / "resolved_config.json")

@@ -46,6 +46,8 @@ that regresses the interaction vertex. The model is optimised by minimising the 
 
 Ground-truth coordinates are derived from the simulation file naming convention `pmod3_{x}_{y}_{z}_..._N.csv`, allowing the supervised target to be recovered directly from the dataset without an auxiliary label store. The parsed vertex is then mapped from the simulation frame into the sensor frame via a fixed `CoordinateTransform`, so that targets and sensor positions share a single coordinate system.
 
+Sensor positions are not read from the `x`, `y`, `z` columns of the raw CSVs, which hold a 2024 position table that misplaces every odd raw row and swaps the endcap faces. The store builds them from the raw `bin` column through the module order of the APEX tile-positioning document (`pipelines/dataset/detector_layout.py`): bins 15 to 5771 hold wall module `bin - 12`, bins 5774 to 6924 endcap module `bin - 5773`, and bin 12 the far-wall module 1. Bins 13, 5772 and 6925 carry face totals, not sensors, and are dropped from the geometry and the light, so every event has 6,909 channels at 6,909 distinct positions (wall modules 0 and 2 and endcap module 0 have no bin). Runs and explorer caches record the fingerprint of the store geometry they were built from and are refused against any other store.
+
 ---
 
 ## 3. Method
@@ -56,7 +58,7 @@ The end-to-end pipeline is summarised as:
    raw CSV events
         │
         ▼
-  preprocessing            outlier rejection · intensity scaling · detection-efficiency simulation · log(1+x)
+  preprocessing            documented channel mapping · intensity scaling · detection-efficiency simulation · log(1+x)
         │
         ▼
   graph construction       active-sensor pruning · k-nearest-neighbour graph · 17-D node features · 23-D edge features · 9-D graph scalars
@@ -76,7 +78,7 @@ The end-to-end pipeline is summarised as:
 
 ### 3.1 Graph Representation
 
-Each event is materialised as a PyTorch Geometric `Data` object on a $k$-nearest-neighbour topology over sensor positions. Only active sensors (positive realized light) enter the graph, with an optional cap on the brightest sensors, so a full 6912-channel detector collapses to roughly 250 nodes per event and a usable batch size becomes possible:
+Each event is materialised as a PyTorch Geometric `Data` object on a $k$-nearest-neighbour topology over sensor positions. Only active sensors (positive realized light) enter the graph, with an optional cap on the brightest sensors, so a full 6909-channel detector collapses to roughly 250 nodes per event and a usable batch size becomes possible:
 
 - **Node features (17-dimensional at default settings):** sensor position, measured light intensity, the per-sensor light fraction, the distance to the light-weighted centroid of the event, a measure of local light density, the normalised direction to the centroid, the eigenvalues of the light-weighted inertia tensor, and a light-rank descriptor. The inertia eigenvalues are carried in physical units (m²) rather than as ratios, so the absolute size of the light distribution survives into the encoder. The exact dimensionality follows `BaseGNNConfig.input_dim` and the `GraphConfig` feature toggles (`direction_features`, `inertia_features`, `rank_features`).
 - **Edge features (23-dimensional at default settings):** Euclidean separation, normalised displacement vector, inverse-square distance, light gradient along the edge, a Sørensen–Dice photometric similarity, and a 16-bin radial-basis expansion of the edge distance (`GraphConfig.edge_rbf_count`). The exact dimensionality follows `BaseGNNConfig.edge_dim`.
@@ -143,7 +145,7 @@ DUNE-GNN/
 │   ├── export_dataset_events.py
 │   └── _bootstrap.py           # environment pinning (GPU, sys.path)
 ├── configuration/            # nested dataclass configuration, composed into per-entry configs
-│   ├── data/                   # DataConfig, GraphConfig, PhysicsConfig, SplitConfig, HotChannelConfig
+│   ├── data/                   # DataConfig, GraphConfig, PhysicsConfig, SplitConfig, AugmentationConfig
 │   ├── architectures/          # per-model config dataclasses + MODEL_CONFIG_REGISTRY (zoo)
 │   ├── training/               # TrainingLoopConfig, OptimizerConfig, SchedulerConfig, LossConfig, ...
 │   ├── tuning/                 # TuningConfig (Optuna search budget)
@@ -224,7 +226,7 @@ The **energy/efficiency sweep** (`main/sweep.py`) re-evaluates a trained checkpo
 
 The **feature-importance attribution** (`main/explain.py`) explains which components of the event-graph representation a trained checkpoint relies on, evaluated on its own held-out split with the training-split normalisation statistics held fixed. It reports five complementary attributions over the node and edge feature columns (individually and grouped by semantic block): **permutation importance** — the held-out degradation when a feature is shuffled across every node or edge, averaged over `--permutation_repeats` seeds with a standard deviation; **occlusion (mean-ablation) importance** — the degradation when a feature is replaced by its dataset mean; **gradient saliency** — the mean magnitude of the gradient of the squared prediction error with respect to each normalised input feature, alongside its gradient×input variant; **expected gradients** — a SHAP-consistent, axiomatic attribution that integrates the gradient of each predicted coordinate along paths from data-distribution baselines, reported per coordinate `(x, y, z)` with a completeness check (`--eg_samples`, `--eg_events`); and **Kernel SHAP** — Shapley values computed with the `shap` library over the feature channels (absent channel = dataset mean), per coordinate, with the local-accuracy property verified by a completeness ratio (`--shap_nsamples`, `--shap_events`); the per-event SHAP matrices are retained and rendered as `shap`'s native beeswarm and bar-summary plots under `plots/shap/`. Outputs are written under `runs/<run>/explainability/feature_importance_<stamp>/`: a `report.md` with ranked tables and a cross-method consensus ranking, machine-readable `results.json`, per-feature `node_importance.csv` / `edge_importance.csv`, and one publication-quality horizontal bar chart per method in `plots/`. Use `--max_events` to cap the evaluation set for a fast pass and `--split` to target `val`/`train`/`test`.
 
-The **gradient-boosted baseline** (`main/baseline.py`) trains the strongest standard-ML reference the GNNs have to beat. It reuses the exact dataset pipeline of the graph models (same persisted split logic, same frozen photon realization, octant expansion of the training split on by default), collapses each event into per-event summary features of the realized light (light scale, weighted centroids and moments, inertia eigenvalues, per-axis weighted quantiles, brightest channels), and fits one booster per coordinate with early stopping on the validation split. Hyperparameters for LightGBM and XGBoost are searched with Optuna (TPE, objective = validation Euclidean mean in metres). Each family is written as its own run under `runs/baseline_<family>_<stamp>/` with the standard `metadata/metrics.json`, `metadata/split_base_ids.json`, saved boosters in `checkpoints/`, and a `report.md` plus gain-importance plot in `analysis/`, so baseline runs appear in the web console's results browser next to the GNN runs.
+The **gradient-boosted baseline** (`main/baseline.py`) trains the strongest standard-ML reference the GNNs have to beat. It reuses the exact dataset pipeline of the graph models (same persisted split logic, same frozen photon realization, octant expansion of the training split on by default), collapses each event into per-event summary features of the realized light (light scale, weighted centroids and moments, inertia eigenvalues, per-axis weighted quantiles, brightest channels), and fits one booster per coordinate with early stopping on the validation split. Hyperparameters for LightGBM and XGBoost are searched with Optuna (TPE, objective = validation Euclidean mean in metres). Each family is written as its own run under `runs/baseline_<family>_<stamp>/` with the standard `metadata/metrics.json`, `metadata/split_base_ids.json`, `metadata/store_geometry.json`, saved boosters in `checkpoints/`, and a `report.md` plus gain-importance plot in `analysis/`, so baseline runs appear in the web console's results browser next to the GNN runs.
 
 Every entry point wraps its configuration in a `ConfigCli`, so any nested config field can be overridden from the command line without editing source — for example:
 
@@ -244,7 +246,6 @@ The project is **configuration-driven**: every hyperparameter is declared as a f
 | `DataConfig` (`configuration/data`) | `raw_input_dir`, `parquet_store_dir`, `augment_octants`, `subset_fraction`, `stats_sample_size` |
 | `GraphConfig` (`configuration/data`) | `k_neighbors`, `bidirectional`, `edge_rbf_count`, `direction_features` |
 | `PhysicsConfig` (`configuration/data`) | `scale_factor`, `detection_efficiency`, `efficiency_seed` |
-| `HotChannelConfig` (`configuration/data`) | `active_fraction`, `median_factor`, `neighbor_count` |
 | Model config (`configuration/architectures`, per model in `MODEL_CONFIG_REGISTRY`) | `hidden_dim`, `num_layers`, `heads`, `pooling`, `head_type` |
 | `TrainingLoopConfig` (`configuration/training`) | `epochs`, `batch_size`, `use_amp`, `gradient_accumulation_steps`, `validation_frequency`, `use_ema`, `resume` |
 | `OptimizerConfig` / `SchedulerConfig` / `WarmupConfig` | discriminative learning rates, `reference_batch_size`, `eta_min`, warmup schedule |

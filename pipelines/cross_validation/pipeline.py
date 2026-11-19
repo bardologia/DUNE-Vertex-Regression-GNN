@@ -180,6 +180,7 @@ class CrossValidationPipeline:
             self.entry.model_overrides = {**self.entry.model_overrides, "degree_histogram": degree_histogram}
 
         run_metadata = TrainingRunMetadata(self.training_config, self.entry.model_name, self.run_directory, run_name=f"fold_{fold_index}")
+        run_metadata.save_store_geometry(self.dataset_pipeline.store_geometry())
         run_metadata.save_normalization_stats(stats)
         run_metadata.save_split(self.dataset_pipeline.split_base_ids)
 

@@ -6,6 +6,8 @@ from configuration.benchmark     import BenchmarkConfig
 from pipelines.benchmark         import BenchmarkPipeline, ComparisonReport, ModelSizer, TrialCollector
 from pipelines.benchmark.stages  import BenchmarkStage
 from pipelines.dataset.graph      import FeatureSchema
+from pipelines.dataset            import ParquetEventReader
+from pipelines.shared             import StoreGeometryRecord
 
 
 def _model_overrides(config):
@@ -136,6 +138,9 @@ def test_benchmark_pipeline_runs(dataset_config, quiet_logger, tmp_path):
     assert Path(summary["summary_path"]).exists()
     assert {record["model"] for record in summary["ranked"]} == keep
 
+    store_geometry = {"geometry_fingerprint": ParquetEventReader(dataset_config.data.parquet_store_dir).load_geometry().geometry_fingerprint, "channel_count": 6909}
+    assert StoreGeometryRecord(Path(summary["run_directory"]) / "pipeline").recorded() == store_geometry
+
     payload = json.loads(Path(summary["summary_path"]).read_text(encoding="utf-8"))
     assert len(payload["records"]) == 2
     for record in payload["records"]:
@@ -143,6 +148,7 @@ def test_benchmark_pipeline_runs(dataset_config, quiet_logger, tmp_path):
         assert record["parameters"] is not None
         assert "euclidean_mean" in record["metrics"]
         assert (Path(record["run_directory"]) / "metadata" / "metrics.json").exists()
+        assert StoreGeometryRecord(Path(record["run_directory"]) / "metadata").recorded() == store_geometry
 
         resolved = json.loads((Path(record["run_directory"]) / "metadata" / "resolved_config.json").read_text(encoding="utf-8"))
         assert resolved["training.loop.batch_size"] == (record["max_batch"] or config.training.loop.batch_size)
