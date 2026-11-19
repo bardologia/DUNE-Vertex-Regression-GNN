@@ -7,7 +7,7 @@ import torch
 
 from configuration.baseline.general         import BaselineConfig
 from configuration.cross_validation.general import CrossValidationConfig
-from configuration.data.general             import DataConfig, DatasetConfig, HotChannelConfig
+from configuration.data.general             import DataConfig, DatasetConfig
 from configuration.training.general         import TrainingConfig
 from configuration.tuning.general           import TuningConfig
 
@@ -17,10 +17,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 @dataclass
 class DatasetEntryConfig:
-    raw_input_dir : Path            = field(default_factory=lambda: PROJECT_ROOT / "data")
-    output_dir    : Path            = field(default_factory=lambda: PROJECT_ROOT / "data_frames")
-    worker_count  : int             = 10
-    hot_channels  : HotChannelConfig = field(default_factory=HotChannelConfig)
+    raw_input_dir : Path = field(default_factory=lambda: PROJECT_ROOT / "data")
+    output_dir    : Path = field(default_factory=lambda: PROJECT_ROOT / "data_frames")
+    worker_count  : int  = 10
 
 
 @dataclass

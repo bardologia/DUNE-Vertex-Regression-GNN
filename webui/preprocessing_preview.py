@@ -6,10 +6,10 @@ from pathlib     import Path
 
 import numpy as np
 
-from configuration.data.general      import AugmentationConfig, DatasetConfig, HotChannelConfig, PhysicsConfig
+from configuration.data.general      import AugmentationConfig, DatasetConfig, PhysicsConfig
 from pipelines.dataset.augmentation  import Augmentation
-from pipelines.dataset.hot_channels  import ChannelStatistics, HotChannelCorrector
 from pipelines.dataset.parquet_store import ParquetEventReader
+from pipelines.shared.store_geometry import CacheGeometryStamp
 
 from project_paths     import ProjectPaths
 from server_logger     import ServerLogger
@@ -19,7 +19,7 @@ from subprocess_runner import SubprocessRunner
 class PreprocessingPreview:
 
     FILENAME    = "raw_light.npz"
-    STAGE_NAMES = ("raw", "cleaned", "scaled", "detected", "augmented")
+    STAGE_NAMES = ("raw", "scaled", "detected", "augmented")
 
     def __init__(self, paths: ProjectPaths, logger: ServerLogger) -> None:
         self.paths  = paths
@@ -39,18 +39,11 @@ class PreprocessingPreview:
         self.bounds_min   = [0.0, 0.0, 0.0]
         self.bounds_max   = [0.0, 0.0, 0.0]
 
-        self.hot_statistics = None
-        self.hot_cache_key = None
-        self.hot_corrector = None
-        self.hot_channels  = None
-        self.hot_neighbors = None
-
     def defaults(self) -> dict:
         physics = PhysicsConfig()
         return {
             "scaling"      : {"scale_factor": physics.scale_factor},
             "efficiency"   : {"detection_efficiency": physics.detection_efficiency, "efficiency_seed": physics.efficiency_seed},
-            "outlier"      : asdict(HotChannelConfig()),
             "augmentation" : asdict(AugmentationConfig()),
         }
 
@@ -119,37 +112,20 @@ class PreprocessingPreview:
         }
 
     def _stages(self, positions, raw_row, base_event_id, index, config) -> list:
-        cleaned   = self._cleaned(raw_row, config["outlier"])
-        scaled    = self._scaled(cleaned, config["scaling"])
+        scaled    = self._scaled(raw_row, config["scaling"])
         detected  = self._detected(scaled, base_event_id, config["efficiency"])
         augmented = self._augmented(detected, index, config["augmentation"])
 
         return [
             self._stage_payload("raw",       positions, raw_row),
-            self._stage_payload("cleaned",   positions, cleaned),
             self._stage_payload("scaled",    positions, scaled),
             self._stage_payload("detected",  positions, detected),
             self._stage_payload("augmented", positions, augmented),
         ]
 
-    def _cleaned(self, raw_row, outlier) -> np.ndarray:
-        if not bool(outlier["enabled"]):
-            return raw_row.copy()
-
-        key = (round(float(outlier["active_fraction"]), 9), round(float(outlier["median_factor"]), 9), int(outlier["neighbor_count"]), int(outlier["min_events"]))
-        if key != self.hot_cache_key:
-            config    = HotChannelConfig(enabled=True, active_fraction=float(outlier["active_fraction"]), median_factor=float(outlier["median_factor"]), neighbor_count=int(outlier["neighbor_count"]), min_events=int(outlier["min_events"]))
-            corrector = HotChannelCorrector(self.geometry, config, self.logger, statistics=self.hot_statistics)
-
-            self.hot_corrector                    = corrector
-            self.hot_channels, self.hot_neighbors = corrector.fit(self.light_matrix)
-            self.hot_cache_key                    = key
-
-        return self.hot_corrector.apply_to_event(raw_row, self.hot_channels, self.hot_neighbors).astype(np.float64)
-
-    def _scaled(self, cleaned, scaling) -> np.ndarray:
+    def _scaled(self, raw_row, scaling) -> np.ndarray:
         scale = float(scaling["scale_factor"])
-        return np.maximum(np.round(np.asarray(cleaned, dtype=np.float64) * scale), 0.0)
+        return np.maximum(np.round(np.asarray(raw_row, dtype=np.float64) * scale), 0.0)
 
     def _detected(self, scaled, base_event_id, efficiency) -> np.ndarray:
         generator = np.random.default_rng(int(efficiency["efficiency_seed"]) + int(base_event_id))
@@ -228,19 +204,17 @@ class PreprocessingPreview:
             self.status["stage"] = stage
 
     def _load_arrays(self, cache: Path) -> None:
-        archive  = np.load(cache)
+        reader  = ParquetEventReader(DatasetConfig().data.parquet_store_dir).load_store()
+        frame   = reader.octant_frame
+        archive = np.load(cache)
+        CacheGeometryStamp.require(archive, cache, reader.geometry_fingerprint)
+
         geometry = archive["geometry_positions"].astype(np.float32)
         light    = archive["light_matrix"]
 
-        reader = ParquetEventReader(DatasetConfig().data.parquet_store_dir).load_store()
-        frame  = reader.octant_frame
-
-        statistics = ChannelStatistics(light)
-
         with self.lock:
-            self.geometry       = geometry
-            self.light_matrix   = light
-            self.hot_statistics = statistics
+            self.geometry     = geometry
+            self.light_matrix = light
             self.octant_base  = frame["base_event_id"].values.astype(np.int64)
             self.octant_signs = frame[["sign_x", "sign_y", "sign_z"]].values.astype(np.float32)
             self.octant_gt    = frame[["target_x", "target_y", "target_z"]].values.astype(np.float32)

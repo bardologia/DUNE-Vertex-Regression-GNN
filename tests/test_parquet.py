@@ -1,62 +1,12 @@
+import shutil
+
 import numpy as np
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pa_parquet
+import pytest
 
-from configuration.data.general import HotChannelConfig
-from pipelines.dataset          import EndcapFaceCorrector, HotChannelCorrector, ParquetEventReader
-
-
-class _SilentLogger:
-    def subsection(self, message):
-        return None
-
-
-def test_endcap_face_corrector_rotates_only_extreme_planes():
-    z_values = np.array([0.0, 10.0, -10.0, 29.25, -29.25, 29.926, -29.926], dtype=np.float64)
-    y_values = np.array([1.0,  2.0,   3.0,  4.00,   5.00,   6.000,   7.000], dtype=np.float64)
-    x_values = np.array([1.0,  2.0,   3.0,  4.00,   5.00,   6.000,   7.000], dtype=np.float64)
-    frame    = pd.DataFrame({"bin": np.arange(len(z_values)), "x": x_values, "y": y_values, "z": z_values})
-
-    corrected = EndcapFaceCorrector(logger=_SilentLogger()).apply(frame)
-
-    flipped_z = corrected["z"].to_numpy()
-    flipped_y = corrected["y"].to_numpy()
-    flipped_x = corrected["x"].to_numpy()
-
-    assert flipped_z[5] == -29.926 and flipped_z[6] == 29.926
-    assert flipped_y[5] == -6.000  and flipped_y[6] == -7.000
-    assert np.array_equal(flipped_z[:5], z_values[:5])
-    assert np.array_equal(flipped_y[:5], y_values[:5])
-    assert np.array_equal(flipped_x, x_values)
-
-
-def _hot_channel_setup():
-    generator = np.random.default_rng(0)
-    positions = generator.normal(size=(60, 3))
-    light     = generator.integers(0, 10, size=(400, 60)).astype(np.int32)
-
-    hot = 7
-    light[:, hot] = generator.integers(50_000, 100_000, size=400).astype(np.int32)
-    return positions, light, hot
-
-
-def test_hot_channel_corrector_replaces_with_neighbour_mean():
-    positions, light, hot = _hot_channel_setup()
-    config = HotChannelConfig(active_fraction=0.999, median_factor=50.0, neighbor_count=8, min_events=100)
-
-    corrected = HotChannelCorrector(positions, config, _SilentLogger()).run(light.copy())
-
-    assert corrected[:, hot].max() < 50_000
-    assert corrected.dtype == light.dtype
-    untouched = [c for c in range(light.shape[1]) if c != hot]
-    assert np.array_equal(corrected[:, untouched], light[:, untouched])
-
-
-def test_hot_channel_corrector_skips_small_datasets():
-    positions, light, hot = _hot_channel_setup()
-    config = HotChannelConfig(min_events=10_000)
-
-    corrected = HotChannelCorrector(positions, config, _SilentLogger()).run(light.copy())
-    assert np.array_equal(corrected, light)
+from pipelines.dataset import ChannelMapping, ParquetDatasetWriter, ParquetEventReader
 
 
 def test_parquet_reader_iterates_corrected(parquet_store):
@@ -81,11 +31,70 @@ def test_parquet_octant_index_expands_every_event(parquet_store):
 
 def test_parquet_store_arrays(parquet_store):
     reader = ParquetEventReader(parquet_store).load_store()
-    assert reader.light_matrix.shape[1] == len(reader.geometry_frame)
+    assert reader.light_matrix.shape[1] == len(reader.geometry_frame) == 6909
     assert reader.event_targets.shape[1] == 3
 
 
-def test_coordinate_transform_maps_target_to_detector_frame():
-    from pipelines.dataset.coordinate_correction import CoordinateTransform
+def test_store_geometry_is_the_light_derived_geometry(parquet_store, light_derived):
+    frame = ParquetEventReader(parquet_store).load_geometry().geometry_frame
 
-    assert CoordinateTransform().apply_to_target(1.0, 2.0, 3.0) == (2.0, -1.0, 3.0)
+    assert tuple(frame.columns) == ChannelMapping.GEOMETRY_COLUMNS
+    assert np.array_equal(frame["channel_index"].to_numpy(), np.arange(6909))
+    assert np.array_equal(frame["raw_channel_index"].to_numpy(), light_derived.kept_rows)
+    assert np.array_equal(frame["bin"].to_numpy(), light_derived.bins)
+    assert np.abs(frame[["x", "y", "z"]].to_numpy(dtype=np.float64) - light_derived.positions).max() < 2e-6
+    assert frame["face"].value_counts().to_dict() == {"left_wall": 2880, "right_wall": 2878, "back_endcap": 576, "front_endcap": 575}
+    assert np.unique(np.round(frame[["x", "y", "z"]].to_numpy(dtype=np.float64), 4), axis=0).shape[0] == 6909
+
+
+def test_store_column_types(parquet_store):
+    schema = pa_parquet.read_schema(parquet_store / "geometry.parquet")
+    assert [schema.field(name).type for name in ChannelMapping.GEOMETRY_COLUMNS] == [pa.int32(), pa.int32(), pa.int32(), pa.int32(), pa.string(), pa.float32(), pa.float32(), pa.float32()]
+
+
+def test_store_light_equals_the_raw_counts_of_the_kept_rows(parquet_store, sample_csv_dir):
+    reader = ParquetEventReader(parquet_store).load_store()
+    names  = pa_parquet.read_table(parquet_store / "events.parquet", columns=["source_filename"]).column("source_filename").to_pylist()
+    rows   = reader.geometry_frame["raw_channel_index"].to_numpy()
+
+    assert reader.light_matrix.dtype == np.int32
+    for event, name in enumerate(names):
+        raw = pd.read_csv(sample_csv_dir / name)["ly_amount"].to_numpy()
+        assert np.array_equal(reader.light_matrix[event], raw[rows].astype(np.int32)), name
+
+
+def test_store_fingerprint_follows_the_geometry(parquet_store, raw_frame, quiet_logger):
+    reader = ParquetEventReader(parquet_store).load_geometry()
+    again  = ParquetEventReader(parquet_store).load_geometry()
+    built  = ChannelMapping(quiet_logger).build(raw_frame)
+    edited = reader.geometry_frame.copy()
+
+    edited.loc[5, "x"] = edited.loc[5, "x"] + np.float32(0.001)
+
+    assert again.geometry_fingerprint == reader.geometry_fingerprint
+    assert ParquetEventReader.fingerprint(built) == reader.geometry_fingerprint
+    assert ParquetEventReader.fingerprint(edited) != reader.geometry_fingerprint
+
+
+def test_reader_refuses_a_store_without_the_raw_channel_index(tmp_path, parquet_store):
+    old_store = tmp_path / "parquet"
+    shutil.copytree(parquet_store, old_store)
+
+    geometry = pa_parquet.read_table(old_store / "geometry.parquet").drop(["raw_channel_index", "module_index", "face"])
+    pa_parquet.write_table(geometry, old_store / "geometry.parquet")
+
+    with pytest.raises(ValueError, match="raw_channel_index"):
+        ParquetEventReader(old_store).load_store()
+
+
+def test_writer_refuses_a_raw_layout_with_other_bins(tmp_path, sample_csv_dir, quiet_logger):
+    raw_directory = tmp_path / "raw"
+    raw_directory.mkdir()
+
+    source              = sorted(sample_csv_dir.glob("*.csv"))[0]
+    frame               = pd.read_csv(source)
+    frame.loc[2, "bin"] = 14.0
+    frame.to_csv(raw_directory / source.name, index=False)
+
+    with pytest.raises(ValueError, match="raw bins are not exactly"):
+        ParquetDatasetWriter(raw_directory, tmp_path / "out", worker_count=1, logger=quiet_logger).run()

@@ -3,10 +3,6 @@
 const PP_FIELD_RANGES = {
   scale_factor: [0, 2, 0.01],
   detection_efficiency: [0, 0.2, 0.001],
-  active_fraction: [0.5, 1, 0.001],
-  median_factor: [1, 100, 0.5],
-  neighbor_count: [1, 16, 1],
-  min_events: [1, 500, 1],
   sensor_dropout_probability: [0, 0.5, 0.005],
   spurious_activation_probability: [0, 0.2, 0.002],
   spurious_activation_max_light: [0, 5, 0.05],
@@ -15,12 +11,11 @@ const PP_FIELD_RANGES = {
   gain_jitter_sigma: [0, 0.5, 0.005],
 };
 
-const PP_INT_FIELDS = new Set(["efficiency_seed", "seed", "neighbor_count", "min_events"]);
+const PP_INT_FIELDS = new Set(["efficiency_seed", "seed"]);
 
 const PP_GROUPS = [
   { key: "scaling", title: "Light scaling" },
   { key: "efficiency", title: "Binomial efficiency" },
-  { key: "outlier", title: "Outlier cleaning" },
   { key: "augmentation", title: "Sensor augmentation" },
 ];
 
@@ -29,10 +24,6 @@ const PP_LABELS = {
   detection_efficiency: "detection efficiency",
   efficiency_seed: "efficiency seed",
   enabled: "enabled",
-  active_fraction: "active fraction",
-  median_factor: "median factor",
-  neighbor_count: "neighbour count",
-  min_events: "min events",
   seed: "seed",
   sensor_dropout_enabled: "sensor dropout",
   sensor_dropout_probability: "dropout probability",

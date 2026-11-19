@@ -13,7 +13,7 @@ class RawLightExportEntry:
         self.config = RawLightExportEntryConfig()
 
     def run(self):
-        self.config = ConfigCli(self.config, description="Export uncorrected raw photon counts for the preprocessing preview").apply()
+        self.config = ConfigCli(self.config, description="Export the raw photon counts of the mapped channels for the preprocessing preview").apply()
 
         logger = Logger(log_dir="logs", name="raw_light")
         path   = RawLightExportPipeline(self.config.raw_input_dir, self.config.cache_dir, logger=logger, dataset_config=self.config.dataset).run()

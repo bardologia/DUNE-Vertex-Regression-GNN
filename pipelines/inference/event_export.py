@@ -3,8 +3,9 @@ from __future__ import annotations
 import numpy as np
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
-from pipelines.dataset.graph     import Graph
-from pipelines.inference.pipeline import InferencePipeline
+from pipelines.dataset.graph         import Graph
+from pipelines.inference.pipeline    import InferencePipeline
+from pipelines.shared.store_geometry import CacheGeometryStamp
 
 
 class EventExportPipeline:
@@ -91,6 +92,7 @@ class EventExportPipeline:
             "sensor_positions" : sensor_positions,
             "sensor_light"     : sensor_light,
             "offsets"          : offsets,
+            **CacheGeometryStamp.payload(self.inference.store_geometry["geometry_fingerprint"]),
         }
 
     def _write_split(self, split_name, payload):

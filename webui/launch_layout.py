@@ -62,14 +62,6 @@ class LaunchLayout:
                 "data.position_columns",
                 "data.detector_half_extent",
             ]},
-            {"title": "Hot channels", "fields": [
-                {"gate": "data.hot_channels.enabled", "fields": [
-                    "data.hot_channels.active_fraction",
-                    "data.hot_channels.median_factor",
-                    "data.hot_channels.neighbor_count",
-                    "data.hot_channels.min_events",
-                ]},
-            ]},
             {"title": "Graph", "fields": [
                 {"path": "graph.k_neighbors", "widget": NUM_NEIGHBOR},
                 "graph.bidirectional",
@@ -509,14 +501,6 @@ class LaunchLayout:
                             "raw_input_dir",
                             "output_dir",
                             {"path": "worker_count", "widget": NUM_CPU},
-                        ]},
-                        {"title": "Hot channels", "fields": [
-                            {"gate": "hot_channels.enabled", "fields": [
-                                "hot_channels.active_fraction",
-                                "hot_channels.median_factor",
-                                "hot_channels.neighbor_count",
-                                "hot_channels.min_events",
-                            ]},
                         ]},
                     ]},
                 ]},

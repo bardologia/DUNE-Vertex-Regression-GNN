@@ -34,7 +34,7 @@ class ScriptCatalog:
         "build_parquet_store": {
             "label"    : "Build Parquet Store",
             "category" : "Data",
-            "purpose"  : "Materialise the event frames into a partitioned Parquet store: coordinate correction, hot-channel repair, and octant expansion.",
+            "purpose"  : "Materialise the raw events into the Parquet store: sensor positions from the documented module mapping of the raw bins, face totals dropped, and octant expansion.",
         },
         "infer": {
             "label"    : "Infer",

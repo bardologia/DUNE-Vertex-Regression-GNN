@@ -3,10 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-import pyarrow.parquet as pq
 
-from configuration.data.general import DataConfig
-from tools.monitoring.logger    import Logger
+from configuration.data.general      import DataConfig
+from pipelines.dataset.parquet_store import ParquetEventReader
+from tools.monitoring.logger         import Logger
 
 
 class LightCentroidCheck:
@@ -23,15 +23,11 @@ class LightCentroidCheck:
         self.targets   = None
 
     def _load(self):
-        geometry       = pq.read_table(self.store_directory / "geometry.parquet")
-        self.positions = np.column_stack([geometry.column(axis).to_numpy() for axis in self.AXES]).astype(np.float64)
+        reader = ParquetEventReader(self.store_directory).load_store()
 
-        events        = pq.read_table(self.store_directory / "events.parquet")
-        channel_count = self.positions.shape[0]
-        event_count   = events.num_rows
-
-        self.light   = events.column("light").combine_chunks().values.to_numpy().reshape(event_count, channel_count).astype(np.float64)
-        self.targets = np.column_stack([events.column(f"target_{axis}").to_numpy() for axis in self.AXES]).astype(np.float64)
+        self.positions = reader.geometry_frame[list(self.AXES)].to_numpy(dtype=np.float64)
+        self.light     = reader.light_matrix.astype(np.float64)
+        self.targets   = reader.event_targets.astype(np.float64)
 
     def _report_geometry(self):
         ranges = {f"Range {axis}": f"[{self.positions[:, index].min():.2f}, {self.positions[:, index].max():.2f}]" for index, axis in enumerate(self.AXES)}

@@ -22,14 +22,15 @@ class DatasetPipeline:
         self.stats           = stats
         self.evaluation_mode = evaluation_mode
 
-        self.geometry_positions = None
-        self.light_matrix       = None
-        self.event_targets      = None
-        self.octant_frame       = None
-        self.samples            = None
-        self.datasets           = None
-        self.split_base_ids     = None
-        self.raw_train_graphs   = None
+        self.geometry_positions   = None
+        self.geometry_fingerprint = None
+        self.light_matrix         = None
+        self.event_targets        = None
+        self.octant_frame         = None
+        self.samples              = None
+        self.datasets             = None
+        self.split_base_ids       = None
+        self.raw_train_graphs     = None
 
     @classmethod
     def validate_split_names(cls, split_names):
@@ -48,14 +49,15 @@ class DatasetPipeline:
 
         self.logger.section("[Building Parquet Store]")
         store_parent = store_directory.parent
-        ParquetDatasetWriter(self.config.data.raw_input_dir, store_parent, worker_count=self.config.data.store_worker_count, logger=self.logger, hot_channels=self.config.data.hot_channels).run()
+        ParquetDatasetWriter(self.config.data.raw_input_dir, store_parent, worker_count=self.config.data.store_worker_count, logger=self.logger).run()
 
     def _load_store(self):
-        reader                  = ParquetEventReader(self.config.data.parquet_store_dir).load_store()
-        self.geometry_positions = reader.geometry_frame[list(self.config.data.position_columns)].values.astype(np.float32)
-        self.event_targets      = reader.event_targets
-        self.light_matrix       = reader.light_matrix
-        self.octant_frame       = reader.octant_frame
+        reader                    = ParquetEventReader(self.config.data.parquet_store_dir).load_store()
+        self.geometry_positions   = reader.geometry_frame[list(self.config.data.position_columns)].values.astype(np.float32)
+        self.geometry_fingerprint = reader.geometry_fingerprint
+        self.event_targets        = reader.event_targets
+        self.light_matrix         = reader.light_matrix
+        self.octant_frame         = reader.octant_frame
         self.logger.subsection(f"Store loaded: {len(self.event_targets)} base events | {self.geometry_positions.shape[0]} channels | octant rows {len(self.octant_frame)}")
         return reader
 
@@ -76,6 +78,19 @@ class DatasetPipeline:
         self._load_store()
         self.samples = self._build_samples()
         return self.samples
+
+    def store_geometry(self):
+        """Returns the identity of the loaded store geometry, the record a run or cache keeps of the store it was built from.
+
+        Returns:
+            A mapping with the ``geometry_fingerprint`` of ``ParquetEventReader.fingerprint`` and the ``channel_count`` of the store.
+
+        Raises:
+            ValueError : If the store has not been loaded yet.
+        """
+        if self.geometry_fingerprint is None:
+            raise ValueError("store_geometry needs the loaded store; call prepare_samples first.")
+        return {"geometry_fingerprint": self.geometry_fingerprint, "channel_count": int(self.geometry_positions.shape[0])}
 
     def _subsample(self, samples):
         subset_fraction = self.config.data.subset_fraction

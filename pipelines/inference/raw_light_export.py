@@ -5,7 +5,8 @@ from pathlib import Path
 import numpy as np
 
 from configuration.data.general      import DatasetConfig
-from pipelines.dataset.parquet_store import ParquetDatasetWriter
+from pipelines.dataset.parquet_store import ParquetDatasetWriter, ParquetEventReader
+from pipelines.shared.store_geometry import CacheGeometryStamp
 from tools.monitoring.logger         import Logger
 
 
@@ -19,11 +20,12 @@ class RawLightExportPipeline:
         self.logger          = logger if logger is not None else Logger(log_dir="logs", name="raw_light")
         self.config          = dataset_config if dataset_config is not None else DatasetConfig()
 
-        self.writer             = None
-        self.discovered_files   = None
-        self.geometry_positions = None
-        self.light_matrix       = None
-        self.event_targets      = None
+        self.writer               = None
+        self.discovered_files     = None
+        self.geometry_positions   = None
+        self.geometry_fingerprint = None
+        self.light_matrix         = None
+        self.event_targets        = None
 
     def _prepare_writer(self):
         self.writer           = ParquetDatasetWriter(self.raw_input_dir, self.cache_directory, worker_count=self.config.data.store_worker_count, logger=self.logger)
@@ -32,16 +34,17 @@ class RawLightExportPipeline:
     def _read_events(self):
         geometry_frame, geometry_hash = self.writer.build_canonical_geometry(self.discovered_files[0])
         self.geometry_positions       = geometry_frame[["x", "y", "z"]].values.astype(np.float32)
+        self.geometry_fingerprint     = ParquetEventReader.fingerprint(geometry_frame)
 
-        source_names, target_array, light_matrix = self.writer.read_all_events(self.discovered_files, geometry_hash, len(geometry_frame))
+        source_names, target_array, light_matrix = self.writer.read_all_events(self.discovered_files, geometry_hash, geometry_frame)
         self.light_matrix  = light_matrix.astype(np.int32)
         self.event_targets = target_array.astype(np.float32)
 
     def _write(self):
         self.cache_directory.mkdir(parents=True, exist_ok=True)
         path = self.cache_directory / self.FILENAME
-        np.savez_compressed(path, geometry_positions=self.geometry_positions, light_matrix=self.light_matrix, event_targets=self.event_targets)
-        self.logger.subsection(f"Raw-light cache written to {path} ({self.light_matrix.shape[0]} events x {self.light_matrix.shape[1]} channels)")
+        np.savez_compressed(path, geometry_positions=self.geometry_positions, light_matrix=self.light_matrix, event_targets=self.event_targets, **CacheGeometryStamp.payload(self.geometry_fingerprint))
+        self.logger.subsection(f"Raw-light cache written to {path} ({self.light_matrix.shape[0]} events x {self.light_matrix.shape[1]} channels, geometry {self.geometry_fingerprint})")
         return path
 
     def run(self):

@@ -8,6 +8,7 @@ from configuration.data.general          import DatasetConfig
 from pipelines.dataset.graph             import Graph
 from pipelines.dataset.graph_dataset     import GraphDataset
 from pipelines.dataset.parquet_store     import ParquetEventReader
+from pipelines.shared.store_geometry     import CacheGeometryStamp
 from tools.monitoring.logger             import Logger
 
 
@@ -26,20 +27,22 @@ class DatasetExplorerExportPipeline:
         self.logger          = logger if logger is not None else Logger(log_dir="logs", name="dataset_explorer")
         self.config          = dataset_config if dataset_config is not None else DatasetConfig()
 
-        self.geometry_positions = None
-        self.light_matrix       = None
-        self.event_targets      = None
-        self.octant_frame       = None
-        self.base_dataset       = None
-        self.node_selector      = None
+        self.geometry_positions   = None
+        self.geometry_fingerprint = None
+        self.light_matrix         = None
+        self.event_targets        = None
+        self.octant_frame         = None
+        self.base_dataset         = None
+        self.node_selector        = None
 
     def _load_store(self):
         reader = ParquetEventReader(self.config.data.parquet_store_dir).load_store()
 
-        self.geometry_positions = reader.geometry_frame[["x", "y", "z"]].values.astype(np.float32)
-        self.event_targets      = reader.event_targets
-        self.light_matrix       = reader.light_matrix
-        self.octant_frame       = reader.octant_frame
+        self.geometry_positions   = reader.geometry_frame[["x", "y", "z"]].values.astype(np.float32)
+        self.geometry_fingerprint = reader.geometry_fingerprint
+        self.event_targets        = reader.event_targets
+        self.light_matrix         = reader.light_matrix
+        self.octant_frame         = reader.octant_frame
 
         self.logger.subsection(f"Store loaded: {len(self.event_targets)} base events | {self.geometry_positions.shape[0]} channels | octant rows {len(self.octant_frame)}")
 
@@ -122,5 +125,6 @@ class DatasetExplorerExportPipeline:
             "base_offsets"   : base_offsets,
             "base_positions" : base_positions,
             "base_light"     : base_light,
+            **CacheGeometryStamp.payload(self.geometry_fingerprint),
         }
         return self._write(payload)
