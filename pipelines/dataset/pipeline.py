@@ -250,6 +250,15 @@ class DatasetPipeline:
             return None
         return DegreeHistogramEstimator(dataset, self.config.data.stats_sample_size, self.logger).fit()
 
+    def resolve_model_overrides(self, model_name, model_overrides, train_dataset):
+        overrides        = self.inject_model_overrides(model_overrides)
+        degree_histogram = self.pna_degree_histogram(model_name, train_dataset)
+
+        if degree_histogram is None:
+            return overrides
+
+        return {**overrides, "degree_histogram": degree_histogram}
+
     def base_ids_for_indices(self, train_indices, validation_indices, test_indices):
         sample_base_ids = self.samples[:, 7].astype(np.int64)
         return {

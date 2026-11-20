@@ -174,11 +174,7 @@ class CrossValidationPipeline:
 
         train_loader, validation_loader, test_loader = loaders
 
-        self.entry.model_overrides = self.dataset_pipeline.inject_model_overrides(self.entry.model_overrides)
-
-        degree_histogram = self.dataset_pipeline.pna_degree_histogram(self.entry.model_name, datasets["train"])
-        if degree_histogram is not None:
-            self.entry.model_overrides = {**self.entry.model_overrides, "degree_histogram": degree_histogram}
+        self.entry.model_overrides = self.dataset_pipeline.resolve_model_overrides(self.entry.model_name, self.entry.model_overrides, datasets["train"])
 
         run_metadata = TrainingRunMetadata(self.training_config, self.entry.model_name, self.run_directory, run_name=IoNames.fold_run.format(index=fold_index))
         run_metadata.save_store_geometry(self.dataset_pipeline.store_geometry())

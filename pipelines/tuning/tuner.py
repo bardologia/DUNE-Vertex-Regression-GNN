@@ -54,11 +54,7 @@ class Tuner:
         training_config.loop.batch_size           = self.tuning.batch_size
         training_config.loop.validation_frequency = 1
 
-        model_overrides = self.dataset_pipeline.inject_model_overrides(model_overrides)
-
-        degree_histogram = self.dataset_pipeline.pna_degree_histogram(self.entry.model_name, self.datasets["train"])
-        if degree_histogram is not None:
-            model_overrides = {**model_overrides, "degree_histogram": degree_histogram}
+        model_overrides = self.dataset_pipeline.resolve_model_overrides(self.entry.model_name, model_overrides, self.datasets["train"])
 
         model, _ = get_model(self.entry.model_name, **model_overrides)
         context  = LightweightRunContext(self.logger, self.tuner_directory / IoNames.trial_dir.format(number=trial.number) / IoNames.best_model_file)

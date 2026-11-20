@@ -60,17 +60,8 @@ class TrainingPipeline:
             "Prefetch factor" : loop.prefetch_factor,
         })
 
-    def _resolve_model_overrides(self, dataset_pipeline, train_dataset):
-        overrides        = dataset_pipeline.inject_model_overrides(self.entry.model_overrides)
-        degree_histogram = dataset_pipeline.pna_degree_histogram(self.entry.model_name, train_dataset)
-
-        if degree_histogram is None:
-            return overrides
-
-        return {**overrides, "degree_histogram": degree_histogram}
-
     def _build_model(self):
-        self.entry.model_overrides = self._resolve_model_overrides(self.dataset_pipeline, self.datasets["train"])
+        self.entry.model_overrides = self.dataset_pipeline.resolve_model_overrides(self.entry.model_name, self.entry.model_overrides, self.datasets["train"])
 
         self.model, self.model_config = get_model(self.entry.model_name, **self.entry.model_overrides)
 
@@ -128,7 +119,7 @@ class TrainingPipeline:
         dataset_pipeline = DatasetPipeline(self.entry.dataset, logger)
         datasets, stats  = dataset_pipeline.run()
 
-        overrides           = self._resolve_model_overrides(dataset_pipeline, datasets["train"])
+        overrides           = dataset_pipeline.resolve_model_overrides(self.entry.model_name, self.entry.model_overrides, datasets["train"])
         model, model_config = get_model(self.entry.model_name, **overrides)
 
         probe_config                   = copy.deepcopy(self.training_config)
