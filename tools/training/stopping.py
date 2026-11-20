@@ -16,10 +16,7 @@ class EarlyStopping:
             "Min Delta" : self.min_delta,
         })
 
-        self.best_loss  = None
-        self.counter    = 0
-        self.best_epoch = -1
-        self.triggered  = False
+        self.reset()
 
     def __call__(self, val_loss: float, epoch: int) -> bool:
         if self.best_loss is None or val_loss < self.best_loss - self.min_delta:

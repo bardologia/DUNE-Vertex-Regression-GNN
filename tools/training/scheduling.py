@@ -17,9 +17,7 @@ class Warmup:
         self.mode                = self.config.warmup.warmup_mode
         self.poly_power          = self.config.warmup.warmup_poly_power
 
-        self.current_step       = 0
-        self.warmup_finished    = False
-        self._logged_completion = False
+        self.reset()
 
         self.logger.section("[Warmup Scheduler]")
         self.logger.kv_table({
@@ -102,10 +100,7 @@ class Scheduler:
         self.tracker = tracker
 
         self.base_lrs       = list(base_lrs)
-        self.current_lrs    = list(base_lrs)
         self.scheduler_type = self.config.scheduler.type
-
-        self._epoch_offset  = 0
 
         self.plateau_mode      = self.config.scheduler.mode
         self.plateau_factor    = float(self.config.scheduler.factor)
@@ -114,10 +109,7 @@ class Scheduler:
         self.plateau_cooldown  = int(self.config.scheduler.cooldown)
         self.plateau_min_lr    = float(self.config.scheduler.min_lr)
 
-        self.best_metric      = math.inf if self.plateau_mode == "min" else -math.inf
-        self.num_bad_epochs   = 0
-        self.cooldown_counter = 0
-
+        self.reset()
         self._log_scheduler_info()
 
     def _progress(self, epoch: int) -> float:
