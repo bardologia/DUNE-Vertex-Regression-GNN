@@ -132,7 +132,6 @@ class XgBoostBaseline(BoostedAxisEnsemble):
         return saved
 
 
-
 class BaselineFamilies:
     @staticmethod
     def by_key():
