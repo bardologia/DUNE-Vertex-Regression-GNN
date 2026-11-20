@@ -23,6 +23,7 @@ from rich.table import Table
 from rich.text  import Text
 from rich.theme import Theme
 
+from configuration.shared     import IoNames, LogSettings
 from tools.reporting.markdown import MarkdownDoc, MarkdownTable
 from tools.runtime.run_tag    import RunTag
 
@@ -40,7 +41,7 @@ class LiveMonitor:
         if not self.enabled:
             return self
 
-        self._live = Live(self._render(), console=self.console, refresh_per_second=4, transient=False)
+        self._live = Live(self._render(), console=self.console, refresh_per_second=LogSettings.live_refresh_per_second, transient=False)
         self._live.__enter__()
         return self
 
@@ -50,7 +51,7 @@ class LiveMonitor:
             self._live.update(self._render())
 
     def _render(self) -> Panel:
-        table = Table(show_header=True, header_style="bold cyan", box=None, expand=False)
+        table = Table(show_header=True, header_style=LogSettings.heading_style, box=None, expand=False)
         table.add_column("Metric", style="key", no_wrap=True)
         table.add_column("Value", style="value", justify="right")
 
@@ -60,7 +61,7 @@ class LiveMonitor:
             else:
                 table.add_row(key, str(value))
 
-        return Panel(table, title=f"[bold cyan]{self.title}[/bold cyan]", border_style="cyan")
+        return Panel(table, title=f"[{LogSettings.heading_style}]{self.title}[/{LogSettings.heading_style}]", border_style=LogSettings.accent_style)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self._live is not None:
@@ -68,22 +69,6 @@ class LiveMonitor:
             self._live = None
         return False
 
-
-_THEME = Theme({
-    "section"                : "bold cyan",
-    "subsection"             : "white",
-    "key"                    : "bold magenta",
-    "value"                  : "bright_white",
-    "ok"                     : "bold green",
-    "warn"                   : "bold yellow",
-    "err"                    : "bold red",
-    "muted"                  : "white",
-    "logging.level.debug"    : "white",
-    "logging.level.info"     : "white",
-    "logging.level.warning"  : "bold yellow",
-    "logging.level.error"    : "bold red",
-    "logging.level.critical" : "bold red",
-})
 
 _CONSOLE: Optional[Console] = None
 
@@ -93,11 +78,11 @@ def get_console() -> Console:
     global _CONSOLE
     if _CONSOLE is None:
         _CONSOLE = Console(
-            theme          = _THEME,
+            theme          = Theme(dict(LogSettings.console_theme)),
             highlight      = False,
             soft_wrap      = False,
             force_terminal = True,
-            color_system   = "truecolor",
+            color_system   = LogSettings.console_color_system,
             legacy_windows = False,
             no_color       = False,
         )
@@ -107,8 +92,8 @@ def get_console() -> Console:
 def _make_progress(console: Console, transient: bool = False) -> Progress:
 
     return Progress(
-        SpinnerColumn(style="cyan"),
-        TextColumn("[progress.description]{task.description}"),
+        SpinnerColumn(style=LogSettings.accent_style),
+        TextColumn(LogSettings.progress_description_format),
         BarColumn(bar_width=None),
         MofNCompleteColumn(),
         TaskProgressColumn(),
@@ -116,16 +101,13 @@ def _make_progress(console: Console, transient: bool = False) -> Progress:
         TimeRemainingColumn(),
         console=console,
         transient=transient,
-        refresh_per_second=8,
+        refresh_per_second=LogSettings.progress_refresh_per_second,
     )
 
 
 class Logger:
 
-    LOG_LEVELS      = {name: getattr(logging, name) for name in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")}
-    FILE_RULE_WIDTH = 100
-
-    def __init__(self, log_dir: str = "logs", name: str = "experiment", level: str = "INFO", config: Any = None) -> None:
+    def __init__(self, log_dir: str = IoNames.logs_dir, name: str = IoNames.default_log_name, level: str = LogSettings.level, config: Any = None) -> None:
         self.log_dir    = log_dir
         self.name       = name
         self.start_time = datetime.now()
@@ -144,7 +126,8 @@ class Logger:
                 handler.close()
                 self.logger.removeHandler(handler)
 
-        log_level = self.LOG_LEVELS.get(str(level).upper(), logging.INFO)
+        log_levels = {level_name: getattr(logging, level_name) for level_name in LogSettings.level_names}
+        log_level  = log_levels.get(str(level).upper(), log_levels[LogSettings.level])
         self.logger.setLevel(log_level)
 
         rich_handler = RichHandler(
@@ -155,7 +138,7 @@ class Logger:
             show_path       = False,
             markup          = True,
             rich_tracebacks = True,
-            log_time_format = "[%H:%M:%S]",
+            log_time_format = LogSettings.console_time_format,
         )
         rich_handler.setLevel(log_level)
         self.logger.addHandler(rich_handler)
@@ -163,8 +146,8 @@ class Logger:
 
         self._file_handler: Optional[logging.FileHandler] = None
         if log_dir:
-            file_formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-            file_handler   = logging.FileHandler(os.path.join(self.log_dir, f'{name}.log'), mode='w', encoding='utf-8')
+            file_formatter = logging.Formatter(LogSettings.file_format, datefmt=LogSettings.timestamp_format)
+            file_handler   = logging.FileHandler(os.path.join(self.log_dir, f"{name}{IoNames.log_suffix}"), mode='w', encoding='utf-8')
             file_handler.setFormatter(file_formatter)
             file_handler.setLevel(log_level)
             self.logger.addHandler(file_handler)
@@ -184,18 +167,18 @@ class Logger:
         self._file_handler.flush()
 
     def _file_banner(self, line: str) -> None:
-        bar = "=" * self.FILE_RULE_WIDTH
+        bar = LogSettings.file_rule_character * LogSettings.file_rule_width
         self._file_raw()
         self._file_raw(bar)
         self._to_file(line)
         self._file_raw(bar)
 
     def _header(self, log_level: int) -> None:
-        started = self.start_time.strftime("%Y-%m-%d %H:%M:%S")
+        started = self.start_time.strftime(LogSettings.timestamp_format)
         level   = logging.getLevelName(log_level)
 
         self.console.print()
-        self.console.print(Rule(Text(self.name, style="section"), style="cyan"))
+        self.console.print(Rule(Text(self.name, style="section"), style=LogSettings.accent_style))
         self.console.print(f"  [key]Started[/key]  : [value]{started}[/value]")
         if self._file_handler is not None:
             self.console.print(f"  [key]Log file[/key] : [value]{self._file_handler.baseFilename}[/value]")
@@ -219,17 +202,17 @@ class Logger:
 
         label = Text(text, style="section")
         if delta is not None:
-            label.append(f"  (+{delta})", style="dim")
+            label.append(f"  (+{delta})", style=LogSettings.elapsed_style)
 
         self.console.print()
-        self.console.print(Rule(label, style="cyan"))
+        self.console.print(Rule(label, style=LogSettings.accent_style))
 
         suffix = "" if delta is None else f"  (+{delta})"
         self._file_banner(f">>> {text}{suffix}")
 
     def subsection(self, title: str) -> None:
-        line = f"  [cyan]>[/cyan] {title}"
-        self.console.print(line, style="bold white")
+        line = f"  [{LogSettings.accent_style}]>[/{LogSettings.accent_style}] {title}"
+        self.console.print(line, style=LogSettings.subsection_style)
         self._to_file(f"  > {title}")
 
     def debug(self, message: str) -> None:    
@@ -260,14 +243,14 @@ class Logger:
     def render(self, renderable: Any) -> None:
         self.console.print(renderable)
 
-    def panel(self, body: Any, title: Optional[str] = None, style: str = "cyan") -> None:
+    def panel(self, body: Any, title: Optional[str] = None, style: str = LogSettings.accent_style) -> None:
         self.console.print(Panel(body, title=title, border_style=style))
 
-    def rule(self, title: str = "", style: str = "cyan") -> None:
+    def rule(self, title: str = "", style: str = LogSettings.accent_style) -> None:
         self.console.print(Rule(title, style=style))
 
     def kv_table(self, data: Mapping[str, Any], title: Optional[str] = None, key_header: str = "Field", value_header: str = "Value") -> None:
-        tbl = Table(title=title, show_header=True, header_style="bold cyan", expand=False)
+        tbl = Table(title=title, show_header=True, header_style=LogSettings.heading_style, expand=False)
         tbl.add_column(key_header, style="key", no_wrap=True)
         tbl.add_column(value_header, style="value")
 
@@ -288,7 +271,7 @@ class Logger:
 
     def metrics_table(self, rows: Sequence[Mapping[str, Any]], columns: Sequence[str], title: Optional[str] = None, column_styles: Optional[Mapping[str, str]] = None,) -> None:
         styles = column_styles or {}
-        tbl    = Table(title=title, show_header=True, header_style="bold cyan", expand=False)
+        tbl    = Table(title=title, show_header=True, header_style=LogSettings.heading_style, expand=False)
 
         for col in columns:
             tbl.add_column(col, style=styles.get(col, "value"))
@@ -364,7 +347,7 @@ class Logger:
         minutes, seconds = divmod(remainder, 60)
 
         self.console.print()
-        self.console.print(Rule(Text(f"END {self.name}", style="section"), style="cyan"))
+        self.console.print(Rule(Text(f"END {self.name}", style="section"), style=LogSettings.accent_style))
         self._file_banner(f">>> END {self.name}")
         self.logger.info(f"[End] Duration: {hours:02d}:{minutes:02d}:{seconds:02d}")
 

@@ -12,6 +12,8 @@ import time
 from datetime    import datetime
 from collections import deque
 
+from configuration.shared import LogSettings
+
 from project_paths import ProjectPaths
 from server_logger import ServerLogger
 
@@ -19,7 +21,7 @@ from server_logger import ServerLogger
 class JobStream:
 
     def __init__(self) -> None:
-        self.buffer      = deque(maxlen=4000)
+        self.buffer      = deque(maxlen=LogSettings.job_stream_buffer)
         self.subscribers = []
         self.lock        = threading.Lock()
 
@@ -33,7 +35,7 @@ class JobStream:
                     pass
 
     def subscribe(self) -> queue.Queue:
-        subscriber = queue.Queue(maxsize=8000)
+        subscriber = queue.Queue(maxsize=LogSettings.job_stream_queue)
         with self.lock:
             for event in self.buffer:
                 subscriber.put_nowait(event)
@@ -48,8 +50,7 @@ class JobStream:
 
 class ProcessManager:
 
-    OVERRIDE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
-    TERMINAL_COLUMNS = 120
+    OVERRIDE_NAME    = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
     FINISHED_HISTORY = 50
 
     def __init__(self, paths: ProjectPaths, logger: ServerLogger) -> None:
@@ -141,8 +142,8 @@ class ProcessManager:
         environment = dict(os.environ)
         environment["PYTHONUNBUFFERED"] = "1"
         environment["FORCE_COLOR"]      = "1"
-        environment["COLUMNS"]          = str(self.TERMINAL_COLUMNS)
-        environment["LINES"]            = "32"
+        environment["COLUMNS"]          = str(LogSettings.terminal_columns)
+        environment["LINES"]            = LogSettings.terminal_lines
 
         library_directory = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(interpreter))), "lib")
         library_path      = environment.get("LD_LIBRARY_PATH", "")

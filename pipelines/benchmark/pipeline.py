@@ -8,6 +8,7 @@ import numpy as np
 import torch
 
 from configuration.architectures import MODEL_CONFIG_REGISTRY
+from configuration.shared        import LogSettings
 from tools.monitoring.logger      import Logger
 from tools.runtime.config_cli     import ConfigCli
 
@@ -120,7 +121,7 @@ class BenchmarkPipeline:
         return written
 
     def _mark_stage(self, stage_name, status):
-        self.state["stages"][stage_name] = {"status": status, "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+        self.state["stages"][stage_name] = {"status": status, "timestamp": datetime.now().strftime(LogSettings.timestamp_format)}
         (self.pipeline_directory / "state.json").write_text(json.dumps(self.state, indent=2), encoding="utf-8")
 
     def run(self):

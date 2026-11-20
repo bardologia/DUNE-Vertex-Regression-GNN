@@ -11,6 +11,8 @@ from dataclasses import fields, is_dataclass
 from datetime    import datetime
 from pathlib     import Path
 
+from configuration.shared import IoNames, LogSettings
+
 SUPPORTED_TYPES = (bool, int, float, str, Path, list, tuple, dict)
 
 
@@ -19,7 +21,7 @@ class Detacher:
     ENV_FLAG = "DUNE_GNN_DETACHED"
     FLAGS    = ("--detach", "--nohup")
 
-    def __init__(self, log_dir: str = "logs") -> None:
+    def __init__(self, log_dir: str = IoNames.logs_dir) -> None:
         self.log_dir = Path(log_dir)
 
     def requested(self, argv: list[str] | None = None) -> bool:
@@ -39,15 +41,15 @@ class Detacher:
 
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
-        stamp    = datetime.now().strftime("%Y%m%d_%H%M%S")
+        stamp    = datetime.now().strftime(IoNames.run_tag_format)
         name     = Path(sys.argv[0]).stem
-        log_path = self.log_dir / f"{name}_{stamp}.out"
+        log_path = self.log_dir / f"{name}_{stamp}{IoNames.output_log_suffix}"
 
         env                     = dict(os.environ)
         env[self.ENV_FLAG]      = "1"
         env["PYTHONUNBUFFERED"] = "1"
         env.setdefault("FORCE_COLOR", "1")
-        env.setdefault("COLUMNS", "120")
+        env.setdefault("COLUMNS", str(LogSettings.terminal_columns))
 
         with open(log_path, "ab") as sink:
             process = subprocess.Popen(
@@ -223,7 +225,7 @@ class ConfigCli:
     def save_resolved(cls, config, path: Path) -> Path:
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(cls.to_mapping(config), f, indent=2)
+            json.dump(cls.to_mapping(config), f, indent=IoNames.json_indent)
         return path
 
     @classmethod

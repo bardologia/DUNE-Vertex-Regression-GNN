@@ -2,15 +2,15 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from configuration.shared import IoNames, LogSettings
+
 
 class RunTag:
-    TAG_FORMAT       = "%Y%m%d_%H%M%S"
-    TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
 
-    @classmethod
-    def now(cls) -> str:
-        return datetime.now().strftime(cls.TAG_FORMAT)
+    @staticmethod
+    def now() -> str:
+        return datetime.now().strftime(IoNames.run_tag_format)
 
-    @classmethod
-    def timestamp(cls) -> str:
-        return datetime.now().strftime(cls.TIMESTAMP_FORMAT)
+    @staticmethod
+    def timestamp() -> str:
+        return datetime.now().strftime(LogSettings.timestamp_format)
