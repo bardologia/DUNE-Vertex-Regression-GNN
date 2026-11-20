@@ -1,7 +1,6 @@
 from .exports      import EventExportPipeline
 from .pipeline     import InferencePipeline
-from .plots        import AnalysisAnimations, AnalysisPlots
-from .report       import AnalysisReport
+from .report       import AnalysisAnimations, AnalysisPlots, AnalysisReport
 from .scoring      import InferenceMetrics, Predictor
 
 __all__ = [

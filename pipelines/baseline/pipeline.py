@@ -20,7 +20,7 @@ from tools.runtime.config_cli        import ConfigCli
 from tools.runtime.reproducibility   import Reproducibility
 
 from pipelines.inference.scoring     import InferenceMetrics
-from pipelines.inference.plots       import PublicationStyle
+from pipelines.inference.report      import PublicationStyle
 from pipelines.shared.store_geometry import StoreGeometryRecord
 
 from pipelines.baseline.boosters import BaselineFamilies

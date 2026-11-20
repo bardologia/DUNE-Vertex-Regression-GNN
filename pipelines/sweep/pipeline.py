@@ -19,8 +19,7 @@ from pipelines.inference.scoring     import InferenceMetrics, Predictor
 from pipelines.shared.store_geometry import StoreGeometryRecord
 
 from pipelines.sweep.grid   import SweepGrid
-from pipelines.sweep.plots  import SweepPlots
-from pipelines.sweep.report import SweepReport
+from pipelines.sweep.report import SweepPlots, SweepReport
 
 
 class EnergyEfficiencySweepPipeline:

@@ -22,8 +22,7 @@ from pipelines.shared.store_geometry      import StoreGeometryRecord
 
 from pipelines.explainability.evaluation import EvaluationGraphTensors, SplitMetricEvaluator
 from pipelines.explainability.importance import ExpectedGradients, GradientSaliency, KernelShapImportance, OcclusionImportance, PermutationImportance
-from pipelines.explainability.plots      import FeatureImportancePlots, ShapNativePlots
-from pipelines.explainability.report     import FeatureImportanceReport
+from pipelines.explainability.report     import FeatureImportancePlots, FeatureImportanceReport, ShapNativePlots
 
 
 class MetricDescriptor:
