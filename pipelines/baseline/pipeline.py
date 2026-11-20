@@ -80,7 +80,6 @@ class BaselineRunWriter:
         return self._write_json(self.metadata_directory / IoNames.resolved_config_file, {"model_name": model_name, **ConfigCli.to_mapping(entry_config)})
 
     def write_store_geometry(self, store_geometry):
-        """Records the store geometry the boosters were fitted on, the ``geometry_fingerprint`` and ``channel_count`` of ``DatasetPipeline.store_geometry``, and returns the record path."""
         return StoreGeometryRecord(self.metadata_directory).save(store_geometry)
 
     def write_split(self, split_base_ids):

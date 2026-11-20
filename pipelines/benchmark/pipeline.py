@@ -69,19 +69,12 @@ class BenchmarkPipeline:
             self.model_overrides[model_name] = {**base_overrides, **extra}
 
     def _record_store_geometry(self):
-        """Records the store geometry of the benchmark, after checking that resumed stage results were produced on the same one.
-
-        Raises:
-            FileNotFoundError : If resumed stage results exist without a record, as in every benchmark run before the documented channel mapping.
-            ValueError        : If resumed stage results were produced on another store geometry.
-        """
         record = StoreGeometryRecord(self.pipeline_directory)
         if self._resumes_stage_results():
             record.require(self.store_geometry)
         record.save(self.store_geometry)
 
     def _resumes_stage_results(self):
-        """Returns whether the benchmark resumes into a pipeline directory that already holds stage results."""
         results = [self.pipeline_directory / stage.RESULT_FILE for stage in self.RESUMABLE_STAGES]
         return bool(self.config.resume) and any(path.is_file() for path in results)
 
