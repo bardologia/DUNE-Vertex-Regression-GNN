@@ -1,10 +1,10 @@
 from tools.benchmarking.dataloader_tuning import (
-    LoaderSpec,
-    GpuUtilizationSampler,
-    GpuFeedBenchmark,
     DataLoaderSweep,
+    GpuFeedBenchmark,
+    GpuUtilizationSampler,
+    LoaderSpec,
+    SweepReport,
 )
-from tools.benchmarking.sweep_report import SweepReport
 
 __all__ = [
     "LoaderSpec",
