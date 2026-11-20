@@ -8,17 +8,15 @@ import torch
 from configuration.baseline.general         import BaselineConfig
 from configuration.cross_validation.general import CrossValidationConfig
 from configuration.data.general             import DataConfig, DatasetConfig
+from configuration.shared                   import IoNames
 from configuration.training.general         import TrainingConfig
 from configuration.tuning.general           import TuningConfig
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-
-
 @dataclass
 class DatasetEntryConfig:
-    raw_input_dir : Path = field(default_factory=lambda: PROJECT_ROOT / "data")
-    output_dir    : Path = field(default_factory=lambda: PROJECT_ROOT / "data_frames")
+    raw_input_dir : Path = field(default_factory=lambda: IoNames.project_root / IoNames.data_dir)
+    output_dir    : Path = field(default_factory=lambda: IoNames.project_root / IoNames.data_frames_dir)
     worker_count  : int  = 10
 
 
@@ -37,20 +35,20 @@ class TrainEntryConfig:
 @dataclass
 class DatasetExplorerEntryConfig:
     kind      : str           = "raw"
-    cache_dir : Path          = field(default_factory=lambda: PROJECT_ROOT / "data_frames" / "event_explorer")
+    cache_dir : Path          = field(default_factory=lambda: IoNames.project_root / IoNames.data_frames_dir / IoNames.event_explorer_dir)
     dataset   : DatasetConfig = field(default_factory=DatasetConfig)
 
 
 @dataclass
 class RawLightExportEntryConfig:
-    raw_input_dir : Path          = field(default_factory=lambda: PROJECT_ROOT / "data")
-    cache_dir     : Path          = field(default_factory=lambda: PROJECT_ROOT / "data_frames" / "event_explorer")
+    raw_input_dir : Path          = field(default_factory=lambda: IoNames.project_root / IoNames.data_dir)
+    cache_dir     : Path          = field(default_factory=lambda: IoNames.project_root / IoNames.data_frames_dir / IoNames.event_explorer_dir)
     dataset       : DatasetConfig = field(default_factory=DatasetConfig)
 
 
 @dataclass
 class InferenceEntryConfig:
-    run_directory : Path  = field(default_factory=lambda: PROJECT_ROOT / "runs")
+    run_directory : Path  = field(default_factory=lambda: IoNames.project_root / IoNames.runs_dir)
     device        : str   = "cuda" if torch.cuda.is_available() else "cpu"
     splits        : tuple = ("test", "val", "train")
     batch_size    : int   = 16

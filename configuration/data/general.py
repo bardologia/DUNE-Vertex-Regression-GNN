@@ -3,14 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib     import Path
 
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+from configuration.shared import IoNames
 
 
 @dataclass
 class DataConfig:
-    parquet_store_dir  : Path  = field(default_factory=lambda: PROJECT_ROOT / "data_frames" / "parquet")
-    raw_input_dir      : Path  = field(default_factory=lambda: PROJECT_ROOT / "data")
+    parquet_store_dir  : Path  = field(default_factory=lambda: IoNames.project_root / IoNames.data_frames_dir / IoNames.parquet_dir)
+    raw_input_dir      : Path  = field(default_factory=lambda: IoNames.project_root / IoNames.data_dir)
     build_store        : bool  = False
     store_worker_count : int   = 10
 

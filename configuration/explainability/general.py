@@ -5,13 +5,12 @@ from pathlib     import Path
 
 import torch
 
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+from configuration.shared import IoNames
 
 
 @dataclass
 class FeatureImportanceConfig:
-    run_directory       : Path = field(default_factory=lambda: PROJECT_ROOT / "runs")
+    run_directory       : Path = field(default_factory=lambda: IoNames.project_root / IoNames.runs_dir)
     device              : str  = "cuda" if torch.cuda.is_available() else "cpu"
     split               : str  = "test"
     batch_size          : int  = 16

@@ -3,8 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib     import Path
 
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+from configuration.shared import IoNames
 
 
 @dataclass
@@ -30,7 +29,7 @@ class BaselineBoosterConfig:
 
 @dataclass
 class BaselineIOConfig:
-    log_base_dir : Path = field(default_factory=lambda: PROJECT_ROOT / "runs")
+    log_base_dir : Path = field(default_factory=lambda: IoNames.project_root / IoNames.runs_dir)
 
 
 @dataclass

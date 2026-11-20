@@ -5,12 +5,14 @@ from pathlib     import Path
 
 import torch
 
+from configuration.shared import IoNames
+
 
 @dataclass
 class IOConfig:
-    log_base_dir   : Path = Path("runs")
-    tuner_base_dir : Path = Path("tuning")
-    checkpoint_name: str  = "best_model.pt"
+    log_base_dir    : Path = Path(IoNames.runs_dir)
+    tuner_base_dir  : Path = Path(IoNames.tuning_dir)
+    checkpoint_name : str  = IoNames.best_model_file
 
 
 @dataclass
