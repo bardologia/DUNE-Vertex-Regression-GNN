@@ -51,17 +51,11 @@ class Tracker:
 
     def log_metrics(self, prefix, values: Mapping[str, Any], step=None) -> None:
         for k, v in values.items():
-            try:
-                self._emit("add_scalar", f"{prefix}/{k}", float(v), step)
-            except (TypeError, ValueError):
-                continue
+            self._emit("add_scalar", f"{prefix}/{k}", float(v), step)
 
     def log_staged(self, group, values: Mapping[str, Any], stage, step=None) -> None:
         for k, v in values.items():
-            try:
-                self._emit("add_scalar", f"{group}/{k}/{stage}", float(v), step)
-            except (TypeError, ValueError):
-                continue
+            self._emit("add_scalar", f"{group}/{k}/{stage}", float(v), step)
 
     def log_figure(self, tag, figure, step=None) -> None:
         self._emit("add_figure", tag, figure, step, close=True)

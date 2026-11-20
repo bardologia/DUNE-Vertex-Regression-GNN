@@ -165,16 +165,14 @@ class ProcessManager:
         code = process.returncode
 
         with self.lock:
-            record = self.processes.get(pid)
-            if record is not None:
-                record["status"]    = "finished" if code == 0 else "failed"
-                record["exit_code"] = code
-                record["process"]   = None
-            status = record["status"] if record is not None else "finished"
+            record              = self.processes[pid]
+            record["status"]    = "finished" if code == 0 else "failed"
+            record["exit_code"] = code
+            record["process"]   = None
             self._prune_finished()
 
         self.logger.info(f"process {pid} exited with code {code}")
-        stream.publish({"type": "status", "status": status, "code": code, "verdict": "ok" if code == 0 else "error"})
+        stream.publish({"type": "status", "status": record["status"], "code": code, "verdict": "ok" if code == 0 else "error"})
         stream.publish({"type": "end"})
 
         for callback in self.exit_listeners:
@@ -187,8 +185,8 @@ class ProcessManager:
 
         finished.sort(key=lambda record: record["started"])
         for record in finished[: len(finished) - ProcessSettings.finished_history]:
-            self.processes.pop(record["pid"], None)
-            self.streams.pop(record["pid"], None)
+            self.processes.pop(record["pid"])
+            self.streams.pop(record["pid"])
 
     def _view(self, record: dict) -> dict:
         return {

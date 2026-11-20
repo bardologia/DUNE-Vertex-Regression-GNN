@@ -87,7 +87,7 @@ class ConfigRegistry:
         return {"ok": True, "config_class": payload["class"], "leaves": payload["leaves"]}
 
     def _with_layout(self, script_key: str, result: dict) -> dict:
-        if not result.get("ok"):
+        if not result["ok"]:
             return result
 
         try:
@@ -115,7 +115,7 @@ class ConfigRegistry:
                 return cached[1]
 
         result = self._with_layout(script_key, self._run_bootstrap(entry, interpreter))
-        if result.get("ok"):
+        if result["ok"]:
             with self.lock:
                 self.cache[cache_key] = (signature, result)
         return result

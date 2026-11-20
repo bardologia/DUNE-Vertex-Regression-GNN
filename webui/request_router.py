@@ -47,7 +47,7 @@ class RequestRouter:
         self.processes.add_exit_listener(self._on_job_exit)
 
     def _route_get(self, handler, path: str) -> None:
-        if path == ApiRoutes.index or path == "":
+        if path == ApiRoutes.index:
             self._serve_static(handler, IoNames.index_file)
             return
         if path.startswith(ApiRoutes.static_prefix):
@@ -140,7 +140,7 @@ class RequestRouter:
 
             result = self.processes.launch(script, overrides, interpreter)
 
-            if result.get("ok") and script == "train" and self._tensorboard_requested(overrides):
+            if result["ok"] and script == "train" and self._tensorboard_requested(overrides):
                 logdir = self._scoped_train_logdir(overrides, interpreter)
                 threading.Thread(target=self.tensorboard.ensure, args=(logdir, result["pid"]), daemon=True).start()
 
@@ -203,8 +203,8 @@ class RequestRouter:
 
     def _scoped_train_logdir(self, overrides: dict, interpreter: str) -> str:
         defaults    = self._train_config_defaults(interpreter)
-        model_name  = overrides.get("model_name")              or defaults.get("model_name", "gps")
-        base_logdir = overrides.get("training.io.log_base_dir") or defaults.get("training.io.log_base_dir", IoNames.runs_dir)
+        model_name  = overrides.get("model_name")              or defaults["model_name"]
+        base_logdir = overrides.get("training.io.log_base_dir") or defaults["training.io.log_base_dir"]
 
         base = Path(base_logdir)
         if not base.is_absolute():
@@ -214,18 +214,16 @@ class RequestRouter:
 
     def _train_config_defaults(self, interpreter: str) -> dict:
         schema = self.configs.schema("train", interpreter)
-        if not schema.get("ok"):
-            return {}
         return {leaf["path"]: leaf["value"] for leaf in schema["leaves"]}
 
     def _system_payload(self) -> dict:
         payload   = self.system.status()
         watchdog  = self.gpu_watchdog.latest()
         payload["watchdog"] = {
-            "armed"     : bool(watchdog.get("armed")),
+            "armed"     : watchdog["armed"],
             "interval"  : SystemMonitorSettings.gpu_poll_interval_s,
-            "gpu_count" : len(payload.get("gpus", [])),
-            "updated"   : watchdog.get("updated"),
+            "gpu_count" : len(payload["gpus"]),
+            "updated"   : watchdog["updated"],
         }
         return payload
 
@@ -273,7 +271,7 @@ class RequestRouter:
                 handler.wfile.write(f"data: {payload}\n\n".encode("utf-8"))
                 handler.wfile.flush()
 
-                if event.get("type") == "end":
+                if event["type"] == "end":
                     break
         except (BrokenPipeError, ConnectionResetError):
             pass
@@ -298,7 +296,7 @@ class RequestRouter:
             return {}
 
     def _send_result(self, handler, result: dict, failure: HTTPStatus = HTTPStatus.BAD_REQUEST) -> None:
-        self._send_json(handler, result, HTTPStatus.OK if result.get("ok") else failure)
+        self._send_json(handler, result, HTTPStatus.OK if result["ok"] else failure)
 
     def _send_file(self, handler, target: Path, cache_control: str) -> None:
         data         = target.read_bytes()

@@ -1,19 +1,13 @@
 from __future__ import annotations
 
 import getpass
-import os
 import socket
 import time
 
 import psutil
+import pynvml
 
 from configuration.webui.general import SystemMonitorSettings
-
-try:
-    import pynvml
-    _PYNVML_AVAILABLE = True
-except ImportError:
-    _PYNVML_AVAILABLE = False
 
 
 class SystemMonitor:
@@ -21,7 +15,7 @@ class SystemMonitor:
     def __init__(self, paths) -> None:
         self.paths      = paths
         self.host       = socket.gethostname()
-        self.user       = self._resolve_user()
+        self.user       = getpass.getuser()
         self.boot_time  = psutil.boot_time()
         self.nvml_ready = False
 
@@ -30,28 +24,17 @@ class SystemMonitor:
         for process in psutil.process_iter(["cpu_percent"]):
             pass
 
-        if _PYNVML_AVAILABLE:
-            try:
-                pynvml.nvmlInit()
-                self.nvml_ready = True
-            except pynvml.NVMLError:
-                self.nvml_ready = False
-
-    def _resolve_user(self) -> str:
         try:
-            return getpass.getuser()
-        except Exception:
-            return os.environ.get("USER", "user")
+            pynvml.nvmlInit()
+            self.nvml_ready = True
+        except pynvml.NVMLError:
+            self.nvml_ready = False
 
     def _uptime(self) -> float:
         return max(0.0, time.time() - self.boot_time)
 
     def _cpu(self) -> dict:
-        try:
-            load = list(psutil.getloadavg())
-        except (AttributeError, OSError):
-            load = [0.0, 0.0, 0.0]
-
+        load  = list(psutil.getloadavg())
         cores = psutil.cpu_percent(interval=None, percpu=True)
         return {
             "total"    : psutil.cpu_percent(interval=None),
@@ -120,24 +103,21 @@ class SystemMonitor:
     def _processes(self) -> list[dict]:
         rows = []
         for process in psutil.process_iter(["pid", "name", "username", "cpu_percent", "memory_info", "status", "cmdline"]):
-            try:
-                info = process.info
-                if info.get("username") not in (self.user, None) and not str(info.get("username", "")).endswith(self.user):
-                    continue
-
-                memory  = info.get("memory_info")
-                cmdline = info.get("cmdline") or []
-                command = " ".join(cmdline) if cmdline else (info.get("name") or "?")
-
-                rows.append({
-                    "pid"   : info.get("pid"),
-                    "cpu"   : float(info.get("cpu_percent") or 0.0),
-                    "rss"   : int(memory.rss) if memory else 0,
-                    "state" : (info.get("status") or "?")[:1].upper(),
-                    "cmd"   : command,
-                })
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
+            info = process.info
+            if info["username"] not in (self.user, None) and not str(info["username"]).endswith(self.user):
                 continue
+
+            memory  = info["memory_info"]
+            cmdline = info["cmdline"] or []
+            command = " ".join(cmdline) if cmdline else (info["name"] or "?")
+
+            rows.append({
+                "pid"   : info["pid"],
+                "cpu"   : float(info["cpu_percent"] or 0.0),
+                "rss"   : int(memory.rss) if memory else 0,
+                "state" : (info["status"] or "?")[:1].upper(),
+                "cmd"   : command,
+            })
 
         rows.sort(key=lambda row: (row["cpu"], row["rss"]), reverse=True)
         return rows[:SystemMonitorSettings.process_limit]

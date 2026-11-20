@@ -173,10 +173,7 @@ class EventExplorer:
 
     def _model_name(self, run_directory: Path) -> str:
         config_path = run_directory / IoNames.metadata_dir / IoNames.resolved_config_file
-        try:
-            return str(json.loads(config_path.read_text(encoding="utf-8")).get("model_name", "unknown"))
-        except (OSError, ValueError):
-            return "unknown"
+        return str(json.loads(config_path.read_text(encoding="utf-8"))["model_name"])
 
     def _run_directory(self, run: str) -> Path | None:
         if not run:

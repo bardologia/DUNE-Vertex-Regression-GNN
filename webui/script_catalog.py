@@ -15,7 +15,7 @@ class ScriptCatalog:
         if entry is None or not entry["path"].exists():
             return None
 
-        metadata = dict(ScriptRegistry.metadata).get(key, {"label": key, "category": "Other", "purpose": ""})
+        metadata = dict(ScriptRegistry.metadata)[key]
 
         return {
             "key"          : key,

@@ -109,7 +109,7 @@ class Logger:
                 self.logger.removeHandler(handler)
 
         log_levels = {level_name: getattr(logging, level_name) for level_name in LogSettings.level_names}
-        log_level  = log_levels.get(str(level).upper(), log_levels[LogSettings.level])
+        log_level  = log_levels[str(level).upper()]
         self.logger.setLevel(log_level)
 
         rich_handler = RichHandler(

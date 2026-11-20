@@ -27,8 +27,7 @@ class ModelLibrary:
         "    return str(value)\n"
         "models = []\n"
         "for name in ModelFactory.by_name():\n"
-        "    factory = ModelConfigRegistry.by_name().get(name)\n"
-        "    defaults = encode(dataclasses.asdict(factory())) if factory is not None else {}\n"
+        "    defaults = encode(dataclasses.asdict(ModelConfigRegistry.by_name()[name]()))\n"
         "    models.append({'name': name, 'config_defaults': defaults})\n"
         "print(json.dumps({'models': models}))\n"
     )
@@ -52,11 +51,7 @@ class ModelLibrary:
         return {"ok": True, "models": introspected["payload"]["models"]}
 
     def _capacity(self, defaults: dict) -> str:
-        hidden = defaults.get("hidden_dim")
-        layers = defaults.get("num_layers")
-        if hidden is None or layers is None:
-            return ""
-        return f"{hidden} dim · {layers} layers"
+        return f"{defaults['hidden_dim']} dim · {defaults['num_layers']} layers"
 
     def _families(self, models: list[dict]) -> dict:
         defaults  = {model["name"]: model["config_defaults"] for model in models}
@@ -82,7 +77,7 @@ class ModelLibrary:
                     "blurb"       : entry["blurb"],
                     "capacity"    : self._capacity(defaults[entry["key"]]),
                     "recommended" : bool(entry.get("recommended")),
-                    "head_type"   : defaults[entry["key"]].get("head_type", ""),
+                    "head_type"   : defaults[entry["key"]]["head_type"],
                 })
             families.append({"family": family["family"], "models": entries})
 
@@ -96,11 +91,11 @@ class ModelLibrary:
                 return self.cache[1]
 
         introspected = self._run_bootstrap(interpreter)
-        if not introspected.get("ok"):
+        if not introspected["ok"]:
             return introspected
 
         result = self._families(introspected["models"])
-        if result.get("ok"):
+        if result["ok"]:
             with self.lock:
                 self.cache = (signature, result)
         return result

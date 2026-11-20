@@ -122,10 +122,7 @@ class TensorboardManager:
         self.logger.error(f"tensorboard {record['id']} failed to start within {TensorboardSettings.startup_timeout_s:.0f}s: {self._log_tail(record)}")
 
     def _log_tail(self, record: dict) -> str:
-        try:
-            text = record["log_path"].read_text(errors="replace").strip()
-        except OSError:
-            return "no output captured"
+        text = record["log_path"].read_text(errors="replace").strip()
         return text[-TensorboardSettings.log_tail_chars:] if text else "no output captured"
 
     def get(self, tb_id: str) -> dict | None:

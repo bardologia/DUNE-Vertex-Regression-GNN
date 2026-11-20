@@ -54,10 +54,8 @@ class ResultsBrowser:
 
     def _model_name(self, run_directory: Path) -> str:
         config_path = run_directory / IoNames.metadata_dir / IoNames.resolved_config_file
-        if not config_path.is_file():
-            return "unknown"
-        config = json.loads(config_path.read_text(encoding="utf-8"))
-        return str(config.get("model_name", "unknown"))
+        config      = json.loads(config_path.read_text(encoding="utf-8"))
+        return str(config["model_name"])
 
     def _metrics_payload(self, run_directory: Path):
         metrics_path = run_directory / IoNames.metadata_dir / IoNames.metrics_file
@@ -69,18 +67,18 @@ class ResultsBrowser:
         if metrics is None:
             return None
 
-        splits = metrics.get("splits", {})
+        splits = metrics["splits"]
         for split_name in ResultsBrowsing.best_metric_splits:
             split_metrics = splits.get(split_name, {})
             if ResultsBrowsing.best_metric_name in split_metrics:
-                return {"name": f"{split_name}/{ResultsBrowsing.best_metric_name}", "value": split_metrics[ResultsBrowsing.best_metric_name], "unit": metrics.get("unit")}
+                return {"name": f"{split_name}/{ResultsBrowsing.best_metric_name}", "value": split_metrics[ResultsBrowsing.best_metric_name], "unit": metrics["unit"]}
         return None
 
     def _coordinate_errors(self, metrics):
         if metrics is None:
             return None
 
-        splits        = metrics.get("splits", {})
+        splits        = metrics["splits"]
         required_keys = [f"{metric}_{name}" for metric in ResultsBrowsing.error_metric_names for name in ResultsBrowsing.coordinate_names]
 
         for split_name in ResultsBrowsing.best_metric_splits:
@@ -89,7 +87,7 @@ class ResultsBrowser:
                 continue
 
             values = {metric: {name: split_metrics[f"{metric}_{name}"] for name in ResultsBrowsing.coordinate_names} for metric in ResultsBrowsing.error_metric_names}
-            return {"split": split_name, "unit": metrics.get("unit"), "values": values}
+            return {"split": split_name, "unit": metrics["unit"], "values": values}
         return None
 
     def _timestamp(self, run_directory: Path) -> str:

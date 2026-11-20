@@ -12,11 +12,11 @@ from configuration.shared             import IoNames, MeasurementUnits
 
 
 class ResourceMonitor:
-    def __init__(self, config, logger, tracker=None, step_getter=None):
+    def __init__(self, config, logger, tracker, step_getter):
         self.cfg         = config
         self.logger      = logger
         self.tracker     = tracker
-        self.step_getter = step_getter or (lambda: 0)
+        self.step_getter = step_getter
 
         self._load_config()
         self._init_process()
@@ -89,8 +89,7 @@ class ResourceMonitor:
         if now - last < self.warn_cooldown_s:
             return
         self._last_warn_t[key] = now
-        if self.logger is not None:
-            self.logger.warning(f"[ResourceMonitor] {message}")
+        self.logger.warning(f"[ResourceMonitor] {message}")
 
     def _sample_ram_metrics(self, metrics):
         vm = psutil.virtual_memory()
@@ -220,7 +219,7 @@ class ResourceMonitor:
                 f"RAM usage {metrics['ram_pct']:.1f}% "
                 f"({metrics['ram_used_gb']:.2f}/{metrics['ram_total_gb']:.2f} GB) "
                 f">= threshold {self.warn_ram_pct:.1f}% "
-                f"(proc RSS {metrics.get('proc_rss_gb', 0):.2f} GB, "
+                f"(proc RSS {metrics['proc_rss_gb']:.2f} GB, "
                 f"shm {metrics['shm_used_gb']:.2f} GB)",
             )
 
@@ -278,8 +277,8 @@ class ResourceMonitor:
         return {k: v for k, v in metrics.items() if k in allowed}
 
     def _publish(self, metrics):
-        step = int(self.step_getter() or 0)
-        if self.log_to_tb and self.tracker is not None:
+        step = int(self.step_getter())
+        if self.log_to_tb:
             self.tracker.log_metrics("system", self._tb_metrics(metrics), step)
 
     def _run(self):
@@ -289,14 +288,10 @@ class ResourceMonitor:
                 self._publish(metrics)
                 self._sample_idx += 1
             except Exception as exc:
-                if self.logger is not None:
-                    self.logger.warning(f"[ResourceMonitor] sample failed: {exc}")
+                self.logger.warning(f"[ResourceMonitor] sample failed: {exc}")
             self._stop_evt.wait(self.interval)
 
     def _log_startup_info(self):
-        if self.logger is None:
-            return
-
         self.logger.section("[Resource Monitor]")
         self.logger.kv_table({
             "Enabled"         : True,
@@ -308,8 +303,7 @@ class ResourceMonitor:
 
     def start(self):
         if not self.enabled:
-            if self.logger is not None:
-                self.logger.subsection("[ResourceMonitor] disabled by config")
+            self.logger.subsection("[ResourceMonitor] disabled by config")
             return
 
         if self._thread is not None and self._thread.is_alive():
@@ -322,9 +316,6 @@ class ResourceMonitor:
         self._thread.start()
 
     def _log_peak_metrics(self):
-        if self.logger is None:
-            return
-
         peaks = {}
         for key, value in self.peak.items():
             unit                 = "%" if key.endswith("_pct") else "GB"
