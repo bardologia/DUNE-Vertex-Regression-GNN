@@ -4,6 +4,8 @@ import json
 import subprocess
 import threading
 
+from configuration.shared import IoNames
+
 from project_paths import ProjectPaths
 
 
@@ -69,8 +71,8 @@ class ModelLibrary:
         self.lock  = threading.Lock()
 
     def _signature(self) -> tuple:
-        watched  = sorted((self.paths.repo_root / "models").rglob("*.py"))
-        watched += sorted((self.paths.repo_root / "configuration" / "architectures").rglob("*.py"))
+        watched  = sorted((self.paths.repo_root / IoNames.models_dir).rglob(IoNames.python_glob))
+        watched += sorted((self.paths.repo_root / IoNames.configuration_dir / IoNames.architectures_dir).rglob(IoNames.python_glob))
 
         stamps = []
         for path in watched:

@@ -7,6 +7,7 @@ from pathlib     import Path
 import numpy as np
 
 from configuration.data.general      import AugmentationConfig, DatasetConfig, PhysicsConfig
+from configuration.shared            import IoNames
 from pipelines.dataset.augmentation  import Augmentation
 from pipelines.dataset.parquet_store import ParquetEventReader
 from pipelines.shared.store_geometry import CacheGeometryStamp
@@ -18,7 +19,6 @@ from subprocess_runner import SubprocessRunner
 
 class PreprocessingPreview:
 
-    FILENAME    = "raw_light.npz"
     STAGE_NAMES = ("raw", "scaled", "detected", "augmented")
 
     def __init__(self, paths: ProjectPaths, logger: ServerLogger) -> None:
@@ -177,10 +177,10 @@ class PreprocessingPreview:
 
     def _load_worker(self) -> None:
         try:
-            cache = self.paths.explorer_cache_dir / self.FILENAME
+            cache = self.paths.explorer_cache_dir / IoNames.raw_light_cache_file
             if not cache.is_file():
                 self._set_stage("building the raw-light cache")
-                self.runner.spawn(self.paths.main_dir / "export_raw_light.py", [], "raw_light_export")
+                self.runner.spawn(self.paths.main_dir / IoNames.raw_light_script, [], IoNames.raw_light_export_log)
             if not cache.is_file():
                 raise FileNotFoundError(f"export finished but {cache} was not produced; check the export log")
 

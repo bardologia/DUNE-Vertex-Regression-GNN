@@ -12,7 +12,7 @@ import time
 from datetime    import datetime
 from collections import deque
 
-from configuration.shared import LogSettings
+from configuration.shared import IoNames, LogSettings
 
 from project_paths import ProjectPaths
 from server_logger import ServerLogger
@@ -145,7 +145,7 @@ class ProcessManager:
         environment["COLUMNS"]          = str(LogSettings.terminal_columns)
         environment["LINES"]            = LogSettings.terminal_lines
 
-        library_directory = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(interpreter))), "lib")
+        library_directory = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(interpreter))), IoNames.interpreter_lib_dir)
         library_path      = environment.get("LD_LIBRARY_PATH", "")
         if library_directory not in library_path.split(":"):
             environment["LD_LIBRARY_PATH"] = library_directory + (":" + library_path if library_path else "")

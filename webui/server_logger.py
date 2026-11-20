@@ -1,16 +1,13 @@
 from __future__ import annotations
 
-from pathlib import Path
-
+from configuration.shared    import IoNames
 from tools.monitoring.logger import Logger
-
-REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 
 
 class ServerLogger:
 
     def __init__(self) -> None:
-        self.logger = Logger(log_dir=str(REPOSITORY_ROOT / "logs" / "webui"), name="webui")
+        self.logger = Logger(log_dir=str(IoNames.project_root / IoNames.logs_dir / IoNames.webui_dir), name=IoNames.webui_log)
 
     def info(self, message: str) -> None:
         self.logger.info(message)

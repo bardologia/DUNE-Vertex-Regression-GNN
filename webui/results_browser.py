@@ -4,26 +4,27 @@ import json
 from datetime import datetime
 from pathlib  import Path
 
+from configuration.shared import IoNames
+
 from project_paths import ProjectPaths
 from server_logger import ServerLogger
 
 
 class ResultsBrowser:
 
-    SKIPPED_DIRECTORIES = {"__pycache__", ".git", ".ipynb_checkpoints"}
-    MAX_DEPTH           = 6
-    NESTED_RUN_DEPTH    = 2
-    BEST_METRIC_SPLITS  = ("test", "val", "train")
-    BEST_METRIC_NAME    = "euclidean_mean"
-    COORDINATE_NAMES    = ("x", "y", "z")
-    ERROR_METRIC_NAMES  = ("mae", "rmse")
+    MAX_DEPTH          = 6
+    NESTED_RUN_DEPTH   = 2
+    BEST_METRIC_SPLITS = ("test", "val", "train")
+    BEST_METRIC_NAME   = "euclidean_mean"
+    COORDINATE_NAMES   = ("x", "y", "z")
+    ERROR_METRIC_NAMES = ("mae", "rmse")
 
     def __init__(self, paths: ProjectPaths, logger: ServerLogger) -> None:
         self.paths  = paths
         self.logger = logger
 
     def _is_run(self, directory: Path) -> bool:
-        return (directory / "metadata" / "resolved_config.json").is_file()
+        return (directory / IoNames.metadata_dir / IoNames.resolved_config_file).is_file()
 
     def _collect_runs(self, directory: Path, depth: int) -> list[Path]:
         if self._is_run(directory):
@@ -38,7 +39,7 @@ class ResultsBrowser:
 
         nested = []
         for entry in entries:
-            if entry.is_dir() and entry.name not in self.SKIPPED_DIRECTORIES and not entry.name.startswith("."):
+            if entry.is_dir() and entry.name not in IoNames.browser_skipped_dirs and not entry.name.startswith("."):
                 nested.extend(self._collect_runs(entry, depth + 1))
         return nested
 
@@ -48,7 +49,7 @@ class ResultsBrowser:
 
         directories = []
         for entry in sorted(self.paths.runs_dir.iterdir()):
-            if entry.is_dir() and entry.name not in self.SKIPPED_DIRECTORIES:
+            if entry.is_dir() and entry.name not in IoNames.browser_skipped_dirs:
                 directories.extend(self._collect_runs(entry, 0))
 
         directories.sort(key=lambda directory: directory.stat().st_mtime, reverse=True)
@@ -58,14 +59,14 @@ class ResultsBrowser:
         return str(run_directory.relative_to(self.paths.runs_dir))
 
     def _model_name(self, run_directory: Path) -> str:
-        config_path = run_directory / "metadata" / "resolved_config.json"
+        config_path = run_directory / IoNames.metadata_dir / IoNames.resolved_config_file
         if not config_path.is_file():
             return "unknown"
         config = json.loads(config_path.read_text(encoding="utf-8"))
         return str(config.get("model_name", "unknown"))
 
     def _metrics_payload(self, run_directory: Path):
-        metrics_path = run_directory / "metadata" / "metrics.json"
+        metrics_path = run_directory / IoNames.metadata_dir / IoNames.metrics_file
         if not metrics_path.is_file():
             return None
         return json.loads(metrics_path.read_text(encoding="utf-8"))
@@ -111,7 +112,7 @@ class ResultsBrowser:
 
         for entry in entries:
             if entry.is_dir():
-                if entry.name in self.SKIPPED_DIRECTORIES or entry.name.startswith("."):
+                if entry.name in IoNames.browser_skipped_dirs or entry.name.startswith("."):
                     continue
                 if depth < self.MAX_DEPTH:
                     children.append(self._tree(entry, depth + 1))

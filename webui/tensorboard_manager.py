@@ -10,6 +10,8 @@ import uuid
 from datetime import datetime
 from pathlib  import Path
 
+from configuration.shared import IoNames
+
 from project_paths import ProjectPaths
 from server_logger import ServerLogger
 
@@ -41,7 +43,7 @@ class TensorboardManager:
         if not candidate.is_dir():
             return None
 
-        tensorboard_directory = candidate / "tensorboard"
+        tensorboard_directory = candidate / IoNames.tensorboard_dir
         return str(tensorboard_directory if tensorboard_directory.is_dir() else candidate)
 
     def ensure(self, logdir: str, owner_pid: int | None = None) -> dict:
@@ -55,8 +57,8 @@ class TensorboardManager:
         port  = self._free_port()
         tb_id = uuid.uuid4().hex[:8]
 
-        binary  = shutil.which("tensorboard")
-        command = [binary] if binary else [self.paths.preferred_interpreter(), "-m", "tensorboard.main"]
+        binary  = shutil.which(IoNames.tensorboard_executable)
+        command = [binary] if binary else [self.paths.preferred_interpreter(), "-m", IoNames.tensorboard_module]
         argv    = command + [
             "--logdir",          logdir,
             "--host",            self.HOST,
@@ -65,7 +67,7 @@ class TensorboardManager:
             "--reload_interval", "30",
         ]
 
-        log_path = self.paths.webui_logs_dir / f"tensorboard_{tb_id}.log"
+        log_path = self.paths.webui_logs_dir / IoNames.tensorboard_log.format(id=tb_id)
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:

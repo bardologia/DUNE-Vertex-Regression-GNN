@@ -9,6 +9,7 @@ from datetime      import datetime
 from pathlib       import Path
 from urllib.parse  import parse_qs, urlparse
 
+from configuration.shared       import IoNames
 from pipelines.shared.run_paths import RunPaths
 
 from config_registry     import ConfigRegistry
@@ -50,7 +51,7 @@ class RequestRouter:
 
     def _route_get(self, handler, path: str) -> None:
         if path == "/" or path == "":
-            self._serve_static(handler, "index.html")
+            self._serve_static(handler, IoNames.index_file)
             return
         if path.startswith("/static/"):
             self._serve_static(handler, path[len("/static/"):])
@@ -138,7 +139,7 @@ class RequestRouter:
             interpreter = body.get("interpreter") or self.paths.preferred_interpreter()
 
             if script == "train" and not overrides.get("run_name"):
-                overrides["run_name"] = datetime.now().strftime("%Y%m%d-%H%M%S")
+                overrides["run_name"] = datetime.now().strftime(IoNames.run_stamp_format)
 
             result = self.processes.launch(script, overrides, interpreter)
 
@@ -206,7 +207,7 @@ class RequestRouter:
     def _scoped_train_logdir(self, overrides: dict, interpreter: str) -> str:
         defaults    = self._train_config_defaults(interpreter)
         model_name  = overrides.get("model_name")              or defaults.get("model_name", "gps")
-        base_logdir = overrides.get("training.io.log_base_dir") or defaults.get("training.io.log_base_dir", "runs")
+        base_logdir = overrides.get("training.io.log_base_dir") or defaults.get("training.io.log_base_dir", IoNames.runs_dir)
 
         base = Path(base_logdir)
         if not base.is_absolute():

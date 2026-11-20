@@ -8,6 +8,7 @@ from pathlib  import Path
 import numpy as np
 
 from configuration.data.general      import DatasetConfig
+from configuration.shared            import IoNames
 from pipelines.dataset.parquet_store import ParquetEventReader
 from pipelines.shared.store_geometry import CacheGeometryStamp, StoreGeometryRecord
 
@@ -18,9 +19,8 @@ from subprocess_runner import SubprocessRunner
 
 class EventExplorer:
 
-    SPLITS    = ("test", "val", "train")
-    DATASETS  = ({"name": "raw", "label": "raw events"}, {"name": "augmented", "label": "octant-augmented"})
-    FILENAME  = "event_explorer.npz"
+    SPLITS   = ("test", "val", "train")
+    DATASETS = ({"name": "raw", "label": "raw events"}, {"name": "augmented", "label": "octant-augmented"})
 
     def __init__(self, paths: ProjectPaths, logger: ServerLogger) -> None:
         self.paths  = paths
@@ -33,7 +33,7 @@ class EventExplorer:
     def list_sources(self) -> dict:
         datasets = []
         for dataset in self.DATASETS:
-            cached = (self.paths.explorer_cache_dir / f"{dataset['name']}.npz").is_file()
+            cached = (self.paths.explorer_cache_dir / f"{dataset['name']}{IoNames.npz_suffix}").is_file()
             datasets.append({"name": dataset["name"], "label": dataset["label"], "cached": cached})
 
         return {"ok": True, "datasets": datasets, "runs": self._list_runs()}
@@ -46,12 +46,12 @@ class EventExplorer:
         for directory in sorted(self.paths.runs_dir.iterdir(), key=lambda entry: entry.stat().st_mtime, reverse=True):
             if not directory.is_dir():
                 continue
-            if not (directory / "checkpoints" / "best_model.pt").is_file():
+            if not (directory / IoNames.checkpoints_dir / IoNames.best_model_file).is_file():
                 continue
-            if not (directory / "metadata" / "resolved_config.json").is_file():
+            if not (directory / IoNames.metadata_dir / IoNames.resolved_config_file).is_file():
                 continue
 
-            cached = [split for split in self.SPLITS if (directory / "analysis" / split / self.FILENAME).is_file()]
+            cached = [split for split in self.SPLITS if (directory / IoNames.analysis_dir / split / IoNames.event_explorer_cache_file).is_file()]
             runs.append({"run": directory.name, "model": self._model_name(directory), "cached": cached})
 
         return runs
@@ -174,7 +174,7 @@ class EventExplorer:
         }
 
     def _model_name(self, run_directory: Path) -> str:
-        config_path = run_directory / "metadata" / "resolved_config.json"
+        config_path = run_directory / IoNames.metadata_dir / IoNames.resolved_config_file
         try:
             return str(json.loads(config_path.read_text(encoding="utf-8")).get("model_name", "unknown"))
         except (OSError, ValueError):
@@ -187,7 +187,7 @@ class EventExplorer:
         run_directory = (self.paths.runs_dir / run).resolve()
         if not run_directory.is_relative_to(self.paths.runs_dir.resolve()):
             return None
-        if not (run_directory / "checkpoints" / "best_model.pt").is_file():
+        if not (run_directory / IoNames.checkpoints_dir / IoNames.best_model_file).is_file():
             return None
         return run_directory
 
@@ -195,7 +195,7 @@ class EventExplorer:
         try:
             if kind == "dataset":
                 fingerprint = ParquetEventReader(DatasetConfig().data.parquet_store_dir).load_geometry().geometry_fingerprint
-                cache       = self.paths.explorer_cache_dir / f"{name}.npz"
+                cache       = self.paths.explorer_cache_dir / f"{name}{IoNames.npz_suffix}"
                 if not cache.is_file():
                     self._set_stage("building the dataset cache")
                     self._run_dataset_export(name)
@@ -206,8 +206,8 @@ class EventExplorer:
                 data, meta = self._read_dataset_cache(cache, name, fingerprint)
             else:
                 run_directory = self._run_directory(name)
-                fingerprint   = StoreGeometryRecord(run_directory / "metadata").recorded()["geometry_fingerprint"]
-                cache         = run_directory / "analysis" / split / self.FILENAME
+                fingerprint   = StoreGeometryRecord(run_directory / IoNames.metadata_dir).recorded()["geometry_fingerprint"]
+                cache         = run_directory / IoNames.analysis_dir / split / IoNames.event_explorer_cache_file
                 if not cache.is_file():
                     self._set_stage("running the model over every split")
                     self._run_export(run_directory)
@@ -234,14 +234,14 @@ class EventExplorer:
             self.status["stage"] = stage
 
     def _run_export(self, run_directory: Path) -> None:
-        script = self.paths.main_dir / "export_events.py"
+        script    = self.paths.main_dir / IoNames.event_export_script
         argv_tail = ["--run_directory", str(run_directory)]
-        self.runner.spawn(script, argv_tail, f"event_export_{run_directory.name}")
+        self.runner.spawn(script, argv_tail, IoNames.event_export_log.format(run=run_directory.name))
 
     def _run_dataset_export(self, name: str) -> None:
-        script = self.paths.main_dir / "export_dataset_events.py"
+        script    = self.paths.main_dir / IoNames.dataset_export_script
         argv_tail = ["--kind", name]
-        self.runner.spawn(script, argv_tail, f"dataset_export_{name}")
+        self.runner.spawn(script, argv_tail, IoNames.dataset_export_log.format(kind=name))
 
     def _read_run_cache(self, cache: Path, name: str, split: str, fingerprint: str) -> tuple[dict, dict]:
         archive = np.load(cache)

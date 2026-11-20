@@ -5,6 +5,8 @@ import subprocess
 from datetime import datetime
 from pathlib  import Path
 
+from configuration.shared import IoNames
+
 from project_paths import ProjectPaths
 from server_logger import ServerLogger
 
@@ -19,7 +21,7 @@ class SubprocessRunner:
         environment                     = dict(os.environ)
         environment["PYTHONUNBUFFERED"] = "1"
 
-        library_directory = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(interpreter))), "lib")
+        library_directory = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(interpreter))), IoNames.interpreter_lib_dir)
         library_path      = environment.get("LD_LIBRARY_PATH", "")
         if library_directory not in library_path.split(":"):
             environment["LD_LIBRARY_PATH"] = library_directory + (":" + library_path if library_path else "")
@@ -31,8 +33,8 @@ class SubprocessRunner:
         argv        = [interpreter, "-u", str(script), *argv_tail]
 
         self.paths.webui_logs_dir.mkdir(parents=True, exist_ok=True)
-        stamp    = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_path = self.paths.webui_logs_dir / f"{log_stem}_{stamp}.out"
+        stamp    = datetime.now().strftime(IoNames.run_tag_format)
+        log_path = self.paths.webui_logs_dir / f"{log_stem}_{stamp}{IoNames.output_log_suffix}"
 
         with open(log_path, "ab") as sink:
             process = subprocess.run(

@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 import subprocess
 import threading
-from pathlib import Path
+
+from configuration.shared import IoNames
 
 from launch_layout  import LaunchLayout, LayoutError
 from project_paths  import ProjectPaths
@@ -106,9 +107,9 @@ class ConfigRegistry:
             return {"ok": False, "error": str(error)}
 
     def _signature(self) -> tuple:
-        watched = sorted((self.paths.repo_root / "configuration").rglob("*.py"))
-        watched.append(self.paths.repo_root / "tools" / "runtime" / "config_cli.py")
-        watched.append(Path(__file__).resolve().parent / "launch_layout.py")
+        watched = sorted((self.paths.repo_root / IoNames.configuration_dir).rglob(IoNames.python_glob))
+        watched.append(self.paths.repo_root / IoNames.tools_dir / IoNames.runtime_dir / IoNames.config_cli_file)
+        watched.append(self.paths.webui_root / IoNames.launch_layout_file)
 
         stamps = []
         for path in watched:
