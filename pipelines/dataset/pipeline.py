@@ -56,10 +56,10 @@ class DatasetPipeline:
         return reader
 
     def _build_samples(self):
-        count       = len(self.light_matrix)
-        base_ids    = np.arange(count, dtype=np.float32)
-        ones        = np.ones(count, dtype=np.float32)
-        samples     = np.column_stack([base_ids, ones, ones, ones, self.event_targets, base_ids]).astype(np.float32)
+        count    = len(self.light_matrix)
+        base_ids = np.arange(count, dtype=np.float32)
+        ones     = np.ones(count, dtype=np.float32)
+        samples  = np.column_stack([base_ids, ones, ones, ones, self.event_targets, base_ids]).astype(np.float32)
 
         self.logger.subsection(f"Built {len(samples)} base-event samples")
         return samples
@@ -82,8 +82,8 @@ class DatasetPipeline:
         present_base_ids  = np.unique(samples[:, 7].astype(np.int64))
         canonical_targets = self.event_targets[present_base_ids]
 
-        target_dataframe = pd.DataFrame(canonical_targets, columns=list(self.config.data.coordinate_columns))
-        balancer         = TargetBalancer(self.logger, self.config.data.coordinate_columns, self.config.split)
+        target_dataframe                          = pd.DataFrame(canonical_targets, columns=list(self.config.data.coordinate_columns))
+        balancer                                  = TargetBalancer(self.logger, self.config.data.coordinate_columns, self.config.split)
         train_rows, validation_rows, test_rows, _ = balancer.balance(target_dataframe)
 
         self.split_base_ids = {
@@ -275,8 +275,8 @@ class DatasetPipeline:
         validation_samples = self.samples[validation_indices]
         test_samples       = self.samples[test_indices]
 
-        self.stats           = None
-        self.split_base_ids  = self.base_ids_for_indices(train_indices, validation_indices, test_indices)
+        self.stats          = None
+        self.split_base_ids = self.base_ids_for_indices(train_indices, validation_indices, test_indices)
 
         train_samples = self._prepare_train_samples(train_base)
         self._fit_stats(train_samples, self.SPLIT_NAMES)
@@ -291,7 +291,7 @@ class DatasetPipeline:
         self.split_base_ids = dict(split_base_ids)
 
         train_base, validation_samples, test_samples = self._partition_by_base_ids(self.samples, split_base_ids)
-        train_samples = self._prepare_train_samples(train_base)
+        train_samples                                = self._prepare_train_samples(train_base)
         self._fit_stats(train_samples, requested)
         self._build_datasets(train_samples, validation_samples, test_samples, requested)
         return self.datasets, self.stats
@@ -320,7 +320,7 @@ class DatasetPipeline:
         self.prepare_samples()
 
         train_base, validation_samples, test_samples = self._split_samples(self.samples)
-        train_samples = self._prepare_train_samples(train_base)
+        train_samples                                = self._prepare_train_samples(train_base)
         return {"train": train_samples, "val": validation_samples, "test": test_samples}
 
     def run(self):
@@ -328,7 +328,7 @@ class DatasetPipeline:
         self.prepare_samples()
 
         train_base, validation_samples, test_samples = self._split_samples(self.samples)
-        train_samples = self._prepare_train_samples(train_base)
+        train_samples                                = self._prepare_train_samples(train_base)
         self._fit_stats(train_samples, self.SPLIT_NAMES)
         self._build_datasets(train_samples, validation_samples, test_samples, self.SPLIT_NAMES)
         return self.datasets, self.stats

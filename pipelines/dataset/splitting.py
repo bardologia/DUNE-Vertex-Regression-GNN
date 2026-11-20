@@ -181,7 +181,7 @@ class CrossValidationSplitter:
         self.logger.section("[Cross-Validation Folds]")
         targets = target_dataframe[self.coordinate_columns].to_numpy(dtype=np.float32)
 
-        labels, number_of_bins = self._build_labels(targets)
+        labels, number_of_bins  = self._build_labels(targets)
         splitter, is_stratified = self._outer_splitter(labels)
 
         self.logger.kv_table({

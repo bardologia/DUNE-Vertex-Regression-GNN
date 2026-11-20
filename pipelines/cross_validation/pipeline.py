@@ -8,20 +8,20 @@ import numpy as np
 import pandas as pd
 import torch
 
-from configuration.entry             import TrainEntryConfig
-from configuration.shared            import IoNames
-from models                          import get_model
-from tools.monitoring.logger         import Logger
-from tools.reporting.markdown        import MarkdownDoc, MarkdownTable, ScalarFormatter
-from tools.runtime.reproducibility   import Reproducibility
+from configuration.entry           import TrainEntryConfig
+from configuration.shared          import IoNames
+from models                        import get_model
+from tools.monitoring.logger       import Logger
+from tools.reporting.markdown      import MarkdownDoc, MarkdownTable, ScalarFormatter
+from tools.runtime.reproducibility import Reproducibility
 
-from pipelines.dataset.pipeline   import DatasetPipeline
-from pipelines.dataset.splitting  import CrossValidationSplitter
-from pipelines.inference.metrics  import InferenceMetrics
-from pipelines.inference.predictor import Predictor
-from pipelines.shared.run_metadata import TrainingRunMetadata
+from pipelines.dataset.pipeline             import DatasetPipeline
+from pipelines.dataset.splitting            import CrossValidationSplitter
+from pipelines.inference.metrics            import InferenceMetrics
+from pipelines.inference.predictor          import Predictor
+from pipelines.shared.run_metadata          import TrainingRunMetadata
 from pipelines.training.optimizer_overrides import OptimizerOverrideApplier
-from pipelines.training.trainer    import Trainer
+from pipelines.training.trainer             import Trainer
 
 
 class CrossValidationReport:
@@ -43,7 +43,7 @@ class CrossValidationReport:
             if any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in values):
                 continue
 
-            array         = np.array(values, dtype=np.float64)
+            array          = np.array(values, dtype=np.float64)
             aggregate[key] = {
                 "mean" : float(array.mean()),
                 "std"  : float(array.std(ddof=0)),
@@ -123,11 +123,11 @@ class CrossValidationReport:
 
 class CrossValidationPipeline:
     def __init__(self, entry_config, logger=None, explicit_paths=None):
-        self.entry           = entry_config
-        self.training_config = entry_config.training
+        self.entry            = entry_config
+        self.training_config  = entry_config.training
         self.cross_validation = entry_config.cross_validation
-        self.external_logger = logger
-        self.explicit_paths  = explicit_paths
+        self.external_logger  = logger
+        self.explicit_paths   = explicit_paths
 
     def _prepare_run(self):
         Reproducibility.seed_everything(self.entry.seed)
@@ -172,6 +172,7 @@ class CrossValidationPipeline:
         datasets, stats = self.dataset_pipeline.run_with_indices(train_indices, validation_indices, test_indices)
         loop            = self.training_config.loop
         loaders         = DatasetPipeline.build_loaders(datasets, loop.batch_size, num_workers=loop.num_workers, pin_memory=loop.pin_memory, persistent_workers=loop.persistent_workers, logger=self.logger)
+
         train_loader, validation_loader, test_loader = loaders
 
         self.entry.model_overrides = self.dataset_pipeline.inject_model_overrides(self.entry.model_overrides)

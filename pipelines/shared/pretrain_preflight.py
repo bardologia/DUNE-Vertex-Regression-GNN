@@ -5,7 +5,7 @@ from typing  import Callable, Optional
 
 import torch
 
-from configuration.shared        import IoNames, LogSettings
+from configuration.shared       import IoNames, LogSettings
 from tools.monitoring.logger    import Logger
 from tools.training.pretraining import PretrainContext, PretrainOrchestrator, TrainStepMemoryProbe, TrainerFeed
 

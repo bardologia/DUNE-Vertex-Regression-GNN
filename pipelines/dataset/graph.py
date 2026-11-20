@@ -179,6 +179,7 @@ class EdgeFeatures(GraphAssembler):
     def _interleave_bidirectional(self, source_node_indices, destination_node_indices, forward_features, reverse_features):
         interleaved_source      = np.empty(source_node_indices.shape[0] * 2, dtype=np.int64)
         interleaved_destination = np.empty(destination_node_indices.shape[0] * 2, dtype=np.int64)
+
         interleaved_source[0::2]      = source_node_indices
         interleaved_source[1::2]      = destination_node_indices
         interleaved_destination[0::2] = destination_node_indices

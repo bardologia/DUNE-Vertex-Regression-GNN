@@ -89,11 +89,11 @@ class Trainer:
         if self.model.graph_scalars is not None:
             regression_head_parameters += list(self.model.graph_scalars.parameters())
 
-        pool_parameters            = list(self.model.pool.parameters())
-        encoder_parameters         = list(self.model.encoder.parameters())
+        pool_parameters    = list(self.model.pool.parameters())
+        encoder_parameters = list(self.model.encoder.parameters())
 
         optimizer_config = self.config.optimizer
-        groups = [
+        groups           = [
             {"params": regression_head_parameters, "lr": self.learning_rates.regression_head, "weight_decay": optimizer_config.weight_decay_regression_head, "name": "regression_head"},
             {"params": pool_parameters,            "lr": self.learning_rates.pool,            "weight_decay": optimizer_config.weight_decay_pool,            "name": "pool"},
             {"params": encoder_parameters,         "lr": self.learning_rates.encoder,         "weight_decay": optimizer_config.weight_decay_encoder,         "name": "encoder"},

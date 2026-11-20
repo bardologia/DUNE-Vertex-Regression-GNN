@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import hashlib
 import itertools
-from pathlib import Path
+from pathlib            import Path
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import numpy as np
@@ -65,8 +65,9 @@ class ParquetDatasetWriter:
                     for path in discovered_files
                 }
                 for future in as_completed(futures):
-                    position = index_by_path[futures[future]]
+                    position                                                = index_by_path[futures[future]]
                     source_name, sensor_x, sensor_y, sensor_z, light_vector = future.result()
+
                     source_names[position] = source_name
                     target_array[position] = (sensor_x, sensor_y, sensor_z)
                     light_matrix[position] = light_vector[kept_rows]
@@ -83,6 +84,7 @@ class ParquetDatasetWriter:
         target_x = float(tokens[1])
         target_y = float(tokens[2])
         target_z = float(tokens[3])
+
         sensor_x, sensor_y, sensor_z = transform.apply_to_target(target_x, target_y, target_z)
 
         event_frame    = pd.read_csv(source_path)
@@ -103,7 +105,7 @@ class ParquetDatasetWriter:
         symbol      = {1: "p", -1: "n"}
         for event_id in range(len(target_array)):
             base_x, base_y, base_z = target_array[event_id]
-            emitted_targets = set()
+            emitted_targets        = set()
             for sign_x, sign_y, sign_z in self.SIGN_COMBINATIONS:
                 reflected_x = float(sign_x * base_x) + 0.0
                 reflected_y = float(sign_y * base_y) + 0.0
@@ -125,10 +127,10 @@ class ParquetDatasetWriter:
 
         pa_parquet.write_table(self.geometry_table(geometry_frame), self.geometry_path, compression="zstd")
 
-        channel_count   = light_matrix.shape[1]
-        light_values    = pa.array(light_matrix.reshape(-1), type=pa.int32())
-        light_list      = pa.FixedSizeListArray.from_arrays(light_values, channel_count)
-        events_table = pa.table({
+        channel_count = light_matrix.shape[1]
+        light_values  = pa.array(light_matrix.reshape(-1), type=pa.int32())
+        light_list    = pa.FixedSizeListArray.from_arrays(light_values, channel_count)
+        events_table  = pa.table({
             "event_id"        : pa.array(np.arange(len(source_names), dtype=np.int32)),
             "source_filename" : pa.array(source_names, type=pa.string()),
             "target_x"        : pa.array(target_array[:, 0], type=pa.float32()),

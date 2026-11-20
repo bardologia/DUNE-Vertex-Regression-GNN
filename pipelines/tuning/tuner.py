@@ -10,32 +10,34 @@ import optuna
 from optuna.pruners  import MedianPruner
 from optuna.samplers import TPESampler
 
-from configuration.architectures      import ModelConfigRegistry
-from configuration.shared             import IoNames
-from configuration.training.general   import OptimizerConfig
-from models                           import get_model
-from tools.runtime.reproducibility import Reproducibility
-from pipelines.dataset.pipeline   import DatasetPipeline
-from pipelines.shared.run_metadata import LightweightRunContext
-from pipelines.training.trainer   import Trainer
+from configuration.architectures    import ModelConfigRegistry
+from configuration.shared           import IoNames
+from configuration.training.general import OptimizerConfig
+from models                         import get_model
+from tools.runtime.reproducibility  import Reproducibility
+from pipelines.dataset.pipeline     import DatasetPipeline
+from pipelines.shared.run_metadata  import LightweightRunContext
+from pipelines.training.trainer     import Trainer
 
 
 class Tuner:
     def __init__(self, entry_config, logger):
-        self.entry            = entry_config
-        self.logger           = logger
-        self.tuning           = entry_config.tuning
-        self.training_config  = entry_config.training
-        self.tuner_directory  = Path(entry_config.training.io.tuner_base_dir) / entry_config.model_name
-        self.tuner_directory.mkdir(parents=True, exist_ok=True)
-        self.study            = None
+        self.entry           = entry_config
+        self.logger          = logger
+        self.tuning          = entry_config.tuning
+        self.training_config = entry_config.training
+        self.tuner_directory = Path(entry_config.training.io.tuner_base_dir) / entry_config.model_name
 
+        self.tuner_directory.mkdir(parents=True, exist_ok=True)
+
+        self.study           = None
         self.model_space     = ModelConfigRegistry.by_name()[entry_config.model_name].tunable_params()
         self.optimizer_space = OptimizerConfig.tunable_params()
 
     def _prepare_data(self):
         self.dataset_pipeline     = DatasetPipeline(self.entry.dataset, self.logger)
         self.datasets, self.stats = self.dataset_pipeline.run()
+
         self.train_loader, self.val_loader, _ = DatasetPipeline.build_loaders(self.datasets, self.tuning.batch_size, num_workers=0, logger=self.logger)
 
     def _objective(self, trial):
@@ -46,6 +48,7 @@ class Tuner:
         training_config = deepcopy(self.training_config)
         for field_name, value in optimizer_overrides.items():
             setattr(training_config.optimizer, field_name, value)
+
         training_config.loop.epochs               = self.tuning.epochs
         training_config.loop.tuning_mode          = True
         training_config.loop.batch_size           = self.tuning.batch_size
@@ -130,8 +133,8 @@ class Tuner:
 
         self._prepare_data()
 
-        sampler = TPESampler(seed=self.tuning.random_state, n_startup_trials=self.tuning.startup_trials)
-        pruner  = MedianPruner(n_startup_trials=self.tuning.warmup_trials, n_warmup_steps=self.tuning.warmup_steps)
+        sampler    = TPESampler(seed=self.tuning.random_state, n_startup_trials=self.tuning.startup_trials)
+        pruner     = MedianPruner(n_startup_trials=self.tuning.warmup_trials, n_warmup_steps=self.tuning.warmup_steps)
         self.study = optuna.create_study(direction="minimize", sampler=sampler, pruner=pruner)
 
         self.study.optimize(self._objective, n_trials=self.tuning.n_trials)

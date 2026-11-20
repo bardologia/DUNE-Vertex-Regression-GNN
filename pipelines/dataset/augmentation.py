@@ -35,6 +35,7 @@ class Augmentation:
     def _sensor_dropout(self, light, generator):
         hit_mask  = light > 0.0
         drop_mask = (generator.random(size=light.shape) < self.config.sensor_dropout_probability) & hit_mask
+
         light[drop_mask] = 0.0
         return light
 
@@ -42,6 +43,7 @@ class Augmentation:
         dark_mask     = light <= 0.0
         activate_mask = (generator.random(size=light.shape) < self.config.spurious_activation_probability) & dark_mask
         activations   = generator.uniform(0.0, self.config.spurious_activation_max_light, size=light.shape)
+
         light[activate_mask] = activations[activate_mask]
         return light
 

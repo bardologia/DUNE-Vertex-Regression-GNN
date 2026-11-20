@@ -7,9 +7,9 @@ from torch_geometric.utils import scatter
 
 class Loss:
     def __init__(self, loss_config, stats, logger):
-        self.config  = loss_config
-        self.stats   = stats
-        self.logger  = logger
+        self.config = loss_config
+        self.stats  = stats
+        self.logger = logger
 
         self.logger.section("[Loss Function]")
         self.logger.kv_table({
@@ -37,7 +37,7 @@ class Loss:
         physical_vertex = self.stats.target.inverse_torch(predictions, device)
         vertex_per_node = physical_vertex[data.batch]
 
-        squared_distance   = ((positions - vertex_per_node) ** 2).sum(dim=1) + self.config.light_falloff_epsilon
+        squared_distance    = ((positions - vertex_per_node) ** 2).sum(dim=1) + self.config.light_falloff_epsilon
         predicted_intensity = 1.0 / squared_distance
 
         light_mean     = scatter(light, data.batch, reduce="mean")[data.batch]

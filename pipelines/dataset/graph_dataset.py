@@ -227,9 +227,9 @@ class DegreeHistogramEstimator:
             maximum_degree = int(node_in_degree.max().item()) if node_in_degree.numel() else 0
 
             if maximum_degree + 1 > degree_counts.numel():
-                expanded                       = torch.zeros(maximum_degree + 1, dtype=torch.long)
+                expanded                          = torch.zeros(maximum_degree + 1, dtype=torch.long)
                 expanded[: degree_counts.numel()] = degree_counts
-                degree_counts                  = expanded
+                degree_counts                     = expanded
 
             degree_counts += torch.bincount(node_in_degree, minlength=degree_counts.numel())
 
