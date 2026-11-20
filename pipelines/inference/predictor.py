@@ -19,7 +19,7 @@ class Predictor:
         self.logger.section("[Checkpoint]")
         self.logger.kv_table({
             "Path"   : str(self.checkpoint_path),
-            "Epoch"  : checkpoint.get("epoch", "unknown"),
+            "Epoch"  : checkpoint["epoch"],
             "Device" : self.device,
         })
         return self

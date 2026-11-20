@@ -33,7 +33,7 @@ class SweepReport:
             writer.writerow(SweepMetrics.csv_columns)
             for record in records:
                 metrics = record["metrics"]
-                row     = [record["scale_factor"], record["detection_efficiency"]] + [metrics.get(column) for column in SweepMetrics.csv_columns[2:]]
+                row     = [record["scale_factor"], record["detection_efficiency"]] + [metrics[column] for column in SweepMetrics.csv_columns[2:]]
                 writer.writerow(row)
         return path
 

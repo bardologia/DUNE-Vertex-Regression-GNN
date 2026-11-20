@@ -17,15 +17,8 @@ class TrialCollector:
     def _load(self, file_name):
         path = self.pipeline_directory / file_name
         if not path.exists():
-            return None
-        return json.loads(path.read_text(encoding="utf-8"))
-
-    def _as_model_map(self, payload):
-        if payload is None:
             return {}
-        if isinstance(payload, dict):
-            return payload
-        return {record["model"]: record for record in payload}
+        return json.loads(path.read_text(encoding="utf-8"))
 
     def _record_for(self, model_name, size_match, overfit, max_batch, training):
         size_entry     = size_match.get(model_name, {})
@@ -55,10 +48,10 @@ class TrialCollector:
         }
 
     def collect(self):
-        size_match  = self._as_model_map(self._load(IoNames.size_match_file))
-        overfit     = self._as_model_map(self._load(IoNames.overfit_results_file))
-        max_batch   = self._as_model_map(self._load(IoNames.max_batch_file))
-        training    = self._as_model_map(self._load(IoNames.training_results_file))
+        size_match = self._load(IoNames.size_match_file)
+        overfit    = self._load(IoNames.overfit_results_file)
+        max_batch  = self._load(IoNames.max_batch_file)
+        training   = self._load(IoNames.training_results_file)
 
         return [self._record_for(model_name, size_match, overfit, max_batch, training) for model_name in self.models]
 
@@ -74,18 +67,18 @@ class ComparisonReport:
     def _capacity_table(self):
         table = MarkdownTable(["Model", "Parameters", "Width", "Deviation", "Flags"], align=["left", "right", "right", "right", "left"])
         for record in self.records:
-            deviation  = f"{record['size_deviation_pct']:+.2f} %" if record.get("size_deviation_pct") is not None else None
-            flags      = "; ".join(record.get("size_flags") or []) or None
-            parameters = f"{record['parameters']:,}" if record.get("parameters") is not None else None
-            table.add_row(record["model"], parameters, record.get("width"), deviation, flags)
+            deviation  = f"{record['size_deviation_pct']:+.2f} %" if record["size_deviation_pct"] is not None else None
+            flags      = "; ".join(record["size_flags"]) or None
+            parameters = f"{record['parameters']:,}" if record["parameters"] is not None else None
+            table.add_row(record["model"], parameters, record["width"], deviation, flags)
         return table
 
     def _diagnostics_table(self):
         table = MarkdownTable(["Model", "Overfit", "Overfit loss", "Max batch", "Peak (GB)"], align=["left", "left", "right", "right", "right"])
         for record in self.records:
-            overfit_loss = ScalarFormatter.format_scalar(record.get("overfit_loss"))
-            peak         = ScalarFormatter.format_scalar(record.get("max_batch_peak_gb"))
-            table.add_row(record["model"], record.get("overfit_status"), overfit_loss, record.get("max_batch"), peak)
+            overfit_loss = ScalarFormatter.format_scalar(record["overfit_loss"])
+            peak         = ScalarFormatter.format_scalar(record["max_batch_peak_gb"])
+            table.add_row(record["model"], record["overfit_status"], overfit_loss, record["max_batch"], peak)
         return table
 
     def _training_table(self):
@@ -94,16 +87,16 @@ class ComparisonReport:
             lr_scale = f"{record['lr_scale']:.4f}" if record.get("lr_scale") is not None else None
             table.add_row(
                 record["model"],
-                record.get("train_status"),
-                ScalarFormatter.format_scalar(record.get("best_val_loss")),
+                record["train_status"],
+                ScalarFormatter.format_scalar(record["best_val_loss"]),
                 record.get("train_batch_size"),
                 lr_scale,
-                ScalarFormatter.format_scalar(record.get("duration_s")),
+                ScalarFormatter.format_scalar(record["duration_s"]),
             )
         return table
 
     def _ranked_records(self):
-        scored = [record for record in self.records if record.get("metrics", {}).get(self.rank_metric) is not None]
+        scored = [record for record in self.records if record["metrics"].get(self.rank_metric) is not None]
         ascending = self.rank_metric != "r2"
         return sorted(scored, key=lambda record: record["metrics"][self.rank_metric], reverse=not ascending)
 

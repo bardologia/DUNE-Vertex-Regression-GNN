@@ -165,15 +165,15 @@ class FeatureImportanceReport:
         self._configuration_table(document, context, baseline)
         self._feature_inventory(document, inventory)
 
-        if analysis.get("permutation") is not None:
+        if analysis["permutation"] is not None:
             self._perturbation_section(document, "Permutation importance", analysis["permutation"])
-        if analysis.get("occlusion") is not None:
+        if analysis["occlusion"] is not None:
             self._perturbation_section(document, "Occlusion (mean-ablation) importance", analysis["occlusion"])
-        if analysis.get("gradient") is not None:
+        if analysis["gradient"] is not None:
             self._gradient_section(document, analysis["gradient"])
-        if analysis.get("expected_gradients") is not None:
+        if analysis["expected_gradients"] is not None:
             self._axis_section(document, "Expected gradients (SHAP)", "Expected-gradients attribution: integrated gradients of each predicted coordinate with respect to the normalized input features, averaged over interpolation paths from data-distribution baselines. Values are additive Shapley-consistent attributions in normalized prediction units; the overall column sums the absolute attribution across the three coordinates. The completeness check below should approach 1 as the path-sample count grows.", analysis["expected_gradients"], "Path samples")
-        if analysis.get("kernel_shap") is not None:
+        if analysis["kernel_shap"] is not None:
             self._axis_section(document, "Kernel SHAP", "Kernel SHAP attribution computed with the `shap` library: per-event Shapley values over the feature channels, where an absent channel is replaced by its dataset mean (the occlusion baseline). Values are in normalized prediction units, attributed per coordinate; the overall column sums the absolute attribution across the three coordinates. Mean over the attributed events. The completeness check below is the ratio of summed attributions to the prediction shift from the all-masked baseline.", analysis["kernel_shap"], "Coalition samples")
 
         self._consensus_section(document, analysis["consensus"])

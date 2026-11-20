@@ -139,7 +139,7 @@ class BenchmarkPipeline:
             self.logger.section("[Benchmark Summary]")
             self.logger.kv_table({
                 "Models"   : len(self.models),
-                "Trained"  : sum(1 for record in self.training_records.values() if record.get("status") == "DONE"),
+                "Trained"  : sum(1 for record in self.training_records.values() if record["status"] == "DONE"),
                 "Report"   : comparison["report_path"],
             }, title="Done")
 

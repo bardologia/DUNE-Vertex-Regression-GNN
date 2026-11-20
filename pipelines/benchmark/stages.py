@@ -128,7 +128,7 @@ class OverfitGateStage(BenchmarkStage):
         self.loader  = GraphDataLoader(self.subset, batch_size=self.gate.batch_size, shuffle=True)
 
     def _reusable(self, record):
-        return record.get("status") == "PASS"
+        return record["status"] == "PASS"
 
     def _train_tiny(self, model_name):
         training_config                     = deepcopy(self.config.training)
@@ -197,7 +197,7 @@ class MaxBatchStage(BenchmarkStage):
         self.subset = Subset(self.dataset, selection.tolist())
 
     def _reusable(self, record):
-        return record.get("status") == "PASS"
+        return record["status"] == "PASS"
 
     def _compute(self, model_name):
         probe  = MaxBatchProbe(self.config, model_name, self.subset, self.stats, self.logger, overrides=self._overrides(model_name))
@@ -228,7 +228,7 @@ class TrainingStage(BenchmarkStage):
         self.device             = self.config.training.loop.device if torch.cuda.is_available() else "cpu"
 
     def _reusable(self, record):
-        return record.get("status") == "DONE" and bool(record.get("metrics"))
+        return record["status"] == "DONE" and bool(record["metrics"])
 
     def _batch_size(self, model_name):
         record = self.max_batch_records.get(model_name, {})
