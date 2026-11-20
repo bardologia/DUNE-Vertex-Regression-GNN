@@ -39,8 +39,8 @@ class MaxBatchConfig:
 
 @dataclass
 class BenchmarkTrainingConfig:
-    epochs               : int  = 50
-    use_measured_batch   : bool = True
+    epochs             : int  = 50
+    use_measured_batch : bool = True
 
 
 @dataclass
@@ -50,16 +50,16 @@ class ComparisonConfig:
 
 @dataclass
 class BenchmarkConfig:
-    seed        : int        = 42
-    run_name    : str        = ""
-    resume      : bool       = True
-    skip_models : tuple      = ()
+    seed        : int   = 42
+    run_name    : str   = ""
+    resume      : bool  = True
+    skip_models : tuple = ()
 
-    size_match         : SizeMatchConfig        = field(default_factory=SizeMatchConfig)
-    overfit            : OverfitGateConfig      = field(default_factory=OverfitGateConfig)
-    max_batch          : MaxBatchConfig         = field(default_factory=MaxBatchConfig)
+    size_match         : SizeMatchConfig         = field(default_factory=SizeMatchConfig)
+    overfit            : OverfitGateConfig       = field(default_factory=OverfitGateConfig)
+    max_batch          : MaxBatchConfig          = field(default_factory=MaxBatchConfig)
     benchmark_training : BenchmarkTrainingConfig = field(default_factory=BenchmarkTrainingConfig)
-    comparison         : ComparisonConfig       = field(default_factory=ComparisonConfig)
+    comparison         : ComparisonConfig        = field(default_factory=ComparisonConfig)
 
     dataset  : DatasetConfig  = field(default_factory=DatasetConfig)
     training : TrainingConfig = field(default_factory=TrainingConfig)

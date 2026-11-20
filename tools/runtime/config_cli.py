@@ -71,7 +71,7 @@ class ConfigCli:
 
     def __init__(self, config, description: str | None = None) -> None:
         self.config    = config
-        self.overrides : dict = {}
+        self.overrides = {}
         self.parser    = argparse.ArgumentParser(description=description, add_help=False, allow_abbrev=False)
 
         self.parser.add_argument(CliSettings.help_config_flag, action="store_true", dest="_help_config")

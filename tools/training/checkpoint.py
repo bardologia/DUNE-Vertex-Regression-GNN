@@ -21,7 +21,7 @@ class Checkpoint:
         self.best_epoch      = -1
 
     def save(self, trainer, path: str, epoch: int) -> None:
-        checkpoint = trainer.capture_state(epoch)
+        checkpoint                  = trainer.capture_state(epoch)
         checkpoint["best_val_loss"] = self.best_val_loss
         checkpoint["best_epoch"]    = self.best_epoch
 

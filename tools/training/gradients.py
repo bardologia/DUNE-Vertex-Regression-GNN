@@ -22,7 +22,7 @@ class GradientClipper:
         self.epsilon             = config.gradient_clipper.clip_epsilon
         self.log_histogram_freq  = config.gradient_clipper.log_histogram_freq
 
-        self.history     : list[float] = []
+        self.history = []
 
         fields = {"Mode": self.mode}
 

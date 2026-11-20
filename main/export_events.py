@@ -2,8 +2,8 @@ from _bootstrap import EnvironmentPinner
 
 EnvironmentPinner.pin()
 
-from configuration.entry            import InferenceEntryConfig
-from tools.runtime.config_cli       import ConfigCli
+from configuration.entry              import InferenceEntryConfig
+from tools.runtime.config_cli         import ConfigCli
 from pipelines.inference.event_export import EventExportPipeline
 
 
