@@ -183,6 +183,7 @@ class ResourceMonitor:
         metrics["proc_cpu_pct"] = float(self.process.cpu_percent(None))
         try:
             la1, la5, la15 = os.getloadavg()
+
             metrics["loadavg_1m"]  = float(la1)
             metrics["loadavg_5m"]  = float(la5)
             metrics["loadavg_15m"] = float(la15)
@@ -191,6 +192,7 @@ class ResourceMonitor:
 
     def _sample_shm_metrics(self, metrics):
         shm_used_gb, shm_pct = self._get_shm_usage()
+
         metrics["shm_used_gb"] = shm_used_gb
         metrics["shm_pct"]     = shm_pct
 
