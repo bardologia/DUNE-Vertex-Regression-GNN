@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from configuration.architectures import MODEL_CONFIG_REGISTRY
+from configuration.architectures import ModelConfigRegistry
 from models import get_model
 
 
@@ -44,7 +44,7 @@ class ModelSizer:
         return self.parameter_count(model)
 
     def _alignment(self, model_name):
-        config = MODEL_CONFIG_REGISTRY[model_name]()
+        config = ModelConfigRegistry.by_name()[model_name]()
         heads  = getattr(config, "heads", 1)
         return max(1, int(heads))
 

@@ -10,7 +10,7 @@ import optuna
 from optuna.pruners  import MedianPruner
 from optuna.samplers import TPESampler
 
-from configuration.architectures      import MODEL_CONFIG_REGISTRY
+from configuration.architectures      import ModelConfigRegistry
 from configuration.shared             import IoNames
 from configuration.training.general   import OptimizerConfig
 from models                           import get_model
@@ -30,7 +30,7 @@ class Tuner:
         self.tuner_directory.mkdir(parents=True, exist_ok=True)
         self.study            = None
 
-        self.model_space     = MODEL_CONFIG_REGISTRY[entry_config.model_name].tunable_params()
+        self.model_space     = ModelConfigRegistry.by_name()[entry_config.model_name].tunable_params()
         self.optimizer_space = OptimizerConfig.tunable_params()
 
     def _prepare_data(self):

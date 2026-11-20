@@ -186,19 +186,8 @@ class GINECascadeConfig(GINEConfig):
     head_type : str = "cascade"
 
 
-MODEL_CONFIG_REGISTRY: dict[str, type] = {
-    "edgeconv"     : EdgeConvConfig,
-    "gine"         : GINEConfig,
-    "gatv2_cascade": GATv2CascadeConfig,
-    "gine_cascade" : GINECascadeConfig,
-    "gatv2"        : GATv2Config,
-    "graphsage"    : GraphSAGEConfig,
-    "pna"          : PNAConfig,
-    "res_gated"    : ResGatedConfig,
-    "gps_cascade"  : GPSCascadeConfig,
-    "general_conv" : GeneralConvConfig,
-    "gps"          : GPSConfig,
-    "gps_lite"     : GPSLiteConfig,
-    "gcn"          : GCNConfig,
-    "transformer"  : TransformerConvConfig,
-}
+class ModelConfigRegistry:
+    @staticmethod
+    def by_name() -> dict:
+        configs = (EdgeConvConfig, GINEConfig, GATv2CascadeConfig, GINECascadeConfig, GATv2Config, GraphSAGEConfig, PNAConfig, ResGatedConfig, GPSCascadeConfig, GeneralConvConfig, GPSConfig, GPSLiteConfig, GCNConfig, TransformerConvConfig)
+        return {config.name: config for config in configs}

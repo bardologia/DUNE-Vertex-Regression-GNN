@@ -1,9 +1,9 @@
-from .architectures    import BaseGNNConfig, MODEL_CONFIG_REGISTRY
-from .baseline          import BaselineConfig
-from .cross_validation  import CrossValidationConfig
-from .data              import AugmentationConfig, DataConfig, DatasetConfig, GraphConfig, PhysicsConfig, SplitConfig
-from .entry             import BaselineEntryConfig, CrossValidationEntryConfig, DatasetEntryConfig, InferenceEntryConfig, TrainEntryConfig, TuneEntryConfig
-from .training      import (
+from .architectures    import BaseGNNConfig, ModelConfigRegistry
+from .baseline         import BaselineConfig
+from .cross_validation import CrossValidationConfig
+from .data             import AugmentationConfig, DataConfig, DatasetConfig, GraphConfig, PhysicsConfig, SplitConfig
+from .entry            import BaselineEntryConfig, CrossValidationEntryConfig, DatasetEntryConfig, InferenceEntryConfig, TrainEntryConfig, TuneEntryConfig
+from .training         import (
     EarlyStoppingConfig,
     GradientClipperConfig,
     IOConfig,
@@ -18,11 +18,11 @@ from .training      import (
     TrainingLoopConfig,
     WarmupConfig,
 )
-from .tuning        import TuningConfig
+from .tuning           import TuningConfig
 
 __all__ = [
     "BaseGNNConfig",
-    "MODEL_CONFIG_REGISTRY",
+    "ModelConfigRegistry",
     "BaselineConfig",
     "BaselineEntryConfig",
     "CrossValidationConfig",

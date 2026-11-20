@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from models import MODEL_REGISTRY, get_model
+from models import ModelFactory, get_model
 
 
 CLAMP_BOUNDS = {"clamp_lower": (-2.0, -2.0, -2.0), "clamp_upper": (2.0, 2.0, 2.0)}
@@ -13,7 +13,7 @@ def _overrides_for(model_name):
     return dict(CLAMP_BOUNDS)
 
 
-@pytest.mark.parametrize("model_name", list(MODEL_REGISTRY))
+@pytest.mark.parametrize("model_name", list(ModelFactory.by_name()))
 def test_model_forward_shape(model_name, synthetic_batch):
     model, config = get_model(model_name, **_overrides_for(model_name))
     model.eval()

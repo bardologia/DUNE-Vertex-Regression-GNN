@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from configuration.architectures import MODEL_CONFIG_REGISTRY
+from configuration.architectures import ModelConfigRegistry
 from configuration.benchmark     import BenchmarkConfig
 from pipelines.benchmark         import BenchmarkPipeline, ComparisonReport, ModelSizer, TrialCollector
 from pipelines.benchmark.stages  import BenchmarkStage
@@ -13,7 +13,7 @@ from pipelines.shared             import StoreGeometryRecord
 def _model_overrides(config):
     node_dim, edge_dim, graph_dim = FeatureSchema(config.dataset).dimensions()
     base = {"input_dim": node_dim, "edge_dim": edge_dim, "graph_dim": graph_dim, "clamp_lower": (-2.0, -2.0, -2.0), "clamp_upper": (2.0, 2.0, 2.0)}
-    return {model_name: dict(base) for model_name in MODEL_CONFIG_REGISTRY}
+    return {model_name: dict(base) for model_name in ModelConfigRegistry.by_name()}
 
 
 def test_model_sizer_matches_reference(quiet_logger):
@@ -37,7 +37,7 @@ def test_model_sizer_produces_head_divisible_width(quiet_logger):
     target = sizer.reference_count()
     result = sizer.match("gps_lite", target)
 
-    heads = MODEL_CONFIG_REGISTRY["gps_lite"]().heads
+    heads = ModelConfigRegistry.by_name()["gps_lite"]().heads
 
     assert result.parameters > 0
     assert result.width % heads == 0
@@ -109,7 +109,7 @@ def test_benchmark_pipeline_runs(dataset_config, quiet_logger, tmp_path):
     keep   = {"graphsage", "gine"}
     config = BenchmarkConfig()
 
-    config.skip_models                = tuple(model_name for model_name in MODEL_CONFIG_REGISTRY if model_name not in keep)
+    config.skip_models                = tuple(model_name for model_name in ModelConfigRegistry.by_name() if model_name not in keep)
     config.size_match.reference_model = "graphsage"
     config.size_match.tolerance       = 0.20
 

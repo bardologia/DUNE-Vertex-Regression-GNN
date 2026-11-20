@@ -1,6 +1,6 @@
 from dataclasses import fields
 
-from configuration.architectures import MODEL_CONFIG_REGISTRY
+from configuration.architectures import ModelConfigRegistry
 
 from .blocks          import GraphRegressor
 from .edgeconv        import DynamicEdgeConv
@@ -15,33 +15,36 @@ from .pna             import PNA
 from .res_gated       import ResGatedGNN
 from .transformer_conv import GraphTransformer
 
-MODEL_REGISTRY: dict[str, type] = {
-    "edgeconv"     : DynamicEdgeConv,
-    "gine"         : GINE,
-    "gatv2_cascade": GATv2,
-    "gine_cascade" : GINE,
-    "gatv2"        : GATv2,
-    "graphsage"    : GraphSAGE,
-    "pna"          : PNA,
-    "res_gated"    : ResGatedGNN,
-    "gps_cascade"  : GPS,
-    "general_conv" : GeneralGNN,
-    "gps"          : GPS,
-    "gps_lite"     : GPSLite,
-    "gcn"          : GCN,
-    "transformer"  : GraphTransformer,
-}
 
 
 class ModelFactory:
+    @staticmethod
+    def by_name() -> dict:
+        return {
+            "edgeconv"      : DynamicEdgeConv,
+            "gine"          : GINE,
+            "gatv2_cascade" : GATv2,
+            "gine_cascade"  : GINE,
+            "gatv2"         : GATv2,
+            "graphsage"     : GraphSAGE,
+            "pna"           : PNA,
+            "res_gated"     : ResGatedGNN,
+            "gps_cascade"   : GPS,
+            "general_conv"  : GeneralGNN,
+            "gps"           : GPS,
+            "gps_lite"      : GPSLite,
+            "gcn"           : GCN,
+            "transformer"   : GraphTransformer,
+        }
+
     @classmethod
     def create(cls, name: str, config=None, **overrides):
         key = name.lower().replace("-", "_").replace(" ", "_")
-        if key not in MODEL_REGISTRY:
-            raise ValueError(f"Unknown model '{name}'. Available: {list(MODEL_REGISTRY.keys())}")
+        if key not in cls.by_name():
+            raise ValueError(f"Unknown model '{name}'. Available: {list(cls.by_name())}")
 
         if config is None:
-            config = MODEL_CONFIG_REGISTRY[key](**overrides)
+            config = ModelConfigRegistry.by_name()[key](**overrides)
         elif overrides:
             valid_field_names = {field_definition.name for field_definition in fields(config)}
             unknown_keys      = [key_name for key_name in overrides if key_name not in valid_field_names]
@@ -50,7 +53,7 @@ class ModelFactory:
             for field_name, value in overrides.items():
                 setattr(config, field_name, value)
 
-        return MODEL_REGISTRY[key](config), config
+        return cls.by_name()[key](config), config
 
 
 get_model = ModelFactory.create
@@ -69,7 +72,7 @@ __all__ = [
     "PNA",
     "ResGatedGNN",
     "GraphTransformer",
-    "MODEL_REGISTRY",
-    "MODEL_CONFIG_REGISTRY",
+    "ModelFactory",
+    "ModelConfigRegistry",
     "get_model",
 ]

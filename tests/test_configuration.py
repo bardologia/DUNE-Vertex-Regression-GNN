@@ -1,4 +1,4 @@
-from configuration import MODEL_CONFIG_REGISTRY, TrainEntryConfig
+from configuration import ModelConfigRegistry, TrainEntryConfig
 from configuration.architectures import GPSConfig
 from tools import ConfigCli
 
@@ -8,7 +8,7 @@ def test_model_config_registry_complete():
         "gps", "gps_lite", "gps_cascade", "gatv2", "gatv2_cascade", "gine", "gine_cascade",
         "graphsage", "pna", "gcn", "transformer", "edgeconv", "general_conv", "res_gated",
     }
-    assert set(MODEL_CONFIG_REGISTRY) == expected
+    assert set(ModelConfigRegistry.by_name()) == expected
 
 
 def test_cascade_head_type():
@@ -17,15 +17,15 @@ def test_cascade_head_type():
 
 
 def test_model_configs_declare_tunable_params():
-    for name, config_class in MODEL_CONFIG_REGISTRY.items():
+    for name, config_class in ModelConfigRegistry.by_name().items():
         space = config_class.tunable_params()
         assert isinstance(space, dict) and len(space) > 0
         for specification in space.values():
             assert specification["type"] in ("float", "int", "categorical")
 
-    assert "heads" in MODEL_CONFIG_REGISTRY["gatv2"].tunable_params()
-    assert "heads" not in MODEL_CONFIG_REGISTRY["gcn"].tunable_params()
-    assert "sag_ratio" not in MODEL_CONFIG_REGISTRY["gps"].tunable_params()
+    assert "heads" in ModelConfigRegistry.by_name()["gatv2"].tunable_params()
+    assert "heads" not in ModelConfigRegistry.by_name()["gcn"].tunable_params()
+    assert "sag_ratio" not in ModelConfigRegistry.by_name()["gps"].tunable_params()
 
 
 def test_sagpool_config_exposes_sag_ratio():
@@ -42,7 +42,7 @@ def test_gps_declares_lower_optimizer_overrides():
     overrides = GPSConfig().optimizer_overrides
     assert overrides["learning_rate_encoder"] < 1e-3
     assert overrides["learning_rate_regression_head"] < 1e-2
-    assert MODEL_CONFIG_REGISTRY["gcn"]().optimizer_overrides == {}
+    assert ModelConfigRegistry.by_name()["gcn"]().optimizer_overrides == {}
 
 
 def test_optimizer_overrides_applied_and_cli_wins():

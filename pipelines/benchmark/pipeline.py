@@ -7,7 +7,7 @@ from pathlib  import Path
 import numpy as np
 import torch
 
-from configuration.architectures import MODEL_CONFIG_REGISTRY
+from configuration.architectures import ModelConfigRegistry
 from configuration.shared        import IoNames, LogSettings
 from tools.monitoring.logger      import Logger
 from tools.runtime.config_cli     import ConfigCli
@@ -44,7 +44,7 @@ class BenchmarkPipeline:
 
         ConfigCli.save_resolved(self.config, self.pipeline_directory / IoNames.resolved_config_file)
 
-        self.models = [model_name for model_name in MODEL_CONFIG_REGISTRY if model_name not in set(self.config.skip_models)]
+        self.models = [model_name for model_name in ModelConfigRegistry.by_name() if model_name not in set(self.config.skip_models)]
 
         self.logger.section("[Benchmark Pipeline]")
         self.logger.kv_table({
