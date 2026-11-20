@@ -78,7 +78,7 @@ class ConfigCli:
         self.parser.add_argument(*CliSettings.detach_flags, action="store_true", dest="_detach")
 
         for path, value in self._leaves(config):
-            if value is not None and not isinstance(value, CliSettings.supported_types):
+            if not self._editable(value):
                 continue
 
             options = [f"--{path}"]
@@ -162,7 +162,10 @@ class ConfigCli:
             Detacher().ensure()
 
         for path, current in list(self._leaves(self.config)):
-            raw = getattr(args, path, None)
+            if not self._editable(current):
+                continue
+
+            raw = getattr(args, path)
             if raw is None:
                 continue
 
@@ -199,9 +202,13 @@ class ConfigCli:
                 mapping[path] = str(value)
             elif isinstance(value, tuple):
                 mapping[path] = list(value)
-            elif value is None or isinstance(value, CliSettings.supported_types):
+            elif cls._editable(value):
                 mapping[path] = value
         return mapping
+
+    @staticmethod
+    def _editable(value) -> bool:
+        return value is None or isinstance(value, CliSettings.supported_types)
 
     @classmethod
     def save_resolved(cls, config, path: Path) -> Path:
