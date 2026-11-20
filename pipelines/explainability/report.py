@@ -4,22 +4,12 @@ import csv
 import json
 from pathlib import Path
 
-from configuration.shared     import IoNames
-from tools.reporting.markdown import MarkdownDoc, MarkdownTable
+from configuration.explainability.general import ImportanceReportColumns
+from configuration.shared                 import IoNames
+from tools.reporting.markdown             import MarkdownDoc, MarkdownTable
 
 
 class FeatureImportanceReport:
-    CSV_COLUMNS = (
-        "feature", "group",
-        "permutation_delta", "permutation_std", "permutation_pct_increase",
-        "permutation_delta_mae", "permutation_delta_rmse", "permutation_delta_r2",
-        "occlusion_delta", "occlusion_delta_mae", "occlusion_delta_rmse", "occlusion_delta_r2",
-        "gradient_saliency", "gradient_input_times_grad",
-        "expected_gradient", "expected_gradient_x", "expected_gradient_y", "expected_gradient_z",
-        "kernel_shap", "kernel_shap_x", "kernel_shap_y", "kernel_shap_z",
-        "consensus_mean_rank",
-    )
-
     def __init__(self, output_directory, logger, metric, top_k):
         self.output_directory = Path(output_directory)
         self.logger           = logger
@@ -37,9 +27,9 @@ class FeatureImportanceReport:
         path = self.output_directory / name
         with open(path, "w", newline="", encoding="utf-8") as handle:
             writer = csv.writer(handle)
-            writer.writerow(self.CSV_COLUMNS)
+            writer.writerow(ImportanceReportColumns.csv)
             for row in rows:
-                writer.writerow([row.get(column) for column in self.CSV_COLUMNS])
+                writer.writerow([row.get(column) for column in ImportanceReportColumns.csv])
         return path
 
     def _introduction(self, document):

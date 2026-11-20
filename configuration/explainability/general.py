@@ -37,3 +37,46 @@ class FeatureImportanceConfig:
 
     primary_metric      : str  = "euclidean_mean"
     top_k               : int  = 15
+
+
+@dataclass(frozen=True)
+class ImportanceMetrics:
+    keys        : tuple = ("euclidean_mean", "euclidean_median", "mae", "rmse", "r2")
+    descriptors : tuple = (("euclidean_mean", ("m", False)), ("euclidean_median", ("m", False)), ("mae", ("m", False)), ("rmse", ("m", False)), ("r2", ("", True)))
+
+
+@dataclass(frozen=True)
+class PermutationSeeding:
+    domain_offsets : tuple = (("node", 0), ("edge", 100_000))
+    column_stride  : int   = 131
+    repeat_stride  : int   = 7919
+
+
+@dataclass(frozen=True)
+class KernelShapSettings:
+    chunk_size : int = 64
+
+
+@dataclass(frozen=True)
+class ImportancePlotStyle:
+    figure_width   : float = 7.0
+    minimum_height : float = 2.6
+    row_height     : float = 0.34
+    height_padding : float = 1.0
+    bar_height     : float = 0.74
+    line_width     : float = 0.8
+    line_color     : str   = "#525252"
+
+
+@dataclass(frozen=True)
+class ImportanceReportColumns:
+    csv : tuple = (
+        "feature", "group",
+        "permutation_delta", "permutation_std", "permutation_pct_increase",
+        "permutation_delta_mae", "permutation_delta_rmse", "permutation_delta_r2",
+        "occlusion_delta", "occlusion_delta_mae", "occlusion_delta_rmse", "occlusion_delta_r2",
+        "gradient_saliency", "gradient_input_times_grad",
+        "expected_gradient", "expected_gradient_x", "expected_gradient_y", "expected_gradient_z",
+        "kernel_shap", "kernel_shap_x", "kernel_shap_y", "kernel_shap_z",
+        "consensus_mean_rank",
+    )

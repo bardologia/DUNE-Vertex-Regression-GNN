@@ -9,14 +9,12 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from configuration.shared      import IoNames
-from pipelines.inference.plots import FigureWriter
+from configuration.explainability.general import ImportancePlotStyle
+from configuration.shared                 import IoNames
+from pipelines.inference.plots            import FigureWriter
 
 
 class FeatureImportancePlots(FigureWriter):
-    NODE_COLOR = "#2c7fb8"
-    EDGE_COLOR = "#31a354"
-
     def _bar(self, names, values, errors, xlabel, title, filename, color):
         if len(names) == 0:
             return
@@ -28,12 +26,12 @@ class FeatureImportancePlots(FigureWriter):
         ordered_values = values[order]
         ordered_errors = np.asarray(errors, dtype=np.float64)[order] if errors is not None else None
 
-        height       = max(2.6, 0.34 * len(ordered_names) + 1.0)
-        figure, axis = plt.subplots(figsize=(7.0, height))
+        height       = max(ImportancePlotStyle.minimum_height, ImportancePlotStyle.row_height * len(ordered_names) + ImportancePlotStyle.height_padding)
+        figure, axis = plt.subplots(figsize=(ImportancePlotStyle.figure_width, height))
         positions    = np.arange(len(ordered_names))
 
-        axis.barh(positions, ordered_values, xerr=ordered_errors, color=color, edgecolor="none", height=0.74, error_kw={"elinewidth": 0.8, "ecolor": "#525252"})
-        axis.axvline(0.0, color="#525252", linewidth=0.8)
+        axis.barh(positions, ordered_values, xerr=ordered_errors, color=color, edgecolor="none", height=ImportancePlotStyle.bar_height, error_kw={"elinewidth": ImportancePlotStyle.line_width, "ecolor": ImportancePlotStyle.line_color})
+        axis.axvline(0.0, color=ImportancePlotStyle.line_color, linewidth=ImportancePlotStyle.line_width)
         axis.set_yticks(positions)
         axis.set_yticklabels(ordered_names)
         axis.set_xlabel(xlabel)

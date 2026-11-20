@@ -7,8 +7,10 @@ from pathlib  import Path
 import numpy as np
 from scipy.stats import rankdata
 
-from configuration.entry             import TrainEntryConfig
-from configuration.shared            import IoNames
+from configuration.entry                  import TrainEntryConfig
+from configuration.explainability.general import ImportanceMetrics
+from configuration.inference.general      import PlotStyle
+from configuration.shared                 import IoNames
 from models                          import get_model
 from tools.monitoring.logger         import Logger, NullLogger
 from tools.runtime.config_cli        import ConfigCli
@@ -26,17 +28,9 @@ from pipelines.explainability.report     import FeatureImportanceReport
 
 
 class MetricDescriptor:
-    DESCRIPTORS = {
-        "euclidean_mean"   : ("m", False),
-        "euclidean_median" : ("m", False),
-        "mae"              : ("m", False),
-        "rmse"             : ("m", False),
-        "r2"               : ("",  True),
-    }
-
     def __init__(self, name):
         self.name                        = name
-        self.unit, self.higher_is_better = self.DESCRIPTORS[name]
+        self.unit, self.higher_is_better = dict(ImportanceMetrics.descriptors)[name]
 
     @property
     def delta_label(self):
@@ -47,8 +41,6 @@ class MetricDescriptor:
 
 
 class FeatureImportancePipeline:
-    METRIC_KEYS = ("euclidean_mean", "euclidean_median", "mae", "rmse", "r2")
-
     def __init__(self, config, logger=None):
         self.config           = config
         self.run_directory    = Path(config.run_directory)
@@ -137,7 +129,7 @@ class FeatureImportancePipeline:
         self.engine = EvaluationGraphTensors(dataset, self.batch_size, self.config.max_events, self.logger).prepare()
         self._assert_layout_consistency()
 
-        self.evaluator = SplitMetricEvaluator(self.predictor, self.METRIC_KEYS)
+        self.evaluator = SplitMetricEvaluator(self.predictor, ImportanceMetrics.keys)
 
         predictions, targets = self.predictor.predict(self.engine.loader())
         self.baseline        = InferenceMetrics(self.logger).compute(predictions, targets, stage="baseline")
@@ -155,7 +147,7 @@ class FeatureImportancePipeline:
             return
         node_groups      = self.node_groups if self.config.grouped else {}
         edge_groups      = self.edge_groups if self.config.grouped else {}
-        estimator        = PermutationImportance(self.engine, self.evaluator, self.baseline, self.METRIC_KEYS, self.primary_metric, self.config.permutation_seed, self.config.permutation_repeats, self.logger)
+        estimator        = PermutationImportance(self.engine, self.evaluator, self.baseline, ImportanceMetrics.keys, self.primary_metric, self.config.permutation_seed, self.config.permutation_repeats, self.logger)
         self.permutation = estimator.run(self.node_columns, node_groups, self.edge_columns, edge_groups)
 
     def _run_occlusion(self):
@@ -163,7 +155,7 @@ class FeatureImportancePipeline:
             return
         node_groups    = self.node_groups if self.config.grouped else {}
         edge_groups    = self.edge_groups if self.config.grouped else {}
-        estimator      = OcclusionImportance(self.engine, self.evaluator, self.baseline, self.METRIC_KEYS, self.primary_metric, self.config.permutation_seed, self.logger)
+        estimator      = OcclusionImportance(self.engine, self.evaluator, self.baseline, ImportanceMetrics.keys, self.primary_metric, self.config.permutation_seed, self.logger)
         self.occlusion = estimator.run(self.node_columns, node_groups, self.edge_columns, edge_groups)
 
     def _run_gradient(self):
@@ -351,8 +343,8 @@ class FeatureImportancePipeline:
         }
 
     def _figure_specifications(self):
-        node_color = FeatureImportancePlots.NODE_COLOR
-        edge_color = FeatureImportancePlots.EDGE_COLOR
+        node_color = PlotStyle.primary_color
+        edge_color = PlotStyle.secondary_color
         figures    = []
 
         if self.permutation is not None:

@@ -4,12 +4,12 @@ import numpy as np
 import torch
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
+from configuration.explainability.general import KernelShapSettings, PermutationSeeding
+from configuration.inference.general      import VertexCoordinates
+from configuration.shared                 import MeasurementUnits
+
 
 class PerturbationImportance:
-    DOMAIN_OFFSET  = {"node": 0, "edge": 100_000}
-    COLUMN_STRIDE  = 131
-    REPEAT_STRIDE  = 7919
-
     def __init__(self, engine, evaluator, baseline, metric_keys, primary_metric, seed, logger):
         self.engine         = engine
         self.evaluator      = evaluator
@@ -43,7 +43,7 @@ class PerturbationImportance:
         primary_std    = float(primary_values.std(ddof=0))
 
         baseline_primary = self.baseline[self.primary_metric]
-        pct_increase     = float(100.0 * deltas[self.primary_metric] / baseline_primary) if baseline_primary != 0.0 else float("nan")
+        pct_increase     = float(MeasurementUnits.percent * deltas[self.primary_metric] / baseline_primary) if baseline_primary != 0.0 else float("nan")
         return deltas, primary_std, pct_increase
 
     def _evaluate_item(self, domain, columns, progress, task_id):
@@ -102,7 +102,7 @@ class PermutationImportance(PerturbationImportance):
         return self.repeats
 
     def _perturb(self, domain, columns, repeat_index):
-        identifier  = self.seed + self.DOMAIN_OFFSET[domain] + columns[0] * self.COLUMN_STRIDE + repeat_index * self.REPEAT_STRIDE
+        identifier  = self.seed + dict(PermutationSeeding.domain_offsets)[domain] + columns[0] * PermutationSeeding.column_stride + repeat_index * PermutationSeeding.repeat_stride
         generator   = np.random.default_rng(identifier)
         permutation = torch.from_numpy(generator.permutation(self._row_count(domain)))
 
@@ -200,8 +200,6 @@ class GradientSaliency:
 
 
 class ExpectedGradients:
-    COORDINATES = ("x", "y", "z")
-
     def __init__(self, model, device, engine, samples, events, seed, logger):
         self.model      = model
         self.device     = device
@@ -211,7 +209,7 @@ class ExpectedGradients:
         self.seed       = seed
         self.logger     = logger
 
-        self.coordinate_count = len(self.COORDINATES)
+        self.coordinate_count = len(VertexCoordinates.names)
 
         self.subset_graphs      = None
         self.subset_node_matrix = None
@@ -336,7 +334,7 @@ class ExpectedGradients:
         reference  = self.real_output - self.baseline_output
 
         ratios = {}
-        for index, name in enumerate(self.COORDINATES):
+        for index, name in enumerate(VertexCoordinates.names):
             ratios[name] = float(attributed[index] / reference[index]) if reference[index] != 0.0 else float("nan")
         return ratios
 
@@ -345,7 +343,7 @@ class ExpectedGradients:
         edge_phi = (self.edge_signed / self.samples).numpy()
 
         return {
-            "coordinates"  : self.COORDINATES,
+            "coordinates"  : VertexCoordinates.names,
             "node_overall" : np.abs(node_phi).sum(axis=2).mean(axis=0),
             "edge_overall" : np.abs(edge_phi).sum(axis=2).mean(axis=0),
             "node_per_axis": np.abs(node_phi).mean(axis=0).T,
@@ -376,9 +374,6 @@ class ExpectedGradients:
 
 
 class KernelShapImportance:
-    COORDINATES = ("x", "y", "z")
-    CHUNK_SIZE  = 64
-
     def __init__(self, model, device, engine, samples, events, seed, logger):
         self.model      = model
         self.device     = device
@@ -388,7 +383,7 @@ class KernelShapImportance:
         self.seed       = seed
         self.logger     = logger
 
-        self.coordinate_count = len(self.COORDINATES)
+        self.coordinate_count = len(VertexCoordinates.names)
         self.node_features    = engine.node_feature_count()
         self.edge_features    = engine.edge_feature_count()
         self.total_features   = self.node_features + self.edge_features
@@ -418,13 +413,13 @@ class KernelShapImportance:
         self.edge_shap           = np.zeros((event_count, self.edge_features, self.coordinate_count), dtype=np.float64)
         self.node_feature_values = np.zeros((event_count, self.node_features), dtype=np.float64)
         self.edge_feature_values = np.zeros((event_count, self.edge_features), dtype=np.float64)
-        self.completeness        = {name: 0.0 for name in self.COORDINATES}
+        self.completeness        = {name: 0.0 for name in VertexCoordinates.names}
 
     def _masked_outputs(self, graph, gates):
         outputs = np.zeros((gates.shape[0], self.coordinate_count), dtype=np.float64)
 
-        for start in range(0, gates.shape[0], self.CHUNK_SIZE):
-            block     = gates[start:start + self.CHUNK_SIZE]
+        for start in range(0, gates.shape[0], KernelShapSettings.chunk_size):
+            block     = gates[start:start + KernelShapSettings.chunk_size]
             data_list = []
             for row in block:
                 node_gate = torch.from_numpy(row[: self.node_features].astype(np.float32))
@@ -461,13 +456,13 @@ class KernelShapImportance:
         instance_output  = self._masked_outputs(graph, instance)[0]
         reference        = instance_output - np.asarray(explainer.expected_value, dtype=np.float64)
         attributed       = per_coord.sum(axis=1)
-        for index, name in enumerate(self.COORDINATES):
+        for index, name in enumerate(VertexCoordinates.names):
             self.completeness[name] += float(attributed[index] / reference[index]) / len(self.subset_graphs) if reference[index] != 0.0 else 0.0
 
     def _means(self):
         event_count = len(self.subset_graphs)
         return {
-            "coordinates"        : self.COORDINATES,
+            "coordinates"        : VertexCoordinates.names,
             "node_overall"       : np.abs(self.node_shap).sum(axis=2).mean(axis=0),
             "edge_overall"       : np.abs(self.edge_shap).sum(axis=2).mean(axis=0),
             "node_per_axis"      : np.abs(self.node_shap).mean(axis=0).T,

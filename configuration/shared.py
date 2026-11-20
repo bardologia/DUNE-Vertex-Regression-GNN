@@ -171,6 +171,7 @@ class MeasurementUnits:
     bytes_per_mib : int   = 1024 ** 2
     bytes_per_gib : int   = 1024 ** 3
     bytes_per_mb  : float = 1e6
+    percent       : float = 100.0
 
 
 @dataclass(frozen=True)
