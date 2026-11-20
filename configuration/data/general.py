@@ -145,3 +145,41 @@ class StoreLayout:
 @dataclass(frozen=True)
 class CoordinateAxes:
     names : tuple = ("x", "y", "z")
+
+
+@dataclass(frozen=True)
+class DatasetSplits:
+    names : tuple = ("train", "val", "test")
+
+
+@dataclass(frozen=True)
+class GraphSettings:
+    epsilon           : float = 1e-8
+    minimum_nodes     : int   = 2
+    probe_nodes       : int   = 8
+    probe_light_floor : float = 0.1
+
+
+@dataclass(frozen=True)
+class LightRealizationSettings:
+    epoch_seed_stride : int = 1_000_003
+
+
+@dataclass(frozen=True)
+class NormalizationSettings:
+    epsilon              : float = 1e-8
+    skewness_log         : float = 2.0
+    outlier_ratio        : float = 3.0
+    robust_iqr_factor    : float = 1.349
+    quartiles            : tuple = (75, 25)
+    groups               : tuple = ("node", "edge", "graph", "target")
+    target_frames        : tuple = ("isotropic", "axiswise")
+    node_spatial_group   : str   = "position"
+    graph_spatial_groups : tuple = ("light_centroid", "sharp_centroid", "light_quantile")
+
+
+@dataclass(frozen=True)
+class StratificationSettings:
+    maximum_bins    : int = 10
+    targets_per_bin : int = 10
+    percentile_span : int = 100

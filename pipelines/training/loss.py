@@ -4,6 +4,8 @@ import torch
 import torch.nn.functional as F
 from torch_geometric.utils import scatter
 
+from configuration.training.general import LossSettings
+
 
 class Loss:
     def __init__(self, loss_config, stats, logger):
@@ -26,7 +28,7 @@ class Loss:
         raise ValueError(f"Unknown data term '{self.config.data_term}'")
 
     def _euclidean_term(self, predictions, targets):
-        return torch.sqrt(((predictions - targets) ** 2).sum(dim=1) + 1e-12).mean()
+        return torch.sqrt(((predictions - targets) ** 2).sum(dim=1) + LossSettings.epsilon).mean()
 
     def _light_falloff_term(self, predictions, data):
         device         = predictions.device
@@ -47,7 +49,7 @@ class Loss:
         light_variance = scatter((light - light_mean) ** 2, data.batch, reduce="mean")
         intensity_var  = scatter((predicted_intensity - intensity_mean) ** 2, data.batch, reduce="mean")
 
-        correlation = covariance / torch.sqrt(light_variance * intensity_var + 1e-12)
+        correlation = covariance / torch.sqrt(light_variance * intensity_var + LossSettings.epsilon)
         return (1.0 - correlation).mean()
 
     def __call__(self, predictions, data):

@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
+from configuration.data.general             import DatasetSplits
 from configuration.shared                   import IoNames
 from tools.runtime.reproducibility          import Reproducibility
 
@@ -15,8 +16,6 @@ from pipelines.dataset.splitting            import TargetBalancer
 
 
 class DatasetPipeline:
-    SPLIT_NAMES = ("train", "val", "test")
-
     def __init__(self, dataset_config, logger, stats=None, evaluation_mode=False):
         self.config          = dataset_config
         self.logger          = logger
@@ -279,15 +278,15 @@ class DatasetPipeline:
         self.split_base_ids = self.base_ids_for_indices(train_indices, validation_indices, test_indices)
 
         train_samples = self._prepare_train_samples(train_base)
-        self._fit_stats(train_samples, self.SPLIT_NAMES)
-        self._build_datasets(train_samples, validation_samples, test_samples, self.SPLIT_NAMES)
+        self._fit_stats(train_samples, DatasetSplits.names)
+        self._build_datasets(train_samples, validation_samples, test_samples, DatasetSplits.names)
         return self.datasets, self.stats
 
     def run_with_base_ids(self, split_base_ids, split_names=None):
         self.logger.section("[Dataset Pipeline | Persisted Split]")
         self.prepare_samples()
 
-        requested           = self.validate_split_names(split_names) if split_names is not None else self.SPLIT_NAMES
+        requested           = self.validate_split_names(split_names) if split_names is not None else DatasetSplits.names
         self.split_base_ids = dict(split_base_ids)
 
         train_base, validation_samples, test_samples = self._partition_by_base_ids(self.samples, split_base_ids)
@@ -303,16 +302,16 @@ class DatasetPipeline:
         self.prepare_samples()
 
         self.validate_split_names((split_name,))
-        partitions    = dict(zip(self.SPLIT_NAMES, self._partition_by_base_ids(self.samples, split_base_ids)))
+        partitions    = dict(zip(DatasetSplits.names, self._partition_by_base_ids(self.samples, split_base_ids)))
         split_samples = partitions[split_name]
         split_dataset = self._make_dataset(split_samples, self._augmentation(), self.stats)
         return CachedGraphDataset(split_dataset, self.logger)
 
-    @classmethod
-    def validate_split_names(cls, split_names):
-        unknown = tuple(name for name in split_names if name not in cls.SPLIT_NAMES)
+    @staticmethod
+    def validate_split_names(split_names):
+        unknown = tuple(name for name in split_names if name not in DatasetSplits.names)
         if unknown:
-            raise KeyError(f"Unknown split name(s) {unknown}. Expected any of {cls.SPLIT_NAMES}.")
+            raise KeyError(f"Unknown split name(s) {unknown}. Expected any of {DatasetSplits.names}.")
         return tuple(split_names)
 
     def run_split_samples(self):
@@ -329,6 +328,6 @@ class DatasetPipeline:
 
         train_base, validation_samples, test_samples = self._split_samples(self.samples)
         train_samples                                = self._prepare_train_samples(train_base)
-        self._fit_stats(train_samples, self.SPLIT_NAMES)
-        self._build_datasets(train_samples, validation_samples, test_samples, self.SPLIT_NAMES)
+        self._fit_stats(train_samples, DatasetSplits.names)
+        self._build_datasets(train_samples, validation_samples, test_samples, DatasetSplits.names)
         return self.datasets, self.stats

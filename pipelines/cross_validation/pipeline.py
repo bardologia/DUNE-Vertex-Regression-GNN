@@ -8,12 +8,13 @@ import numpy as np
 import pandas as pd
 import torch
 
-from configuration.entry           import TrainEntryConfig
-from configuration.shared          import IoNames
-from models                        import get_model
-from tools.monitoring.logger       import Logger
-from tools.reporting.markdown      import MarkdownDoc, MarkdownTable, ScalarFormatter
-from tools.runtime.reproducibility import Reproducibility
+from configuration.cross_validation.general import CrossValidationReportFields
+from configuration.entry                    import TrainEntryConfig
+from configuration.shared                   import IoNames
+from models                                 import get_model
+from tools.monitoring.logger                import Logger
+from tools.reporting.markdown               import MarkdownDoc, MarkdownTable, ScalarFormatter
+from tools.runtime.reproducibility          import Reproducibility
 
 from pipelines.dataset.pipeline             import DatasetPipeline
 from pipelines.dataset.splitting            import CrossValidationSplitter
@@ -25,8 +26,6 @@ from pipelines.training.trainer             import Trainer
 
 
 class CrossValidationReport:
-    SUMMARY_METRICS = ("euclidean_mean", "euclidean_median", "mae", "rmse", "median_error", "r2")
-
     def __init__(self, output_directory, logger, cross_validation_config):
         self.output_directory = Path(output_directory)
         self.logger           = logger
@@ -72,16 +71,16 @@ class CrossValidationReport:
         document.bold_kv("Validation fraction", self.config.validation_fraction)
         document.blank()
 
-        per_fold_table = MarkdownTable(["Fold", *self.SUMMARY_METRICS], align=["right"] + ["right"] * len(self.SUMMARY_METRICS))
+        per_fold_table = MarkdownTable(["Fold", *CrossValidationReportFields.summary_metrics], align=["right"] + ["right"] * len(CrossValidationReportFields.summary_metrics))
         for record in fold_records:
             metrics = record["metrics"]
-            cells   = [ScalarFormatter.format_scalar(metrics.get(key)) for key in self.SUMMARY_METRICS]
+            cells   = [ScalarFormatter.format_scalar(metrics.get(key)) for key in CrossValidationReportFields.summary_metrics]
             per_fold_table.add_row(record["fold"], *cells)
         document.heading("Held-out test metrics per fold", level=2)
         document.table(per_fold_table)
 
         aggregate_table = MarkdownTable(["Metric", "Mean", "Std", "Min", "Max"], align=["left", "right", "right", "right", "right"])
-        for key in self.SUMMARY_METRICS:
+        for key in CrossValidationReportFields.summary_metrics:
             if key not in aggregate:
                 continue
             statistics = aggregate[key]
@@ -100,7 +99,7 @@ class CrossValidationReport:
 
     def _log_summary(self, aggregate):
         rows = []
-        for key in self.SUMMARY_METRICS:
+        for key in CrossValidationReportFields.summary_metrics:
             if key not in aggregate:
                 continue
             statistics = aggregate[key]

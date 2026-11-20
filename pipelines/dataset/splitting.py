@@ -3,13 +3,12 @@ from __future__ import annotations
 import numpy as np
 from sklearn.model_selection import KFold, StratifiedKFold, StratifiedShuffleSplit
 
+from configuration.data.general import StratificationSettings
+
 
 class StratificationLabeller:
-    def __init__(self, maximum_bins_cap=10):
-        self.maximum_bins_cap = maximum_bins_cap
-
     def maximum_bins(self, number_of_targets):
-        return max(1, min(self.maximum_bins_cap, number_of_targets // 10))
+        return max(1, min(StratificationSettings.maximum_bins, number_of_targets // StratificationSettings.targets_per_bin))
 
     def build_labels(self, targets, number_of_bins):
         if number_of_bins <= 1:
@@ -17,7 +16,7 @@ class StratificationLabeller:
 
         binned_coordinates = []
         for dimension in range(targets.shape[1]):
-            percentiles = np.linspace(0, 100, number_of_bins + 1)
+            percentiles = np.linspace(0, StratificationSettings.percentile_span, number_of_bins + 1)
             bins        = np.unique(np.percentile(targets[:, dimension], percentiles))
 
             if len(bins) <= 1:

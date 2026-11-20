@@ -1,44 +1,41 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from collections import Counter
+from pathlib     import Path
 
 import numpy as np
 import torch
 from scipy.stats import skew
 
-from configuration.shared import IoNames
+from configuration.data.general import NormalizationSettings
+from configuration.shared       import IoNames
 
 
 class ChannelStrategySelector:
-    EPSILON           = 1e-8
-    SKEWNESS_LOG      = 2.0
-    OUTLIER_RATIO     = 3.0
-    ROBUST_IQR_FACTOR = 1.349
-
     def select(self, values):
         finite_values = values[np.isfinite(values)].astype(np.float64)
 
         standard_deviation = float(finite_values.std())
-        if standard_deviation < self.EPSILON:
+        if standard_deviation < NormalizationSettings.epsilon:
             return "zscore", float(finite_values.mean()), 1.0, False
 
         minimum         = float(finite_values.min())
-        is_non_negative = minimum >= -self.EPSILON
+        is_non_negative = minimum >= -NormalizationSettings.epsilon
         skewness        = float(skew(finite_values)) if finite_values.size > 2 else 0.0
 
-        if is_non_negative and skewness > self.SKEWNESS_LOG:
+        if is_non_negative and skewness > NormalizationSettings.skewness_log:
             logged = np.log1p(np.maximum(finite_values, 0.0))
-            return "log1p_zscore", float(logged.mean()), float(logged.std()) + self.EPSILON, True
+            return "log1p_zscore", float(logged.mean()), float(logged.std()) + NormalizationSettings.epsilon, True
 
-        quantile_75, quantile_25 = np.percentile(finite_values, [75, 25])
+        quantile_75, quantile_25 = np.percentile(finite_values, list(NormalizationSettings.quartiles))
         interquartile_range      = float(quantile_75 - quantile_25)
-        robust_spread            = interquartile_range / self.ROBUST_IQR_FACTOR
+        robust_spread            = interquartile_range / NormalizationSettings.robust_iqr_factor
 
-        if robust_spread > self.EPSILON and (standard_deviation / robust_spread) > self.OUTLIER_RATIO:
-            return "robust_iqr", float(np.median(finite_values)), interquartile_range + self.EPSILON, False
+        if robust_spread > NormalizationSettings.epsilon and (standard_deviation / robust_spread) > NormalizationSettings.outlier_ratio:
+            return "robust_iqr", float(np.median(finite_values)), interquartile_range + NormalizationSettings.epsilon, False
 
-        return "zscore", float(finite_values.mean()), standard_deviation + self.EPSILON, False
+        return "zscore", float(finite_values.mean()), standard_deviation + NormalizationSettings.epsilon, False
 
 
 class FeatureGroupNormalizer:
@@ -79,7 +76,7 @@ class FeatureGroupNormalizer:
         number_of_channels = matrix.shape[1]
 
         centers = matrix.mean(axis=0)
-        scales  = matrix.std(axis=0) + ChannelStrategySelector.EPSILON
+        scales  = matrix.std(axis=0) + NormalizationSettings.epsilon
 
         methods   = ["axiswise"] * number_of_channels
         log_masks = np.zeros(number_of_channels, dtype=bool)
@@ -92,7 +89,7 @@ class FeatureGroupNormalizer:
         number_of_channels = matrix.shape[1]
 
         centers      = matrix.mean(axis=0)
-        shared_scale = float(np.sqrt(((matrix - centers) ** 2).mean())) + ChannelStrategySelector.EPSILON
+        shared_scale = float(np.sqrt(((matrix - centers) ** 2).mean())) + NormalizationSettings.epsilon
 
         methods   = ["isotropic"] * number_of_channels
         scales    = np.full(number_of_channels, shared_scale, dtype=np.float32)
@@ -134,7 +131,6 @@ class FeatureGroupNormalizer:
         return self.device_tensors[key]
 
     def strategy_counts(self):
-        from collections import Counter
         return dict(Counter(self.methods))
 
     def to_dict(self):
@@ -151,8 +147,6 @@ class FeatureGroupNormalizer:
 
 
 class NormalizationStats:
-    GROUPS = ("node", "edge", "graph", "target")
-
     def __init__(self, node, edge, graph, target):
         self.node   = node
         self.edge   = edge
@@ -160,18 +154,18 @@ class NormalizationStats:
         self.target = target
 
     def as_dict(self):
-        return {group: getattr(self, group).to_dict() for group in self.GROUPS}
+        return {group: getattr(self, group).to_dict() for group in NormalizationSettings.groups}
 
     def save(self, directory):
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
-        path    = directory / IoNames.normalization_stats_file
-        payload = {group: getattr(self, group).to_dict() for group in self.GROUPS}
-        path.write_text(json.dumps(payload, indent=IoNames.json_indent), encoding="utf-8")
+
+        path = directory / IoNames.normalization_stats_file
+        path.write_text(json.dumps(self.as_dict(), indent=IoNames.json_indent), encoding="utf-8")
         return path
 
     @classmethod
     def load(cls, directory):
         path    = Path(directory) / IoNames.normalization_stats_file
         payload = json.loads(path.read_text(encoding="utf-8"))
-        return cls(**{group: FeatureGroupNormalizer.from_dict(payload[group]) for group in cls.GROUPS})
+        return cls(**{group: FeatureGroupNormalizer.from_dict(payload[group]) for group in NormalizationSettings.groups})

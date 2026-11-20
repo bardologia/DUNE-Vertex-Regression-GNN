@@ -10,3 +10,8 @@ class CrossValidationConfig:
     stratified          : bool  = True
     shuffle             : bool  = True
     random_state        : int   = 42
+
+
+@dataclass(frozen=True)
+class CrossValidationReportFields:
+    summary_metrics : tuple = ("euclidean_mean", "euclidean_median", "mae", "rmse", "median_error", "r2")

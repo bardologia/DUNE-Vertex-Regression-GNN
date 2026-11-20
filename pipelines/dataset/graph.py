@@ -6,10 +6,10 @@ from scipy.spatial        import cKDTree
 from scipy.stats          import rankdata
 from torch_geometric.data import Data
 
+from configuration.data.general import CoordinateAxes, GraphSettings
+
 
 class GraphAssembler:
-    EPSILON = 1e-8
-
     def __init__(self, config):
         self.bidirectional      = config.graph.bidirectional
         self.k_neighbors        = config.graph.k_neighbors
@@ -45,13 +45,13 @@ class GraphAssembler:
         variance = (weights * centered ** 2).sum(axis=0) / total_light
         spread   = np.sqrt(np.clip(variance, 0.0, None))
         third    = (weights * centered ** 3).sum(axis=0) / total_light
-        skew     = third / (spread ** 3 + self.EPSILON)
+        skew     = third / (spread ** 3 + GraphSettings.epsilon)
 
         return spread, skew
 
     def _sharp_light_centroid(self, positions, light):
         sharp_weights = light.astype(np.float64) ** 2
-        return (sharp_weights[:, None] * positions).sum(axis=0) / (sharp_weights.sum() + self.EPSILON)
+        return (sharp_weights[:, None] * positions).sum(axis=0) / (sharp_weights.sum() + GraphSettings.epsilon)
 
     def _weighted_quantiles(self, positions, light, quantiles):
         blocks = []
@@ -85,13 +85,13 @@ class NodeFeatures(GraphAssembler):
     def _direction_to_centroid(self, positions, light, total_light):
         centroid     = self._light_centroid(positions, light, total_light)
         displacement = centroid[None, :] - positions
-        norm         = np.maximum(np.linalg.norm(displacement, axis=1, keepdims=True), self.EPSILON)
+        norm         = np.maximum(np.linalg.norm(displacement, axis=1, keepdims=True), GraphSettings.epsilon)
         return (displacement / norm).astype(np.float32)
 
     def _direction_to_brightest(self, positions, light):
         brightest    = positions[int(np.argmax(light))]
         displacement = brightest[None, :] - positions
-        norm         = np.maximum(np.linalg.norm(displacement, axis=1, keepdims=True), self.EPSILON)
+        norm         = np.maximum(np.linalg.norm(displacement, axis=1, keepdims=True), GraphSettings.epsilon)
         return (displacement / norm).astype(np.float32)
 
     def _inertia_eigenvalues(self, positions, light, total_light, number_of_nodes):
@@ -104,7 +104,7 @@ class NodeFeatures(GraphAssembler):
 
     def build(self, positions, light, neighbor_indices):
         number_of_nodes = positions.shape[0]
-        total_light     = light.sum() + self.EPSILON
+        total_light     = light.sum() + GraphSettings.epsilon
 
         feature_columns = [
             self._position(positions),
@@ -149,25 +149,25 @@ class EdgeFeatures(GraphAssembler):
         )
 
     def _displacement(self, source_positions, destination_positions, distance):
-        normalization = np.maximum(distance, self.EPSILON)
+        normalization = np.maximum(distance, GraphSettings.epsilon)
         return (destination_positions - source_positions) / normalization[:, None]
 
     def _distance(self, distance):
         return distance.reshape(-1, 1)
 
     def _inverse_square_distance(self, distance):
-        return (1.0 / (distance ** 2 + self.EPSILON)).reshape(-1, 1)
+        return (1.0 / (distance ** 2 + GraphSettings.epsilon)).reshape(-1, 1)
 
     def _light_gradient(self, source_light, destination_light):
         return (destination_light - source_light).reshape(-1, 1)
 
     def _light_similarity(self, source_light, destination_light):
-        return (2.0 * np.minimum(source_light, destination_light) / (source_light + destination_light + self.EPSILON)).reshape(-1, 1)
+        return (2.0 * np.minimum(source_light, destination_light) / (source_light + destination_light + GraphSettings.epsilon)).reshape(-1, 1)
 
     def _distance_rbf(self, distance):
         centers = np.linspace(0.0, self.edge_rbf_max, self.edge_rbf_count)
         spacing = self.edge_rbf_max / max(self.edge_rbf_count - 1, 1)
-        gamma   = 1.0 / (spacing ** 2 + self.EPSILON)
+        gamma   = 1.0 / (spacing ** 2 + GraphSettings.epsilon)
         return np.exp(-gamma * (distance[:, None] - centers[None, :]) ** 2)
 
     def _assemble(self, displacement, distance, inverse_square_distance, light_gradient, light_similarity, distance_rbf):
@@ -238,7 +238,7 @@ class GraphFeatures(GraphAssembler):
 
     def build(self, positions, light):
         number_of_nodes = int(positions.shape[0])
-        total_light     = light.sum() + self.EPSILON
+        total_light     = light.sum() + GraphSettings.epsilon
 
         centroid      = self._light_centroid(positions, light, total_light)
         light_scale   = self._light_scale(light, number_of_nodes)
@@ -265,7 +265,7 @@ class GlobalNode(GraphAssembler):
         self.enabled = config.graph.global_node
 
     def append(self, positions, light):
-        total_light = light.sum() + self.EPSILON
+        total_light = light.sum() + GraphSettings.epsilon
         centroid    = self._light_centroid(positions, light, total_light)
 
         positions = np.vstack([positions, centroid[None, :]]).astype(np.float32)
@@ -293,8 +293,6 @@ class GlobalNode(GraphAssembler):
 
 
 class ActiveNodeSelector:
-    MINIMUM_NODES = 2
-
     def __init__(self, config):
         self.active_only      = config.graph.active_only
         self.max_active_nodes = int(config.graph.max_active_nodes)
@@ -311,8 +309,8 @@ class ActiveNodeSelector:
         return indices
 
     def _enforce_floor(self, indices):
-        if indices.shape[0] < self.MINIMUM_NODES:
-            raise ValueError(f"Only {indices.shape[0]} sensor(s) carry light; at least {self.MINIMUM_NODES} are required to build k-nearest-neighbour edges. Raise physics.detection_efficiency or physics.scale_factor, or set graph.active_only=false.")
+        if indices.shape[0] < GraphSettings.minimum_nodes:
+            raise ValueError(f"Only {indices.shape[0]} sensor(s) carry light; at least {GraphSettings.minimum_nodes} are required to build k-nearest-neighbour edges. Raise physics.detection_efficiency or physics.scale_factor, or set graph.active_only=false.")
         return indices
 
     def select(self, positions, light):
@@ -360,15 +358,13 @@ class Graph:
 
 
 class FeatureSchema:
-    PROBE_NODES = 8
-
     def __init__(self, config):
         self.builder = Graph(config)
 
     def dimensions(self):
         generator = np.random.default_rng(0)
-        positions = generator.normal(size=(self.PROBE_NODES, 3)).astype(np.float32)
-        light     = (generator.random(self.PROBE_NODES) + 0.1).astype(np.float32)
+        positions = generator.normal(size=(GraphSettings.probe_nodes, 3)).astype(np.float32)
+        light     = (generator.random(GraphSettings.probe_nodes) + GraphSettings.probe_light_floor).astype(np.float32)
         data      = self.builder.build_from_arrays(positions, light)
 
         graph_dimension = int(data.graph_attr.shape[1]) if "graph_attr" in data else 0
@@ -376,8 +372,6 @@ class FeatureSchema:
 
 
 class FeatureLayout:
-    AXES = ("x", "y", "z")
-
     def __init__(self, config):
         self.direction_features    = config.graph.direction_features
         self.inertia_features      = config.graph.inertia_features
@@ -388,15 +382,15 @@ class FeatureLayout:
         self.graph_quantiles       = tuple(float(quantile) for quantile in config.graph.graph_quantiles)
 
     def node_features(self):
-        layout  = [(f"position_{axis}", "position") for axis in self.AXES]
+        layout  = [(f"position_{axis}", "position") for axis in CoordinateAxes.names]
         layout += [("light_intensity",      "light_intensity")]
         layout += [("light_fraction",       "light_fraction")]
         layout += [("distance_to_centroid", "distance_to_centroid")]
         layout += [("local_light_density",  "local_light_density")]
 
         if self.direction_features:
-            layout += [(f"direction_to_centroid_{axis}",  "direction_to_centroid")  for axis in self.AXES]
-            layout += [(f"direction_to_brightest_{axis}", "direction_to_brightest") for axis in self.AXES]
+            layout += [(f"direction_to_centroid_{axis}",  "direction_to_centroid")  for axis in CoordinateAxes.names]
+            layout += [(f"direction_to_brightest_{axis}", "direction_to_brightest") for axis in CoordinateAxes.names]
 
         if self.inertia_features:
             layout += [(f"inertia_eigenvalue_{index}", "inertia_eigenvalues") for index in (1, 2, 3)]
@@ -408,7 +402,7 @@ class FeatureLayout:
 
     def edge_features(self):
         layout  = [("edge_distance", "edge_distance")]
-        layout += [(f"displacement_{axis}", "displacement") for axis in self.AXES]
+        layout += [(f"displacement_{axis}", "displacement") for axis in CoordinateAxes.names]
         layout += [("inverse_square_distance", "inverse_square_distance")]
         layout += [("light_gradient",   "light_gradient")]
         layout += [("light_similarity", "light_similarity")]
@@ -422,19 +416,19 @@ class FeatureLayout:
         if not self.graph_scalar_features:
             return []
 
-        layout  = [(f"light_centroid_{axis}", "light_centroid") for axis in self.AXES]
+        layout  = [(f"light_centroid_{axis}", "light_centroid") for axis in CoordinateAxes.names]
         layout += [("total_light",       "light_scale")]
         layout += [("active_node_count", "light_scale")]
         layout += [("max_channel_light", "light_scale")]
         layout += [(f"light_spread_{index}", "light_spread") for index in (1, 2, 3)]
 
         if self.graph_moment_features:
-            layout += [(f"sharp_centroid_{axis}", "sharp_centroid") for axis in self.AXES]
-            layout += [(f"axis_spread_{axis}",    "axis_spread")    for axis in self.AXES]
-            layout += [(f"axis_skew_{axis}",      "axis_skew")      for axis in self.AXES]
+            layout += [(f"sharp_centroid_{axis}", "sharp_centroid") for axis in CoordinateAxes.names]
+            layout += [(f"axis_spread_{axis}",    "axis_spread")    for axis in CoordinateAxes.names]
+            layout += [(f"axis_skew_{axis}",      "axis_skew")      for axis in CoordinateAxes.names]
 
         for quantile in self.graph_quantiles:
-            layout += [(f"light_quantile_{axis}_q{int(round(quantile * 100)):02d}", "light_quantile") for axis in self.AXES]
+            layout += [(f"light_quantile_{axis}_q{int(round(quantile * 100)):02d}", "light_quantile") for axis in CoordinateAxes.names]
 
         return layout
 

@@ -6,7 +6,8 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from pipelines.dataset.graph import FeatureLayout
+from configuration.data.general import LightRealizationSettings, NormalizationSettings
+from pipelines.dataset.graph    import FeatureLayout
 
 
 class GraphNormalizer:
@@ -31,8 +32,6 @@ class GraphNormalizer:
 
 
 class LightRealization:
-    EPOCH_SEED_STRIDE = 1_000_003
-
     def __init__(self, light_matrix, physics_config):
         self.light_matrix         = light_matrix
         self.scale_factor         = physics_config.scale_factor
@@ -49,7 +48,7 @@ class LightRealization:
         light      = self._base_light(raw_counts, base_event_id)
 
         if augmentation is not None and augmentation.active:
-            augmentation_seed = augmentation.config.seed + int(light_row) + int(epoch) * self.EPOCH_SEED_STRIDE
+            augmentation_seed = augmentation.config.seed + int(light_row) + int(epoch) * LightRealizationSettings.epoch_seed_stride
             generator         = np.random.default_rng(augmentation_seed)
             light             = augmentation.apply_to_counts(light, generator)
             light             = augmentation.apply_to_light(light, generator)
@@ -132,10 +131,6 @@ class CachedGraphDataset(Dataset):
 
 
 class StatsEstimator:
-    NODE_SPATIAL_GROUP   = "position"
-    GRAPH_SPATIAL_GROUPS = ("light_centroid", "sharp_centroid", "light_quantile")
-    TARGET_FRAMES        = ("isotropic", "axiswise")
-
     def __init__(self, dataset, sample_size, logger, dataset_config):
         self.dataset        = dataset
         self.sample_size    = sample_size
@@ -146,8 +141,8 @@ class StatsEstimator:
         from pipelines.dataset.normalization import FeatureGroupNormalizer
 
         frame = self.dataset_config.data.target_frame
-        if frame not in self.TARGET_FRAMES:
-            raise ValueError(f"Unknown data.target_frame '{frame}'. Expected any of {self.TARGET_FRAMES}.")
+        if frame not in NormalizationSettings.target_frames:
+            raise ValueError(f"Unknown data.target_frame '{frame}'. Expected any of {NormalizationSettings.target_frames}.")
 
         if frame == "isotropic":
             return FeatureGroupNormalizer.fit_isotropic(matrix)
@@ -156,11 +151,11 @@ class StatsEstimator:
     def _align_spatial_frames(self, node_group, graph_group, target_group):
         layout = FeatureLayout(self.dataset_config)
 
-        node_group.align_channels(FeatureLayout.group_index(layout.node_features())[self.NODE_SPATIAL_GROUP], target_group)
+        node_group.align_channels(FeatureLayout.group_index(layout.node_features())[NormalizationSettings.node_spatial_group], target_group)
 
         if layout.graph_scalar_features:
             graph_groups = FeatureLayout.group_index(layout.graph_features())
-            for group_name in self.GRAPH_SPATIAL_GROUPS:
+            for group_name in NormalizationSettings.graph_spatial_groups:
                 if group_name in graph_groups:
                     graph_group.align_channels(graph_groups[group_name], target_group)
 
