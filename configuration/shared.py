@@ -19,18 +19,13 @@ class IoNames:
     default_log_name  : str = "experiment"
     log_suffix        : str = ".log"
     output_log_suffix : str = ".out"
+    npz_suffix        : str = ".npz"
+    python_suffix     : str = ".py"
+    python_glob       : str = "*.py"
     run_tag_format    : str = "%Y%m%d_%H%M%S"
     run_stamp_format  : str = "%Y%m%d-%H%M%S"
     json_indent       : int = 2
     shm_dir           : str = "/dev/shm"
-
-    parquet_store_log  : str = "parquet_store"
-    tune_log           : str = "tune_{model}"
-    light_centroid_log : str = "light_centroid_check"
-    throughput_figure  : str = "throughput_vs_batch_size.png"
-    data_wait_figure   : str = "data_wait_vs_workers.png"
-    gpu_util_figure    : str = "gpu_util_vs_throughput.png"
-    feed_ratio_figure  : str = "feed_ratio_vs_workers.png"
 
     raw_event_glob      : str = "*.csv"
     geometry_table_file : str = "geometry.parquet"
@@ -61,8 +56,8 @@ class IoNames:
     probe_checkpoint_file : str = "probe.pt"
     trial_dir             : str = "trial_{number}"
     best_trial_file       : str = "best_trial.json"
+    tune_log              : str = "tune_{model}"
 
-    npz_suffix   : str = ".npz"
     plots_dir    : str = "plots"
     results_file : str = "results.json"
     report_file  : str = "report.md"
@@ -97,6 +92,15 @@ class IoNames:
     shap_bar_figure              : str = "shap_bar_{domain}_{axis}.png"
     shap_beeswarm_figure         : str = "shap_beeswarm_{domain}_{axis}.png"
 
+    sweep_log                      : str = "sweep"
+    sweeps_dir                     : str = "sweeps"
+    energy_efficiency_dir          : str = "energy_efficiency_{stamp}"
+    named_energy_efficiency_dir    : str = "energy_efficiency_{run}_{stamp}"
+    sweep_results_table            : str = "results.csv"
+    heatmap_figure                 : str = "heatmap_{metric}.png"
+    euclidean_vs_scale_figure      : str = "euclidean_mean_vs_scale.png"
+    euclidean_vs_efficiency_figure : str = "euclidean_mean_vs_efficiency.png"
+
     baseline_log              : str = "baseline"
     baseline_run_dir          : str = "baseline_{family}_{run}"
     feature_importance_figure : str = "feature_importance.png"
@@ -119,6 +123,19 @@ class IoNames:
     benchmark_training_run : str = "run"
     comparison_dir         : str = "comparison"
 
+    cv_log          : str = "cv_{model}"
+    cv_run_dir      : str = "cv_{model}_{run}"
+    fold_run        : str = "fold_{index}"
+    cv_metrics_file : str = "cross_validation_metrics.json"
+    cv_report_file  : str = "cross_validation_report.md"
+
+    parquet_store_log  : str = "parquet_store"
+    light_centroid_log : str = "light_centroid_check"
+    throughput_figure  : str = "throughput_vs_batch_size.png"
+    data_wait_figure   : str = "data_wait_vs_workers.png"
+    gpu_util_figure    : str = "gpu_util_vs_throughput.png"
+    feed_ratio_figure  : str = "feed_ratio_vs_workers.png"
+
     main_dir               : str   = "main"
     webui_dir              : str   = "webui"
     static_dir             : str   = "static"
@@ -130,8 +147,6 @@ class IoNames:
     config_cli_file        : str   = "config_cli.py"
     launch_layout_file     : str   = "launch_layout.py"
     index_file             : str   = "index.html"
-    python_suffix          : str   = ".py"
-    python_glob            : str   = "*.py"
     conda_bases            : tuple = ("miniconda3", "anaconda3", ".conda")
     conda_envs_dir         : str   = "envs"
     interpreter_bin_dir    : str   = "bin"
@@ -148,22 +163,6 @@ class IoNames:
     dataset_export_log     : str   = "dataset_export_{kind}"
     raw_light_script       : str   = "export_raw_light.py"
     raw_light_export_log   : str   = "raw_light_export"
-
-    cv_log          : str = "cv_{model}"
-    cv_run_dir      : str = "cv_{model}_{run}"
-    fold_run        : str = "fold_{index}"
-    cv_metrics_file : str = "cross_validation_metrics.json"
-    cv_report_file  : str = "cross_validation_report.md"
-
-    sweep_log                      : str = "sweep"
-    sweeps_dir                     : str = "sweeps"
-    energy_efficiency_dir          : str = "energy_efficiency_{stamp}"
-    named_energy_efficiency_dir    : str = "energy_efficiency_{run}_{stamp}"
-    sweep_results_table            : str = "results.csv"
-    heatmap_figure                 : str = "heatmap_{metric}.png"
-    euclidean_vs_scale_figure      : str = "euclidean_mean_vs_scale.png"
-    euclidean_vs_efficiency_figure : str = "euclidean_mean_vs_efficiency.png"
-
 
 @dataclass(frozen=True)
 class MeasurementUnits:
