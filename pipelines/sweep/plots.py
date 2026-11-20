@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import matplotlib
 
 matplotlib.use("Agg")
@@ -10,10 +8,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from configuration.shared      import IoNames
-from pipelines.inference.plots import PublicationStyle
+from pipelines.inference.plots import FigureWriter
 
 
-class SweepPlots:
+class SweepPlots(FigureWriter):
     HEATMAP_METRICS = (
         ("euclidean_mean",   "Mean euclidean error [m]",   "viridis_r"),
         ("euclidean_median", "Median euclidean error [m]", "viridis_r"),
@@ -24,21 +22,6 @@ class SweepPlots:
 
     SCALE_LABEL      = "Light scale factor"
     EFFICIENCY_LABEL = "Detection efficiency"
-
-    def __init__(self, output_directory, logger):
-        self.output_directory = Path(output_directory)
-        self.logger           = logger
-        self.output_directory.mkdir(parents=True, exist_ok=True)
-        self.generated        = []
-
-        PublicationStyle.apply()
-
-    def _save(self, figure, filename):
-        path = self.output_directory / filename
-        figure.tight_layout()
-        figure.savefig(path, bbox_inches="tight")
-        plt.close(figure)
-        self.generated.append(filename)
 
     def _baseline_index(self, axis_values, baseline_value):
         if baseline_value < axis_values.min() or baseline_value > axis_values.max():

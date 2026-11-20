@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import matplotlib
 
 matplotlib.use("Agg")
@@ -11,22 +9,14 @@ import numpy as np
 from matplotlib.animation import FuncAnimation, PillowWriter
 
 from configuration.shared      import IoNames
-from pipelines.inference.plots import PublicationStyle
+from pipelines.inference.plots import FigureWriter
 
 
-class AnalysisAnimations:
+class AnalysisAnimations(FigureWriter):
     UNIT             = "m"
     MAXIMUM_POINTS   = 2000
     NUMBER_OF_FRAMES = 48
     FRAME_DPI        = 100
-
-    def __init__(self, output_directory, logger):
-        self.output_directory = Path(output_directory)
-        self.logger           = logger
-        self.output_directory.mkdir(parents=True, exist_ok=True)
-        self.generated        = []
-
-        PublicationStyle.apply()
 
     def _subsample(self, predictions, targets):
         if predictions.shape[0] <= self.MAXIMUM_POINTS:
@@ -35,7 +25,7 @@ class AnalysisAnimations:
         selection = generator.choice(predictions.shape[0], size=self.MAXIMUM_POINTS, replace=False)
         return predictions[selection], targets[selection]
 
-    def _save(self, animation, filename):
+    def _save_animation(self, animation, filename):
         path = self.output_directory / filename
         animation.save(path, writer=PillowWriter(fps=15), dpi=self.FRAME_DPI)
         self.generated.append(filename)
@@ -56,7 +46,7 @@ class AnalysisAnimations:
             return []
 
         animation = FuncAnimation(figure, update, frames=self.NUMBER_OF_FRAMES, blit=False)
-        self._save(animation, IoNames.rotating_prediction_animation)
+        self._save_animation(animation, IoNames.rotating_prediction_animation)
         plt.close(figure)
 
     def _rotating_error(self, targets, distances):
@@ -74,7 +64,7 @@ class AnalysisAnimations:
             return []
 
         animation = FuncAnimation(figure, update, frames=self.NUMBER_OF_FRAMES, blit=False)
-        self._save(animation, IoNames.rotating_error_animation)
+        self._save_animation(animation, IoNames.rotating_error_animation)
         plt.close(figure)
 
     def run(self, predictions, targets):

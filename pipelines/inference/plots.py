@@ -29,10 +29,7 @@ class PublicationStyle:
         plt.rcParams.update(PublicationStyle.SETTINGS)
 
 
-class AnalysisPlots:
-    COORDINATE_NAMES = ("x", "y", "z")
-    UNIT             = "m"
-
+class FigureWriter:
     def __init__(self, output_directory, logger):
         self.output_directory = Path(output_directory)
         self.logger           = logger
@@ -47,6 +44,11 @@ class AnalysisPlots:
         figure.savefig(path, bbox_inches="tight")
         plt.close(figure)
         self.generated.append(filename)
+
+
+class AnalysisPlots(FigureWriter):
+    COORDINATE_NAMES = ("x", "y", "z")
+    UNIT             = "m"
 
     def _predicted_vs_true(self, predictions, targets):
         for index, name in enumerate(self.COORDINATE_NAMES):
