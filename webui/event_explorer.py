@@ -54,6 +54,10 @@ class EventExplorer:
 
         return runs
 
+    def _model_name(self, run_directory: Path) -> str:
+        config_path = run_directory / IoNames.metadata_dir / IoNames.resolved_config_file
+        return str(json.loads(config_path.read_text(encoding="utf-8"))["model_name"])
+
     def start_load(self, kind: str, name: str, split: str) -> dict:
         if kind == "dataset":
             if name not in [dataset["name"] for dataset in EventExplorerSettings.datasets]:
@@ -70,7 +74,7 @@ class EventExplorer:
         with self.lock:
             if self.status["state"] == "loading":
                 return {"ok": False, "error": f"already loading {self.status['name']} / {self.status['split']}"}
-            if self.status["state"] == "ready" and self.loaded is not None and self.loaded["kind"] == kind and self.loaded["name"] == name and self.loaded["split"] == split:
+            if self.status["state"] == "ready" and self._is_loaded(kind, name, split):
                 return {"ok": True}
 
             self.loaded = None
@@ -78,113 +82,6 @@ class EventExplorer:
 
         threading.Thread(target=self._load_worker, args=(kind, name, split), daemon=True).start()
         return {"ok": True}
-
-    def load_status(self) -> dict:
-        with self.lock:
-            payload = dict(self.status)
-            if payload["state"] == "ready" and self.loaded is not None:
-                payload["meta"] = self.loaded["meta"]
-        return payload
-
-    def events(self, kind: str, name: str, split: str) -> dict:
-        with self.lock:
-            if self.loaded is None or self.loaded["kind"] != kind or self.loaded["name"] != name or self.loaded["split"] != split:
-                return {"ok": False, "error": "source not loaded"}
-            data = self.loaded["data"]
-            meta = self.loaded["meta"]
-
-        payload = {
-            "ok"             : True,
-            "meta"           : meta,
-            "has_prediction" : meta["has_prediction"],
-            "gt"             : data["gt"].tolist(),
-            "n_active"       : data["n_active"].tolist(),
-        }
-        if meta["has_prediction"]:
-            payload["pred"]  = data["pred"].tolist()
-            payload["error"] = data["error"].tolist()
-        return payload
-
-    def detail(self, kind: str, name: str, split: str, index: int) -> dict:
-        with self.lock:
-            if self.loaded is None or self.loaded["kind"] != kind or self.loaded["name"] != name or self.loaded["split"] != split:
-                return {"ok": False, "error": "source not loaded"}
-            data = self.loaded["data"]
-            meta = self.loaded["meta"]
-
-        count = int(meta["count"])
-        if index < 0 or index >= count:
-            return {"ok": False, "error": f"index {index} out of range [0, {count})"}
-
-        if meta["has_prediction"]:
-            return self._run_detail(data, meta, index)
-        return self._dataset_detail(data, meta, index)
-
-    def _run_detail(self, data, meta, index) -> dict:
-        start = int(data["offsets"][index])
-        end   = int(data["offsets"][index + 1])
-
-        error = float(data["error"][index])
-        rank  = float((data["error"] < error).mean())
-
-        return {
-            "ok"             : True,
-            "index"          : index,
-            "has_prediction" : True,
-            "gt"             : data["gt"][index].tolist(),
-            "pred"           : data["pred"][index].tolist(),
-            "error"          : error,
-            "error_xyz"      : data["error_xyz"][index].tolist(),
-            "base_event_id"  : int(data["base_event_id"][index]),
-            "signs"          : data["signs"][index].tolist(),
-            "n_active"       : int(data["n_active"][index]),
-            "total_light"    : float(data["total_light"][index]),
-            "error_rank"     : rank,
-            "sensors"        : {
-                "positions" : data["sensor_positions"][start:end].tolist(),
-                "light"     : data["sensor_light"][start:end].tolist(),
-            },
-        }
-
-    def _dataset_detail(self, data, meta, index) -> dict:
-        base_event_id = int(data["base_event_id"][index])
-        start         = int(data["base_offsets"][base_event_id])
-        end           = int(data["base_offsets"][base_event_id + 1])
-
-        signs     = data["signs"][index].astype(np.float32)
-        positions = data["base_positions"][start:end] * signs[None, :]
-        light     = data["base_light"][start:end]
-
-        return {
-            "ok"             : True,
-            "index"          : index,
-            "has_prediction" : False,
-            "gt"             : data["gt"][index].tolist(),
-            "base_event_id"  : base_event_id,
-            "signs"          : data["signs"][index].tolist(),
-            "octant"         : str(data["octant"][index]),
-            "n_active"       : int(data["n_active"][index]),
-            "total_light"    : float(data["total_light"][index]),
-            "sensors"        : {
-                "positions" : positions.tolist(),
-                "light"     : light.tolist(),
-            },
-        }
-
-    def _model_name(self, run_directory: Path) -> str:
-        config_path = run_directory / IoNames.metadata_dir / IoNames.resolved_config_file
-        return str(json.loads(config_path.read_text(encoding="utf-8"))["model_name"])
-
-    def _run_directory(self, run: str) -> Path | None:
-        if not run:
-            return None
-
-        run_directory = (self.paths.runs_dir / run).resolve()
-        if not run_directory.is_relative_to(self.paths.runs_dir.resolve()):
-            return None
-        if not (run_directory / IoNames.checkpoints_dir / IoNames.best_model_file).is_file():
-            return None
-        return run_directory
 
     def _load_worker(self, kind: str, name: str, split: str) -> None:
         try:
@@ -220,64 +117,158 @@ class EventExplorer:
 
             self.logger.error(f"event explorer load failed: {kind}:{name} / {split}: {error}")
 
-    def _set_stage(self, stage: str) -> None:
-        with self.lock:
-            self.status["stage"] = stage
-
-    def _run_export(self, run_directory: Path, cache: Path) -> None:
-        script    = self.paths.main_dir / IoNames.event_export_script
-        argv_tail = ["--run_directory", str(run_directory)]
-        self.runner.spawn(script, argv_tail, IoNames.event_export_log.format(run=run_directory.name), cache)
-
     def _run_dataset_export(self, name: str, cache: Path) -> None:
         script    = self.paths.main_dir / IoNames.dataset_export_script
         argv_tail = ["--kind", name]
         self.runner.spawn(script, argv_tail, IoNames.dataset_export_log.format(kind=name), cache)
-
-    def _read_run_cache(self, cache: Path, name: str, split: str, fingerprint: str) -> tuple[dict, dict]:
-        archive = np.load(cache)
-        CacheGeometryStamp.require(archive, cache, fingerprint)
-        data    = {key: archive[key] for key in archive.files}
-
-        gt        = data["gt"]
-        error     = data["error"]
-        positions = data["sensor_positions"]
-
-        meta = {
-            "kind"           : "run",
-            "name"           : name,
-            "split"          : split,
-            "has_prediction" : True,
-            "count"          : int(gt.shape[0]),
-            "generated"      : datetime.fromtimestamp(cache.stat().st_mtime).isoformat(timespec="seconds"),
-            "bounds_min"     : gt.min(axis=0).tolist() if gt.shape[0] else [0.0, 0.0, 0.0],
-            "bounds_max"     : gt.max(axis=0).tolist() if gt.shape[0] else [0.0, 0.0, 0.0],
-            "detector_min"   : positions.min(axis=0).tolist() if positions.size else [0.0, 0.0, 0.0],
-            "detector_max"   : positions.max(axis=0).tolist() if positions.size else [0.0, 0.0, 0.0],
-            "error_mean"     : float(error.mean()) if error.size else 0.0,
-            "error_median"   : float(np.median(error)) if error.size else 0.0,
-            "error_p90"      : float(np.percentile(error, EventExplorerSettings.error_percentile)) if error.size else 0.0,
-        }
-        return data, meta
 
     def _read_dataset_cache(self, cache: Path, name: str, fingerprint: str) -> tuple[dict, dict]:
         archive = np.load(cache, allow_pickle=False)
         CacheGeometryStamp.require(archive, cache, fingerprint)
         data    = {key: archive[key] for key in archive.files}
 
-        gt        = data["gt"]
-        positions = data["base_positions"]
+        meta = {"kind": "dataset", "name": name, "split": "all", "has_prediction": False, **self._extent_meta(cache, data["gt"], data["base_positions"])}
+        return data, meta
 
-        meta = {
-            "kind"           : "dataset",
+    def _run_directory(self, run: str) -> Path | None:
+        if not run:
+            return None
+
+        run_directory = (self.paths.runs_dir / run).resolve()
+        if not run_directory.is_relative_to(self.paths.runs_dir.resolve()):
+            return None
+        if not (run_directory / IoNames.checkpoints_dir / IoNames.best_model_file).is_file():
+            return None
+        return run_directory
+
+    def _run_export(self, run_directory: Path, cache: Path) -> None:
+        script    = self.paths.main_dir / IoNames.event_export_script
+        argv_tail = ["--run_directory", str(run_directory)]
+        self.runner.spawn(script, argv_tail, IoNames.event_export_log.format(run=run_directory.name), cache)
+
+    def _read_run_cache(self, cache: Path, name: str, split: str, fingerprint: str) -> tuple[dict, dict]:
+        archive = np.load(cache)
+        CacheGeometryStamp.require(archive, cache, fingerprint)
+        data    = {key: archive[key] for key in archive.files}
+
+        error = data["error"]
+        meta  = {
+            "kind"           : "run",
             "name"           : name,
-            "split"          : "all",
-            "has_prediction" : False,
-            "count"          : int(gt.shape[0]),
-            "generated"      : datetime.fromtimestamp(cache.stat().st_mtime).isoformat(timespec="seconds"),
-            "bounds_min"     : gt.min(axis=0).tolist() if gt.shape[0] else [0.0, 0.0, 0.0],
-            "bounds_max"     : gt.max(axis=0).tolist() if gt.shape[0] else [0.0, 0.0, 0.0],
-            "detector_min"   : positions.min(axis=0).tolist() if positions.size else [0.0, 0.0, 0.0],
-            "detector_max"   : positions.max(axis=0).tolist() if positions.size else [0.0, 0.0, 0.0],
+            "split"          : split,
+            "has_prediction" : True,
+            **self._extent_meta(cache, data["gt"], data["sensor_positions"]),
+            "error_mean"     : float(error.mean()) if error.size else 0.0,
+            "error_median"   : float(np.median(error)) if error.size else 0.0,
+            "error_p90"      : float(np.percentile(error, EventExplorerSettings.error_percentile)) if error.size else 0.0,
         }
         return data, meta
+
+    def _extent_meta(self, cache: Path, gt: np.ndarray, positions: np.ndarray) -> dict:
+        return {
+            "count"        : int(gt.shape[0]),
+            "generated"    : datetime.fromtimestamp(cache.stat().st_mtime).isoformat(timespec="seconds"),
+            "bounds_min"   : gt.min(axis=0).tolist() if gt.shape[0] else [0.0, 0.0, 0.0],
+            "bounds_max"   : gt.max(axis=0).tolist() if gt.shape[0] else [0.0, 0.0, 0.0],
+            "detector_min" : positions.min(axis=0).tolist() if positions.size else [0.0, 0.0, 0.0],
+            "detector_max" : positions.max(axis=0).tolist() if positions.size else [0.0, 0.0, 0.0],
+        }
+
+    def _set_stage(self, stage: str) -> None:
+        with self.lock:
+            self.status["stage"] = stage
+
+    def load_status(self) -> dict:
+        with self.lock:
+            payload = dict(self.status)
+            if payload["state"] == "ready" and self.loaded is not None:
+                payload["meta"] = self.loaded["meta"]
+        return payload
+
+    def events(self, kind: str, name: str, split: str) -> dict:
+        with self.lock:
+            if not self._is_loaded(kind, name, split):
+                return {"ok": False, "error": "source not loaded"}
+            data = self.loaded["data"]
+            meta = self.loaded["meta"]
+
+        payload = {
+            "ok"             : True,
+            "meta"           : meta,
+            "has_prediction" : meta["has_prediction"],
+            "gt"             : data["gt"].tolist(),
+            "n_active"       : data["n_active"].tolist(),
+        }
+        if meta["has_prediction"]:
+            payload["pred"]  = data["pred"].tolist()
+            payload["error"] = data["error"].tolist()
+        return payload
+
+    def detail(self, kind: str, name: str, split: str, index: int) -> dict:
+        with self.lock:
+            if not self._is_loaded(kind, name, split):
+                return {"ok": False, "error": "source not loaded"}
+            data = self.loaded["data"]
+            meta = self.loaded["meta"]
+
+        count = int(meta["count"])
+        if index < 0 or index >= count:
+            return {"ok": False, "error": f"index {index} out of range [0, {count})"}
+
+        if meta["has_prediction"]:
+            return self._run_detail(data, index)
+        return self._dataset_detail(data, index)
+
+    def _run_detail(self, data, index) -> dict:
+        start = int(data["offsets"][index])
+        end   = int(data["offsets"][index + 1])
+
+        error = float(data["error"][index])
+        rank  = float((data["error"] < error).mean())
+
+        return {
+            "ok"             : True,
+            "index"          : index,
+            "has_prediction" : True,
+            "gt"             : data["gt"][index].tolist(),
+            "pred"           : data["pred"][index].tolist(),
+            "error"          : error,
+            "error_xyz"      : data["error_xyz"][index].tolist(),
+            "base_event_id"  : int(data["base_event_id"][index]),
+            "signs"          : data["signs"][index].tolist(),
+            "n_active"       : int(data["n_active"][index]),
+            "total_light"    : float(data["total_light"][index]),
+            "error_rank"     : rank,
+            "sensors"        : {
+                "positions" : data["sensor_positions"][start:end].tolist(),
+                "light"     : data["sensor_light"][start:end].tolist(),
+            },
+        }
+
+    def _dataset_detail(self, data, index) -> dict:
+        base_event_id = int(data["base_event_id"][index])
+        start         = int(data["base_offsets"][base_event_id])
+        end           = int(data["base_offsets"][base_event_id + 1])
+
+        signs     = data["signs"][index].astype(np.float32)
+        positions = data["base_positions"][start:end] * signs[None, :]
+        light     = data["base_light"][start:end]
+
+        return {
+            "ok"             : True,
+            "index"          : index,
+            "has_prediction" : False,
+            "gt"             : data["gt"][index].tolist(),
+            "base_event_id"  : base_event_id,
+            "signs"          : data["signs"][index].tolist(),
+            "octant"         : str(data["octant"][index]),
+            "n_active"       : int(data["n_active"][index]),
+            "total_light"    : float(data["total_light"][index]),
+            "sensors"        : {
+                "positions" : positions.tolist(),
+                "light"     : light.tolist(),
+            },
+        }
+
+    def _is_loaded(self, kind: str, name: str, split: str) -> bool:
+        return self.loaded is not None and self.loaded["kind"] == kind and self.loaded["name"] == name and self.loaded["split"] == split
