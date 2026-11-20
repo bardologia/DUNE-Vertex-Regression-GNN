@@ -39,38 +39,29 @@ class BaseGNNConfig:
     optimizer_overrides      : dict  = field(default_factory=dict)
 
     @classmethod
-    def _field_default(cls, field_name):
-        for field_definition in fields(cls):
-            if field_definition.name == field_name:
-                return field_definition.default
-        return None
-
-    @classmethod
     def tunable_params(cls) -> dict:
-        field_names = {field_definition.name for field_definition in fields(cls)}
-        head_type   = cls._field_default("head_type")
-        pooling     = cls._field_default("pooling")
+        defaults = {field_definition.name: field_definition.default for field_definition in fields(cls)}
 
         space = {
-            "hidden_dim"         : {"type": "categorical", "choices": [64, 128, 192, 256]},
-            "num_layers"         : {"type": "int",         "low": 2, "high": 6},
-            "dropout"            : {"type": "float",       "low": 0.0, "high": 0.2, "step": 0.05},
-            "drop_path_rate"     : {"type": "float",       "low": 0.0, "high": 0.2, "step": 0.05},
-            "regression_dropout" : {"type": "float",       "low": 0.0, "high": 0.2, "step": 0.05},
+            "hidden_dim"         : {"type": "categorical", "choices": list(ArchitectureSearchSpace.hidden_dims)},
+            "num_layers"         : {"type": "int",         "low": ArchitectureSearchSpace.layers_low, "high": ArchitectureSearchSpace.layers_high},
+            "dropout"            : {"type": "float",       "low": ArchitectureSearchSpace.rate_low, "high": ArchitectureSearchSpace.rate_high, "step": ArchitectureSearchSpace.rate_step},
+            "drop_path_rate"     : {"type": "float",       "low": ArchitectureSearchSpace.rate_low, "high": ArchitectureSearchSpace.rate_high, "step": ArchitectureSearchSpace.rate_step},
+            "regression_dropout" : {"type": "float",       "low": ArchitectureSearchSpace.rate_low, "high": ArchitectureSearchSpace.rate_high, "step": ArchitectureSearchSpace.rate_step},
         }
 
-        if head_type in ("hierarchical", "cascade"):
-            space["hierarchical_feature_dim"] = {"type": "categorical", "choices": [128, 256, 384]}
-        if head_type == "hierarchical":
-            space["coord_embed_dim"]          = {"type": "categorical", "choices": [32, 64, 128]}
+        if defaults["head_type"] in ("hierarchical", "cascade"):
+            space["hierarchical_feature_dim"] = {"type": "categorical", "choices": list(ArchitectureSearchSpace.hierarchical_feature_dims)}
+        if defaults["head_type"] == "hierarchical":
+            space["coord_embed_dim"]          = {"type": "categorical", "choices": list(ArchitectureSearchSpace.coord_embed_dims)}
 
-        if "heads" in field_names:
-            space["heads"]             = {"type": "categorical", "choices": [2, 4, 8]}
-        if "attention_dropout" in field_names:
-            space["attention_dropout"] = {"type": "float", "low": 0.0, "high": 0.2, "step": 0.05}
-        if pooling == "sagpool_multiscale":
-            space["pool_num_levels"]   = {"type": "int",   "low": 2, "high": 4}
-            space["sag_ratio"]         = {"type": "float", "low": 0.3, "high": 0.7, "step": 0.1}
+        if "heads" in defaults:
+            space["heads"]             = {"type": "categorical", "choices": list(ArchitectureSearchSpace.heads)}
+        if "attention_dropout" in defaults:
+            space["attention_dropout"] = {"type": "float", "low": ArchitectureSearchSpace.rate_low, "high": ArchitectureSearchSpace.rate_high, "step": ArchitectureSearchSpace.rate_step}
+        if defaults["pooling"] == "sagpool_multiscale":
+            space["pool_num_levels"]   = {"type": "int",   "low": ArchitectureSearchSpace.pool_levels_low, "high": ArchitectureSearchSpace.pool_levels_high}
+            space["sag_ratio"]         = {"type": "float", "low": ArchitectureSearchSpace.sag_ratio_low, "high": ArchitectureSearchSpace.sag_ratio_high, "step": ArchitectureSearchSpace.sag_ratio_step}
 
         return space
 
@@ -191,3 +182,29 @@ class ModelConfigRegistry:
     def by_name() -> dict:
         configs = (EdgeConvConfig, GINEConfig, GATv2CascadeConfig, GINECascadeConfig, GATv2Config, GraphSAGEConfig, PNAConfig, ResGatedConfig, GPSCascadeConfig, GeneralConvConfig, GPSConfig, GPSLiteConfig, GCNConfig, TransformerConvConfig)
         return {config.name: config for config in configs}
+
+
+@dataclass(frozen=True)
+class ArchitectureSettings:
+    activations      : tuple = (("gelu", "GELU"), ("relu", "ReLU"), ("elu", "ELU"), ("leaky_relu", "LeakyReLU"), ("tanh", "Tanh"))
+    coordinate_count : int   = 3
+    film_gain        : float = 0.1
+    output_gain      : float = 0.01
+
+
+@dataclass(frozen=True)
+class ArchitectureSearchSpace:
+    hidden_dims               : tuple = (64, 128, 192, 256)
+    layers_low                : int   = 2
+    layers_high               : int   = 6
+    rate_low                  : float = 0.0
+    rate_high                 : float = 0.2
+    rate_step                 : float = 0.05
+    hierarchical_feature_dims : tuple = (128, 256, 384)
+    coord_embed_dims          : tuple = (32, 64, 128)
+    heads                     : tuple = (2, 4, 8)
+    pool_levels_low           : int   = 2
+    pool_levels_high          : int   = 4
+    sag_ratio_low             : float = 0.3
+    sag_ratio_high            : float = 0.7
+    sag_ratio_step            : float = 0.1

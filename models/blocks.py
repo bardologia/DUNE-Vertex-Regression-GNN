@@ -6,19 +6,13 @@ import torch.nn.functional as F
 from torch_geometric.nn    import SAGPooling, Set2Set, GATv2Conv
 from torch_geometric.utils import scatter, to_dense_batch
 
+from configuration.architectures import ArchitectureSettings
+
 
 class ModuleFactory:
-    ACTIVATIONS = {
-        "gelu"       : nn.GELU,
-        "relu"       : nn.ReLU,
-        "elu"        : nn.ELU,
-        "leaky_relu" : nn.LeakyReLU,
-        "tanh"       : nn.Tanh,
-    }
-
-    @classmethod
-    def activation(cls, name: str) -> nn.Module:
-        return cls.ACTIVATIONS[name]()
+    @staticmethod
+    def activation(name: str) -> nn.Module:
+        return getattr(nn, dict(ArchitectureSettings.activations)[name])()
 
     @classmethod
     def norm(cls, name: str, dimension: int) -> nn.Module:
@@ -309,7 +303,7 @@ class FiLMConditioner(nn.Module):
     def _initialize_weights(self):
         for module in self.net.modules():
             if isinstance(module, nn.Linear):
-                nn.init.xavier_uniform_(module.weight, gain=0.1)
+                nn.init.xavier_uniform_(module.weight, gain=ArchitectureSettings.film_gain)
                 nn.init.zeros_(module.bias)
 
         last_linear = self.net[-1]
@@ -338,7 +332,7 @@ class CoordinateHead(nn.Module):
         ModuleFactory.initialize(self.net)
 
         last_linear = self.net[-1]
-        nn.init.xavier_uniform_(last_linear.weight, gain=0.01)
+        nn.init.xavier_uniform_(last_linear.weight, gain=ArchitectureSettings.output_gain)
         nn.init.zeros_(last_linear.bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -346,12 +340,10 @@ class CoordinateHead(nn.Module):
 
 
 class HierarchicalRegressionHead(nn.Module):
-    COORDINATE_COUNT = 3
-
     def __init__(self, input_dim: int, config):
         super().__init__()
-        if config.output_dim != self.COORDINATE_COUNT:
-            raise ValueError(f"head_type='hierarchical' predicts exactly {self.COORDINATE_COUNT} coordinates but output_dim={config.output_dim}; use head_type='mlp' for any other width.")
+        if config.output_dim != ArchitectureSettings.coordinate_count:
+            raise ValueError(f"head_type='hierarchical' predicts exactly {ArchitectureSettings.coordinate_count} coordinates but output_dim={config.output_dim}; use head_type='mlp' for any other width.")
 
         feature_dim              = config.hierarchical_feature_dim
         hidden_dims              = config.regression_hidden_dims
@@ -398,12 +390,10 @@ class MLPRegressionHead(nn.Module):
 
 
 class CascadeRegressionHead(nn.Module):
-    COORDINATE_COUNT = 3
-
     def __init__(self, input_dim: int, config):
         super().__init__()
-        if config.output_dim != self.COORDINATE_COUNT:
-            raise ValueError(f"head_type='cascade' predicts exactly {self.COORDINATE_COUNT} coordinates but output_dim={config.output_dim}; use head_type='mlp' for any other width.")
+        if config.output_dim != ArchitectureSettings.coordinate_count:
+            raise ValueError(f"head_type='cascade' predicts exactly {ArchitectureSettings.coordinate_count} coordinates but output_dim={config.output_dim}; use head_type='mlp' for any other width.")
 
         feature_dim = config.hierarchical_feature_dim
         hidden_dims = config.regression_hidden_dims

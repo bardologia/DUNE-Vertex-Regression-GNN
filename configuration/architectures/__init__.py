@@ -1,4 +1,6 @@
 from .zoo import (
+    ArchitectureSearchSpace,
+    ArchitectureSettings,
     BaseGNNConfig,
     EdgeConvConfig,
     GATv2CascadeConfig,
@@ -18,6 +20,8 @@ from .zoo import (
 )
 
 __all__ = [
+    "ArchitectureSearchSpace",
+    "ArchitectureSettings",
     "BaseGNNConfig",
     "EdgeConvConfig",
     "GATv2CascadeConfig",
