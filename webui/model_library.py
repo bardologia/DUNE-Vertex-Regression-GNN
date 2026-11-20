@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import json
-import subprocess
 import threading
 
 from configuration.shared        import IoNames
-from configuration.webui.general import LaunchSettings, ModelFamilies
+from configuration.webui.general import ModelFamilies
 
-from project_paths import ProjectPaths
+from project_paths     import ProjectPaths
+from subprocess_runner import SourceIntrospection
 
 
 class ModelLibrary:
@@ -35,40 +34,22 @@ class ModelLibrary:
     )
 
     def __init__(self, paths: ProjectPaths) -> None:
-        self.paths = paths
-        self.cache = None
-        self.lock  = threading.Lock()
+        self.paths         = paths
+        self.cache         = None
+        self.lock          = threading.Lock()
+        self.introspection = SourceIntrospection(paths, "model")
 
     def _signature(self) -> tuple:
         watched  = sorted((self.paths.repo_root / IoNames.models_dir).rglob(IoNames.python_glob))
         watched += sorted((self.paths.repo_root / IoNames.configuration_dir / IoNames.architectures_dir).rglob(IoNames.python_glob))
-
-        stamps = []
-        for path in watched:
-            try:
-                stamps.append((path.name, path.stat().st_mtime_ns))
-            except OSError:
-                continue
-        return tuple(stamps)
+        return self.introspection.signature(watched)
 
     def _run_bootstrap(self, interpreter: str) -> dict:
-        argv = [interpreter, "-c", self.BOOTSTRAP, str(self.paths.repo_root)]
+        introspected = self.introspection.run([interpreter, "-c", self.BOOTSTRAP, str(self.paths.repo_root)])
+        if not introspected["ok"]:
+            return introspected
 
-        try:
-            completed = subprocess.run(argv, cwd=str(self.paths.repo_root), capture_output=True, text=True, timeout=LaunchSettings.introspection_timeout_s)
-        except (OSError, subprocess.TimeoutExpired) as error:
-            return {"ok": False, "error": f"model introspection failed: {error}"}
-
-        if completed.returncode != 0:
-            tail = "\n".join(completed.stderr.strip().splitlines()[-LaunchSettings.introspection_error_lines:])
-            return {"ok": False, "error": f"model introspection failed:\n{tail}"}
-
-        try:
-            payload = json.loads(completed.stdout.strip().splitlines()[-1])
-        except (ValueError, IndexError):
-            return {"ok": False, "error": "model introspection produced no output"}
-
-        return {"ok": True, "models": payload["models"]}
+        return {"ok": True, "models": introspected["payload"]["models"]}
 
     def _capacity(self, defaults: dict) -> str:
         hidden = defaults.get("hidden_dim")

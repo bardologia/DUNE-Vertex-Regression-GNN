@@ -178,9 +178,7 @@ class PreprocessingPreview:
             cache = self.paths.explorer_cache_dir / IoNames.raw_light_cache_file
             if not cache.is_file():
                 self._set_stage("building the raw-light cache")
-                self.runner.spawn(self.paths.main_dir / IoNames.raw_light_script, [], IoNames.raw_light_export_log)
-            if not cache.is_file():
-                raise FileNotFoundError(f"export finished but {cache} was not produced; check the export log")
+                self.runner.spawn(self.paths.main_dir / IoNames.raw_light_script, [], IoNames.raw_light_export_log, cache)
 
             self._set_stage("loading caches")
             self._load_arrays(cache)

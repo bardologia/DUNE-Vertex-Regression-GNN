@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import json
-import subprocess
 import threading
 
-from configuration.shared        import IoNames
-from configuration.webui.general import LaunchSettings
+from configuration.shared import IoNames
 
-from launch_layout import LaunchLayout, LayoutError
-from project_paths import ProjectPaths
+from launch_layout     import LaunchLayout, LayoutError
+from project_paths     import ProjectPaths
+from subprocess_runner import SourceIntrospection
 
 
 class ConfigRegistry:
@@ -68,10 +66,11 @@ class ConfigRegistry:
     )
 
     def __init__(self, paths: ProjectPaths) -> None:
-        self.paths  = paths
-        self.cache  = {}
-        self.lock   = threading.Lock()
-        self.layout = LaunchLayout()
+        self.paths         = paths
+        self.cache         = {}
+        self.lock          = threading.Lock()
+        self.layout        = LaunchLayout()
+        self.introspection = SourceIntrospection(paths, "config")
 
     def _entry(self, script_key: str) -> dict | None:
         entry = self.paths.script_entry(script_key)
@@ -80,22 +79,11 @@ class ConfigRegistry:
         return entry
 
     def _run_bootstrap(self, entry: dict, interpreter: str) -> dict:
-        argv = [interpreter, "-c", self.BOOTSTRAP, str(self.paths.repo_root), entry["entry_config_module"], entry["entry_config_class"]]
+        introspected = self.introspection.run([interpreter, "-c", self.BOOTSTRAP, str(self.paths.repo_root), entry["entry_config_module"], entry["entry_config_class"]])
+        if not introspected["ok"]:
+            return introspected
 
-        try:
-            completed = subprocess.run(argv, cwd=str(self.paths.repo_root), capture_output=True, text=True, timeout=LaunchSettings.introspection_timeout_s)
-        except (OSError, subprocess.TimeoutExpired) as error:
-            return {"ok": False, "error": f"config introspection failed: {error}"}
-
-        if completed.returncode != 0:
-            tail = "\n".join(completed.stderr.strip().splitlines()[-LaunchSettings.introspection_error_lines:])
-            return {"ok": False, "error": f"config introspection failed:\n{tail}"}
-
-        try:
-            payload = json.loads(completed.stdout.strip().splitlines()[-1])
-        except (ValueError, IndexError):
-            return {"ok": False, "error": "config introspection produced no output"}
-
+        payload = introspected["payload"]
         return {"ok": True, "config_class": payload["class"], "leaves": payload["leaves"]}
 
     def _with_layout(self, script_key: str, result: dict) -> dict:
@@ -111,14 +99,7 @@ class ConfigRegistry:
         watched = sorted((self.paths.repo_root / IoNames.configuration_dir).rglob(IoNames.python_glob))
         watched.append(self.paths.repo_root / IoNames.tools_dir / IoNames.runtime_dir / IoNames.config_cli_file)
         watched.append(self.paths.webui_root / IoNames.launch_layout_file)
-
-        stamps = []
-        for path in watched:
-            try:
-                stamps.append((path.name, path.stat().st_mtime_ns))
-            except OSError:
-                continue
-        return tuple(stamps)
+        return self.introspection.signature(watched)
 
     def schema(self, script_key: str, interpreter: str) -> dict:
         entry = self._entry(script_key)

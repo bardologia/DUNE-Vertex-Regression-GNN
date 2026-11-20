@@ -69,16 +69,16 @@ class RequestRouter:
         if path.startswith(ApiRoutes.scripts_prefix) and path.endswith(ApiRoutes.config_suffix):
             key    = path[len(ApiRoutes.scripts_prefix):-len(ApiRoutes.config_suffix)]
             result = self.configs.schema(key, self.paths.preferred_interpreter())
-            self._send_json(handler, result, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST)
+            self._send_result(handler, result)
             return
         if path.startswith(ApiRoutes.scripts_prefix) and path.endswith(ApiRoutes.source_suffix):
             key    = path[len(ApiRoutes.scripts_prefix):-len(ApiRoutes.source_suffix)]
             result = self.catalog.source(key)
-            self._send_json(handler, result, HTTPStatus.OK if result.get("ok") else HTTPStatus.NOT_FOUND)
+            self._send_result(handler, result, HTTPStatus.NOT_FOUND)
             return
         if path == ApiRoutes.models:
             result = self.models.list(self.paths.preferred_interpreter())
-            self._send_json(handler, result, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST)
+            self._send_result(handler, result)
             return
         if path == ApiRoutes.runs:
             self._send_json(handler, self.results.list_runs())
@@ -106,7 +106,7 @@ class RequestRouter:
         if path == ApiRoutes.events_list:
             query  = parse_qs(urlparse(handler.path).query)
             result = self.events.events((query.get("kind") or [""])[0], (query.get("name") or [""])[0], (query.get("split") or [""])[0])
-            self._send_json(handler, result, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST)
+            self._send_result(handler, result)
             return
         if path == ApiRoutes.events_detail:
             query = parse_qs(urlparse(handler.path).query)
@@ -115,14 +115,14 @@ class RequestRouter:
             except ValueError:
                 index = -1
             result = self.events.detail((query.get("kind") or [""])[0], (query.get("name") or [""])[0], (query.get("split") or [""])[0], index)
-            self._send_json(handler, result, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST)
+            self._send_result(handler, result)
             return
         if path == ApiRoutes.preprocess_status:
             self._send_json(handler, self.preprocess.load_status())
             return
         if path == ApiRoutes.preprocess_events:
             result = self.preprocess.events()
-            self._send_json(handler, result, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST)
+            self._send_result(handler, result)
             return
 
         self._send_json(handler, {"error": "not found"}, HTTPStatus.NOT_FOUND)
@@ -144,18 +144,18 @@ class RequestRouter:
                 logdir = self._scoped_train_logdir(overrides, interpreter)
                 threading.Thread(target=self.tensorboard.ensure, args=(logdir, result["pid"]), daemon=True).start()
 
-            self._send_json(handler, result, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST)
+            self._send_result(handler, result)
             return
 
         if path.startswith(ApiRoutes.processes_prefix) and path.endswith(ApiRoutes.kill_suffix):
             identifier = path[len(ApiRoutes.processes_prefix):-len(ApiRoutes.kill_suffix)]
             result     = self._with_pid(identifier, self.processes.kill)
-            self._send_json(handler, result, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST)
+            self._send_result(handler, result)
             return
 
         if path == ApiRoutes.tensorboard_start:
             result = self.tensorboard.ensure(self.tensorboard.default_logdir())
-            self._send_json(handler, result, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST)
+            self._send_result(handler, result)
             return
 
         if path == ApiRoutes.tensorboard:
@@ -164,23 +164,23 @@ class RequestRouter:
                 self._send_json(handler, {"ok": False, "error": "run directory not found under runs/"}, HTTPStatus.BAD_REQUEST)
                 return
             result = self.tensorboard.ensure(logdir)
-            self._send_json(handler, result, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST)
+            self._send_result(handler, result)
             return
 
         if path.startswith(ApiRoutes.tensorboard_prefix) and path.endswith(ApiRoutes.stop_suffix):
             tb_id  = path[len(ApiRoutes.tensorboard_prefix):-len(ApiRoutes.stop_suffix)]
             result = self.tensorboard.stop(tb_id)
-            self._send_json(handler, result, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST)
+            self._send_result(handler, result)
             return
 
         if path == ApiRoutes.events_load:
             result = self.events.start_load(body.get("kind", "run"), body.get("name", ""), body.get("split", "test"))
-            self._send_json(handler, result, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST)
+            self._send_result(handler, result)
             return
 
         if path == ApiRoutes.preprocess_load:
             result = self.preprocess.start_load()
-            self._send_json(handler, result, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST)
+            self._send_result(handler, result)
             return
 
         if path == ApiRoutes.preprocess_preview:
@@ -189,7 +189,7 @@ class RequestRouter:
             except (TypeError, ValueError):
                 index = -1
             result = self.preprocess.preview(index, body.get("config", {}))
-            self._send_json(handler, result, HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST)
+            self._send_result(handler, result)
             return
 
         self._send_json(handler, {"error": "not found"}, HTTPStatus.NOT_FOUND)
@@ -238,15 +238,7 @@ class RequestRouter:
             self._send_json(handler, {"error": "not found"}, HTTPStatus.NOT_FOUND)
             return
 
-        data         = target.read_bytes()
-        content_type = mimetypes.guess_type(str(target))[0] or HttpSettings.binary_content_type
-
-        handler.send_response(HTTPStatus.OK)
-        handler.send_header("Content-Type", content_type)
-        handler.send_header("Content-Length", str(len(data)))
-        handler.send_header("Cache-Control", HttpSettings.run_file_cache_control)
-        handler.end_headers()
-        handler.wfile.write(data)
+        self._send_file(handler, target, HttpSettings.run_file_cache_control)
 
     def _stream_process(self, handler, identifier: str) -> None:
         try:
@@ -305,6 +297,20 @@ class RequestRouter:
         except (ValueError, UnicodeDecodeError):
             return {}
 
+    def _send_result(self, handler, result: dict, failure: HTTPStatus = HTTPStatus.BAD_REQUEST) -> None:
+        self._send_json(handler, result, HTTPStatus.OK if result.get("ok") else failure)
+
+    def _send_file(self, handler, target: Path, cache_control: str) -> None:
+        data         = target.read_bytes()
+        content_type = mimetypes.guess_type(str(target))[0] or HttpSettings.binary_content_type
+
+        handler.send_response(HTTPStatus.OK)
+        handler.send_header("Content-Type", content_type)
+        handler.send_header("Content-Length", str(len(data)))
+        handler.send_header("Cache-Control", cache_control)
+        handler.end_headers()
+        handler.wfile.write(data)
+
     def _send_json(self, handler, payload: dict, status: int = HTTPStatus.OK) -> None:
         encoded = json.dumps(payload).encode("utf-8")
         handler.send_response(status)
@@ -322,15 +328,7 @@ class RequestRouter:
             self._send_json(handler, {"error": "not found"}, HTTPStatus.NOT_FOUND)
             return
 
-        data         = target.read_bytes()
-        content_type = mimetypes.guess_type(str(target))[0] or HttpSettings.binary_content_type
-
-        handler.send_response(HTTPStatus.OK)
-        handler.send_header("Content-Type", content_type)
-        handler.send_header("Content-Length", str(len(data)))
-        handler.send_header("Cache-Control", HttpSettings.no_cache_control)
-        handler.end_headers()
-        handler.wfile.write(data)
+        self._send_file(handler, target, HttpSettings.no_cache_control)
 
     def _proxy_tensorboard(self, handler) -> None:
         segments = handler.path.split("/")

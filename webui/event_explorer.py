@@ -196,9 +196,7 @@ class EventExplorer:
                 cache       = self.paths.explorer_cache_dir / f"{name}{IoNames.npz_suffix}"
                 if not cache.is_file():
                     self._set_stage("building the dataset cache")
-                    self._run_dataset_export(name)
-                if not cache.is_file():
-                    raise FileNotFoundError(f"export finished but {cache} was not produced; check the export log")
+                    self._run_dataset_export(name, cache)
 
                 self._set_stage("loading event cache")
                 data, meta = self._read_dataset_cache(cache, name, fingerprint)
@@ -208,9 +206,7 @@ class EventExplorer:
                 cache         = run_directory / IoNames.analysis_dir / split / IoNames.event_explorer_cache_file
                 if not cache.is_file():
                     self._set_stage("running the model over every split")
-                    self._run_export(run_directory)
-                if not cache.is_file():
-                    raise FileNotFoundError(f"export finished but {cache} was not produced; check the export log")
+                    self._run_export(run_directory, cache)
 
                 self._set_stage("loading event cache")
                 data, meta = self._read_run_cache(cache, name, split, fingerprint)
@@ -231,15 +227,15 @@ class EventExplorer:
         with self.lock:
             self.status["stage"] = stage
 
-    def _run_export(self, run_directory: Path) -> None:
+    def _run_export(self, run_directory: Path, cache: Path) -> None:
         script    = self.paths.main_dir / IoNames.event_export_script
         argv_tail = ["--run_directory", str(run_directory)]
-        self.runner.spawn(script, argv_tail, IoNames.event_export_log.format(run=run_directory.name))
+        self.runner.spawn(script, argv_tail, IoNames.event_export_log.format(run=run_directory.name), cache)
 
-    def _run_dataset_export(self, name: str) -> None:
+    def _run_dataset_export(self, name: str, cache: Path) -> None:
         script    = self.paths.main_dir / IoNames.dataset_export_script
         argv_tail = ["--kind", name]
-        self.runner.spawn(script, argv_tail, IoNames.dataset_export_log.format(kind=name))
+        self.runner.spawn(script, argv_tail, IoNames.dataset_export_log.format(kind=name), cache)
 
     def _read_run_cache(self, cache: Path, name: str, split: str, fingerprint: str) -> tuple[dict, dict]:
         archive = np.load(cache)

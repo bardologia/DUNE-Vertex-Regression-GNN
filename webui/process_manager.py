@@ -12,11 +12,12 @@ import time
 from datetime    import datetime
 from collections import deque
 
-from configuration.shared        import IoNames, LogSettings
+from configuration.shared        import LogSettings
 from configuration.webui.general import ProcessSettings
 
-from project_paths import ProjectPaths
-from server_logger import ServerLogger
+from project_paths     import ProjectPaths
+from server_logger     import ServerLogger
+from subprocess_runner import SubprocessRunner
 
 
 class JobStream:
@@ -137,17 +138,10 @@ class ProcessManager:
         return " ".join(parts)
 
     def _runtime_environment(self, interpreter: str) -> dict:
-        environment = dict(os.environ)
-        environment["PYTHONUNBUFFERED"] = "1"
-        environment["FORCE_COLOR"]      = "1"
-        environment["COLUMNS"]          = str(LogSettings.terminal_columns)
-        environment["LINES"]            = LogSettings.terminal_lines
-
-        library_directory = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(interpreter))), IoNames.interpreter_lib_dir)
-        library_path      = environment.get("LD_LIBRARY_PATH", "")
-        if library_directory not in library_path.split(":"):
-            environment["LD_LIBRARY_PATH"] = library_directory + (":" + library_path if library_path else "")
-
+        environment                = SubprocessRunner.environment(interpreter)
+        environment["FORCE_COLOR"] = "1"
+        environment["COLUMNS"]     = str(LogSettings.terminal_columns)
+        environment["LINES"]       = LogSettings.terminal_lines
         return environment
 
     def _pump(self, pid: int, process: subprocess.Popen, stream: JobStream) -> None:
