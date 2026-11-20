@@ -3,13 +3,11 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from configuration.data.general         import CoordinateAxes
+from configuration.inference.general   import ErrorQuantiles, VertexCoordinates
 from pipelines.shared.coordinate_errors import CoordinateErrors
 
 
 class InferenceMetrics:
-    COORDINATE_NAMES = CoordinateAxes.names
-
     def __init__(self, logger, tracker=None):
         self.logger  = logger
         self.tracker = tracker
@@ -17,7 +15,7 @@ class InferenceMetrics:
     def _per_coordinate(self, difference, absolute_difference, targets):
         results = CoordinateErrors().update(difference).results()
 
-        for index, name in enumerate(self.COORDINATE_NAMES):
+        for index, name in enumerate(VertexCoordinates.names):
             residual_sum_of_squares = torch.sum(difference[:, index] ** 2).item()
             total_sum_of_squares    = torch.sum((targets[:, index] - targets[:, index].mean()) ** 2).item()
             r_squared               = 1 - (residual_sum_of_squares / total_sum_of_squares) if total_sum_of_squares > 0 else float("nan")
@@ -25,7 +23,7 @@ class InferenceMetrics:
             results[f"median_{name}"] = float(absolute_difference[:, index].median().item())
             results[f"std_{name}"]    = float(absolute_difference[:, index].std(correction=0).item())
             results[f"bias_{name}"]   = float(difference[:, index].mean().item())
-            results[f"p90_{name}"]    = float(torch.quantile(absolute_difference[:, index], 0.90).item())
+            results[f"p90_{name}"]    = float(torch.quantile(absolute_difference[:, index], ErrorQuantiles.p90).item())
             results[f"r2_{name}"]     = float(r_squared)
 
         return results
@@ -36,15 +34,15 @@ class InferenceMetrics:
             "euclidean_mean"   : float(distances.mean().item()),
             "euclidean_std"    : float(distances.std(correction=0).item()),
             "euclidean_median" : float(distances.median().item()),
-            "euclidean_p90"    : float(torch.quantile(distances, 0.90).item()),
-            "euclidean_p95"    : float(torch.quantile(distances, 0.95).item()),
+            "euclidean_p90"    : float(torch.quantile(distances, ErrorQuantiles.p90).item()),
+            "euclidean_p95"    : float(torch.quantile(distances, ErrorQuantiles.p95).item()),
             "euclidean_max"    : float(distances.max().item()),
             "euclidean_min"    : float(distances.min().item()),
         }
 
     def display(self, stage, results):
         rows = []
-        for name in self.COORDINATE_NAMES:
+        for name in VertexCoordinates.names:
             rows.append({
                 "Coord"  : name,
                 "MAE"    : results[f"mae_{name}"],

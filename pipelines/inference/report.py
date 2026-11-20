@@ -2,20 +2,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from configuration.shared     import IoNames
-from tools.reporting.markdown import MarkdownDoc, MarkdownTable
+from configuration.inference.general import VertexCoordinates
+from configuration.shared            import IoNames
+from tools.reporting.markdown        import MarkdownDoc, MarkdownTable
 
 
 class AnalysisReport:
-    COORDINATE_NAMES = ("x", "y", "z")
-
     def __init__(self, output_directory, logger):
         self.output_directory = Path(output_directory)
         self.logger           = logger
 
     def _metric_table(self, document, metrics):
         table = MarkdownTable(["Coord", "MAE [m]", "RMSE [m]", "Median [m]", "Bias [m]", "R2"], align=["left", "right", "right", "right", "right", "right"])
-        for name in self.COORDINATE_NAMES:
+        for name in VertexCoordinates.names:
             table.add_row(name, f"{metrics[f'mae_{name}']:.4f}", f"{metrics[f'rmse_{name}']:.4f}", f"{metrics[f'median_{name}']:.4f}", f"{metrics[f'bias_{name}']:.4f}", f"{metrics[f'r2_{name}']:.4f}")
         table.add_row("overall", f"{metrics['mae']:.4f}", f"{metrics['rmse']:.4f}", f"{metrics['median_error']:.4f}", f"{metrics['bias']:.4f}", f"{metrics['r2']:.4f}")
         document.table(table)

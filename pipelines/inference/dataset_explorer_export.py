@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 
 from configuration.data.general          import DatasetConfig
+from configuration.inference.general     import DatasetExplorerSources, VertexCoordinates
 from configuration.shared                import IoNames
 from pipelines.dataset.graph             import Graph
 from pipelines.dataset.graph_dataset     import GraphDataset
@@ -14,14 +15,9 @@ from tools.monitoring.logger             import Logger
 
 
 class DatasetExplorerExportPipeline:
-
-    RAW       = "raw"
-    AUGMENTED = "augmented"
-    KINDS     = (RAW, AUGMENTED)
-
     def __init__(self, kind, cache_directory, logger=None, dataset_config=None):
-        if kind not in self.KINDS:
-            raise ValueError(f"unknown dataset source: {kind} (expected one of {list(self.KINDS)})")
+        if kind not in DatasetExplorerSources.kinds:
+            raise ValueError(f"unknown dataset source: {kind} (expected one of {list(DatasetExplorerSources.kinds)})")
 
         self.kind            = kind
         self.cache_directory = Path(cache_directory)
@@ -85,12 +81,12 @@ class DatasetExplorerExportPipeline:
         return base_positions, base_light, offsets, n_active, total_light
 
     def _instances(self):
-        if self.kind == self.RAW:
+        if self.kind == DatasetExplorerSources.raw:
             count   = len(self.event_targets)
             base_id = np.arange(count, dtype=np.int32)
-            signs   = np.ones((count, 3), dtype=np.int8)
+            signs   = np.ones((count, len(VertexCoordinates.names)), dtype=np.int8)
             targets = self.event_targets.astype(np.float32)
-            octant  = np.array(["ppp"] * count)
+            octant  = np.array([DatasetExplorerSources.unreflected_octant] * count)
             return base_id, signs, targets, octant
 
         frame   = self.octant_frame

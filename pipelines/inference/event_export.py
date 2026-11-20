@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
+from configuration.inference.general import VertexCoordinates
 from configuration.shared            import IoNames
 from pipelines.dataset.graph         import Graph
 from pipelines.inference.pipeline    import InferencePipeline
@@ -45,13 +46,14 @@ class EventExportPipeline:
         dataset, predictions, targets = self._predict_split(split_name)
         base_dataset                  = dataset.base_dataset if hasattr(dataset, "base_dataset") else dataset
         count                         = len(base_dataset.samples)
+        axes                          = len(VertexCoordinates.names)
 
         residual  = predictions - targets
         error_xyz = np.abs(residual).astype(np.float32)
         error     = np.linalg.norm(residual, axis=1).astype(np.float32)
 
         base_event_id = np.empty(count, dtype=np.int32)
-        signs         = np.empty((count, 3), dtype=np.int8)
+        signs         = np.empty((count, axes), dtype=np.int8)
         node_count    = np.empty(count, dtype=np.int32)
         total_light   = np.empty(count, dtype=np.float32)
 
@@ -75,7 +77,7 @@ class EventExportPipeline:
 
                 progress.advance(task_id)
 
-        sensor_positions = np.concatenate(position_chunks, axis=0) if position_chunks else np.zeros((0, 3), dtype=np.float32)
+        sensor_positions = np.concatenate(position_chunks, axis=0) if position_chunks else np.zeros((0, axes), dtype=np.float32)
         sensor_light     = np.concatenate(light_chunks,    axis=0) if light_chunks    else np.zeros((0,),    dtype=np.float32)
 
         return {
