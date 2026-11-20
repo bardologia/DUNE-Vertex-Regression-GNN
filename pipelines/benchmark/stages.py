@@ -12,15 +12,16 @@ import torch
 from torch.utils.data       import Subset
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
-from configuration.entry              import TrainEntryConfig
-from configuration.shared             import IoNames
+from configuration.entry             import TrainEntryConfig
+from configuration.inference.general import VertexCoordinates
+from configuration.shared            import IoNames
 from models                          import get_model
-from tools.training.scheduling        import LearningRateScaler
-from pipelines.dataset.pipeline       import DatasetPipeline
-from pipelines.inference.metrics      import InferenceMetrics
-from pipelines.inference.predictor    import Predictor
-from pipelines.shared.run_metadata    import LightweightRunContext, TrainingRunMetadata
-from pipelines.training.trainer       import OptimizerOverrideApplier, Trainer
+from tools.training.scheduling       import LearningRateScaler
+from pipelines.dataset.pipeline      import DatasetPipeline
+from pipelines.inference.metrics     import InferenceMetrics
+from pipelines.inference.predictor   import Predictor
+from pipelines.shared.run_metadata   import LightweightRunContext, TrainingRunMetadata
+from pipelines.training.trainer      import OptimizerOverrideApplier, Trainer
 
 from pipelines.benchmark.batch_probe import MaxBatchProbe
 from pipelines.benchmark.results     import ComparisonReport, TrialCollector
@@ -69,9 +70,6 @@ class BenchmarkStage:
     def _result_path(self):
         return self.pipeline_directory / self.RESULT_FILE
 
-    def _report(self, records):
-        return None
-
     def run(self):
         self._prepare()
 
@@ -84,7 +82,6 @@ class BenchmarkStage:
             records[model_name] = self._compute(model_name)
             self._save(records)
 
-        self._report(records)
         return records
 
 
@@ -155,7 +152,7 @@ class OverfitGateStage(BenchmarkStage):
         record = {"model": model_name, "status": None, "final_loss": None, "converged": None, "threshold": self.gate.stop_threshold, "error": None}
 
         try:
-            final_loss          = self._train_tiny(model_name)
+            final_loss           = self._train_tiny(model_name)
             record["final_loss"] = float(final_loss) if final_loss is not None else None
             record["converged"]  = bool(record["final_loss"] is not None and record["final_loss"] <= self.gate.stop_threshold)
 
@@ -258,7 +255,7 @@ class TrainingStage(BenchmarkStage):
     def _write_metrics(self, run_directory, metrics):
         metrics_path = Path(run_directory) / IoNames.metadata_dir / IoNames.metrics_file
         metrics_path.parent.mkdir(parents=True, exist_ok=True)
-        metrics_path.write_text(json.dumps({"unit": "m", "splits": {"test": metrics}}, indent=IoNames.json_indent), encoding="utf-8")
+        metrics_path.write_text(json.dumps({"unit": VertexCoordinates.unit, "splits": {"test": metrics}}, indent=IoNames.json_indent), encoding="utf-8")
         return metrics_path
 
     def _compute(self, model_name):
@@ -272,8 +269,7 @@ class TrainingStage(BenchmarkStage):
             training_config.loop.epochs     = self.config.benchmark_training.epochs
             training_config.loop.batch_size = self._batch_size(model_name)
 
-            loaders                          = DatasetPipeline.build_loaders(self.datasets, training_config.loop.batch_size, num_workers=training_config.loop.num_workers, pin_memory=training_config.loop.pin_memory, persistent_workers=training_config.loop.persistent_workers, logger=self.logger)
-            train_loader, validation_loader, _ = loaders
+            train_loader, validation_loader, _ = DatasetPipeline.build_loaders(self.datasets, training_config.loop.batch_size, num_workers=training_config.loop.num_workers, pin_memory=training_config.loop.pin_memory, persistent_workers=training_config.loop.persistent_workers, logger=self.logger)
 
             run_metadata = TrainingRunMetadata(training_config, model_name, self.training_directory, run_name=IoNames.benchmark_training_run)
             run_metadata.save_store_geometry(self.store_geometry)

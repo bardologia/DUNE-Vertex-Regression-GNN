@@ -9,8 +9,8 @@ import torch
 
 from configuration.architectures import ModelConfigRegistry
 from configuration.shared        import IoNames, LogSettings
-from tools.monitoring.logger      import Logger
-from tools.runtime.config_cli     import ConfigCli
+from tools.monitoring.logger     import Logger
+from tools.runtime.config_cli    import ConfigCli
 
 from pipelines.dataset.pipeline      import DatasetPipeline
 from pipelines.shared.store_geometry import StoreGeometryRecord
@@ -80,6 +80,7 @@ class BenchmarkPipeline:
     def _run_size_match(self):
         if not self.config.size_match.enabled:
             return {}
+
         records = SizeMatchStage(self.config, self.run_directory, self.pipeline_directory, self.logger, self.models, self.model_overrides, self.explicit_paths).run()
         self._mark_stage("size_match", "completed")
         return records
@@ -98,6 +99,7 @@ class BenchmarkPipeline:
     def _run_max_batch(self):
         if not self.config.max_batch.enabled or not torch.cuda.is_available():
             return {}
+
         records = MaxBatchStage(self.config, self.run_directory, self.pipeline_directory, self.logger, self.models, self.model_overrides, self.explicit_paths, self.datasets["train"], self.stats, self.size_records).run()
         self._mark_stage("max_batch", "completed")
         return records

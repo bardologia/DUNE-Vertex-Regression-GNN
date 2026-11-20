@@ -21,11 +21,11 @@ class TrialCollector:
         return json.loads(path.read_text(encoding="utf-8"))
 
     def _record_for(self, model_name, size_match, overfit, max_batch, training):
-        size_entry     = size_match.get(model_name, {})
-        overfit_entry  = overfit.get(model_name, {})
+        size_entry      = size_match.get(model_name, {})
+        overfit_entry   = overfit.get(model_name, {})
         max_batch_entry = max_batch.get(model_name, {})
-        training_entry = training.get(model_name, {})
-        metrics        = training_entry.get("metrics", {})
+        training_entry  = training.get(model_name, {})
+        metrics         = training_entry.get("metrics", {})
 
         return {
             "model"               : model_name,
@@ -65,7 +65,7 @@ class ComparisonReport:
         self.rank_metric      = configuration.comparison.rank_metric
 
     def _ranked_records(self):
-        scored = [record for record in self.records if record["metrics"].get(self.rank_metric) is not None]
+        scored    = [record for record in self.records if record["metrics"].get(self.rank_metric) is not None]
         ascending = self.rank_metric != "r2"
         return sorted(scored, key=lambda record: record["metrics"][self.rank_metric], reverse=not ascending)
 
