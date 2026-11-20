@@ -51,7 +51,7 @@ class ModelLibrary:
         return {"ok": True, "models": introspected["payload"]["models"]}
 
     def _capacity(self, defaults: dict) -> str:
-        return f"{defaults['hidden_dim']} dim · {defaults['num_layers']} layers"
+        return f"{defaults['hidden_dim']} dim, {defaults['num_layers']} layers"
 
     def _families(self, models: list[dict]) -> dict:
         defaults  = {model["name"]: model["config_defaults"] for model in models}
