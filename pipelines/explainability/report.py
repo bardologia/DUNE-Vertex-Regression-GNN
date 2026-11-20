@@ -93,17 +93,8 @@ class FeatureImportanceReport:
             )
         document.table(table)
 
-    def _permutation_section(self, document, results):
-        document.heading("Permutation importance", level=2)
-        self._perturbation_table(document, "Node features", results["node_features"])
-        if results["node_groups"]:
-            self._perturbation_table(document, "Node feature groups", results["node_groups"])
-        self._perturbation_table(document, "Edge features", results["edge_features"])
-        if results["edge_groups"]:
-            self._perturbation_table(document, "Edge feature groups", results["edge_groups"])
-
-    def _occlusion_section(self, document, results):
-        document.heading("Occlusion (mean-ablation) importance", level=2)
+    def _perturbation_section(self, document, heading, results):
+        document.heading(heading, level=2)
         self._perturbation_table(document, "Node features", results["node_features"])
         if results["node_groups"]:
             self._perturbation_table(document, "Node feature groups", results["node_groups"])
@@ -175,9 +166,9 @@ class FeatureImportanceReport:
         self._feature_inventory(document, inventory)
 
         if analysis.get("permutation") is not None:
-            self._permutation_section(document, analysis["permutation"])
+            self._perturbation_section(document, "Permutation importance", analysis["permutation"])
         if analysis.get("occlusion") is not None:
-            self._occlusion_section(document, analysis["occlusion"])
+            self._perturbation_section(document, "Occlusion (mean-ablation) importance", analysis["occlusion"])
         if analysis.get("gradient") is not None:
             self._gradient_section(document, analysis["gradient"])
         if analysis.get("expected_gradients") is not None:

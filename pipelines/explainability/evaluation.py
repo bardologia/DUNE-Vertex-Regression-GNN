@@ -22,13 +22,14 @@ class EvaluationGraphTensors:
         self.node_slices = None
         self.edge_slices = None
 
-    def _materialize(self):
-        count = len(self.dataset)
-        if self.max_events and self.max_events > 0:
-            count = min(count, self.max_events)
+    @staticmethod
+    def evenly_spaced(source, limit):
+        count   = min(len(source), limit) if limit > 0 else len(source)
+        indices = np.linspace(0, len(source) - 1, count).astype(np.int64)
+        return [source[int(index)] for index in indices]
 
-        indices     = np.linspace(0, len(self.dataset) - 1, count).astype(np.int64)
-        self.graphs = [self.dataset[int(index)] for index in indices]
+    def _materialize(self):
+        self.graphs = self.evenly_spaced(self.dataset, self.max_events)
 
     def _stack(self):
         node_segments = []

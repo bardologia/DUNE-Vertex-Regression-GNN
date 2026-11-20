@@ -7,6 +7,9 @@ from torch_geometric.loader import DataLoader as GraphDataLoader
 from configuration.explainability.general import KernelShapSettings, PermutationSeeding
 from configuration.inference.general      import VertexCoordinates
 from configuration.shared                 import MeasurementUnits
+from tools.monitoring.logger              import NullLogger
+
+from pipelines.explainability.evaluation import EvaluationGraphTensors
 
 
 class PerturbationImportance:
@@ -211,51 +214,17 @@ class ExpectedGradients:
 
         self.coordinate_count = len(VertexCoordinates.names)
 
-        self.subset_graphs      = None
-        self.subset_node_matrix = None
-        self.subset_edge_matrix = None
-        self.subset_node_slices = None
-        self.subset_edge_slices = None
-        self.node_signed        = None
-        self.edge_signed        = None
-        self.real_output        = None
-        self.baseline_output    = None
+        self.subset          = None
+        self.node_signed     = None
+        self.edge_signed     = None
+        self.real_output     = None
+        self.baseline_output = None
 
     def _select_subset(self):
-        count          = len(self.engine.graphs)
-        if self.events and self.events > 0:
-            count = min(count, self.events)
+        self.subset = EvaluationGraphTensors(self.engine.graphs, self.engine.batch_size, self.events, NullLogger()).prepare()
 
-        indices            = np.linspace(0, len(self.engine.graphs) - 1, count).astype(np.int64)
-        self.subset_graphs = [self.engine.graphs[int(index)] for index in indices]
-
-        node_segments = []
-        edge_segments = []
-        node_slices   = []
-        edge_slices   = []
-        node_cursor   = 0
-        edge_cursor   = 0
-
-        for graph in self.subset_graphs:
-            node_count = int(graph.x.shape[0])
-            edge_count = int(graph.edge_attr.shape[0])
-
-            node_slices.append((node_cursor, node_cursor + node_count))
-            edge_slices.append((edge_cursor, edge_cursor + edge_count))
-
-            node_segments.append(graph.x)
-            edge_segments.append(graph.edge_attr)
-
-            node_cursor += node_count
-            edge_cursor += edge_count
-
-        self.subset_node_matrix = torch.cat(node_segments, dim=0)
-        self.subset_edge_matrix = torch.cat(edge_segments, dim=0)
-        self.subset_node_slices = node_slices
-        self.subset_edge_slices = edge_slices
-
-        self.node_signed     = torch.zeros(self.subset_node_matrix.shape[0], self.subset_node_matrix.shape[1], self.coordinate_count, dtype=torch.float64)
-        self.edge_signed     = torch.zeros(self.subset_edge_matrix.shape[0], self.subset_edge_matrix.shape[1], self.coordinate_count, dtype=torch.float64)
+        self.node_signed     = torch.zeros(self.subset.node_row_count(), self.subset.node_feature_count(), self.coordinate_count, dtype=torch.float64)
+        self.edge_signed     = torch.zeros(self.subset.edge_row_count(), self.subset.edge_feature_count(), self.coordinate_count, dtype=torch.float64)
         self.real_output     = torch.zeros(self.coordinate_count, dtype=torch.float64)
         self.baseline_output = torch.zeros(self.coordinate_count, dtype=torch.float64)
 
@@ -265,32 +234,26 @@ class ExpectedGradients:
             vector[start:end] = float(alphas[index])
         return vector
 
-    def _data_list(self, node_matrix, edge_matrix):
-        rebuilt = []
-        for graph, (node_start, node_end), (edge_start, edge_end) in zip(self.subset_graphs, self.subset_node_slices, self.subset_edge_slices):
-            rebuilt.append(self.engine.rebuild(graph, node_matrix[node_start:node_end], edge_matrix[edge_start:edge_end]))
-        return rebuilt
-
     def _sample_inputs(self, generator):
-        node_baseline_index = torch.from_numpy(generator.integers(0, self.engine.node_row_count(), size=self.subset_node_matrix.shape[0]))
-        edge_baseline_index = torch.from_numpy(generator.integers(0, self.engine.edge_row_count(), size=self.subset_edge_matrix.shape[0]))
+        node_baseline_index = torch.from_numpy(generator.integers(0, self.engine.node_row_count(), size=self.subset.node_row_count()))
+        edge_baseline_index = torch.from_numpy(generator.integers(0, self.engine.edge_row_count(), size=self.subset.edge_row_count()))
 
         node_baseline = self.engine.node_matrix[node_baseline_index]
         edge_baseline = self.engine.edge_matrix[edge_baseline_index]
 
-        alphas      = generator.uniform(0.0, 1.0, size=len(self.subset_graphs))
-        node_alpha  = self._alpha_vector(self.subset_node_slices, self.subset_node_matrix.shape[0], alphas)
-        edge_alpha  = self._alpha_vector(self.subset_edge_slices, self.subset_edge_matrix.shape[0], alphas)
+        alphas     = generator.uniform(0.0, 1.0, size=len(self.subset.graphs))
+        node_alpha = self._alpha_vector(self.subset.node_slices, self.subset.node_row_count(), alphas)
+        edge_alpha = self._alpha_vector(self.subset.edge_slices, self.subset.edge_row_count(), alphas)
 
-        node_delta  = self.subset_node_matrix - node_baseline
-        edge_delta  = self.subset_edge_matrix - edge_baseline
+        node_delta = self.subset.node_matrix - node_baseline
+        edge_delta = self.subset.edge_matrix - edge_baseline
 
         node_interpolated = node_baseline + node_alpha * node_delta
         edge_interpolated = edge_baseline + edge_alpha * edge_delta
         return node_interpolated, edge_interpolated, node_delta, edge_delta, node_baseline, edge_baseline
 
     def _accumulate_path(self, node_interpolated, edge_interpolated, node_delta, edge_delta):
-        loader      = GraphDataLoader(self._data_list(node_interpolated, edge_interpolated), batch_size=self.engine.batch_size, shuffle=False)
+        loader      = self.subset.loader(node_interpolated, edge_interpolated)
         node_offset = 0
         edge_offset = 0
 
@@ -319,7 +282,7 @@ class ExpectedGradients:
             edge_offset += edge_rows
 
     def _coordinate_output(self, node_matrix, edge_matrix):
-        loader = GraphDataLoader(self._data_list(node_matrix, edge_matrix), batch_size=self.engine.batch_size, shuffle=False)
+        loader = self.subset.loader(node_matrix, edge_matrix)
         totals = torch.zeros(self.coordinate_count, dtype=torch.float64)
 
         with torch.no_grad():
@@ -349,7 +312,7 @@ class ExpectedGradients:
             "node_per_axis": np.abs(node_phi).mean(axis=0).T,
             "edge_per_axis": np.abs(edge_phi).mean(axis=0).T,
             "completeness" : self._completeness(),
-            "events"       : len(self.subset_graphs),
+            "events"       : len(self.subset.graphs),
             "samples"      : self.samples,
         }
 
@@ -358,7 +321,7 @@ class ExpectedGradients:
         self._select_subset()
 
         self.model.eval()
-        self.real_output = self._coordinate_output(self.subset_node_matrix, self.subset_edge_matrix)
+        self.real_output = self._coordinate_output(self.subset.node_matrix, self.subset.edge_matrix)
 
         with self.logger.track() as progress:
             task_id = progress.add_task("Expected gradients", total=self.samples)
@@ -398,12 +361,7 @@ class KernelShapImportance:
         self.completeness        = None
 
     def _select_subset(self):
-        count          = len(self.engine.graphs)
-        if self.events and self.events > 0:
-            count = min(count, self.events)
-
-        indices            = np.linspace(0, len(self.engine.graphs) - 1, count).astype(np.int64)
-        self.subset_graphs = [self.engine.graphs[int(index)] for index in indices]
+        self.subset_graphs = EvaluationGraphTensors.evenly_spaced(self.engine.graphs, self.events)
 
         self.node_mean = self.engine.node_matrix.mean(dim=0)
         self.edge_mean = self.engine.edge_matrix.mean(dim=0)

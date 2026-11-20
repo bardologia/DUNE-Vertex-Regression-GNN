@@ -217,20 +217,10 @@ class FeatureImportancePipeline:
             return {}
         return {record["label"]: record for record in results[key]}
 
-    def _gradient_lookup(self, domain):
-        if self.gradient is None:
+    def _feature_lookup(self, results, domain):
+        if results is None:
             return {}
-        return {record["feature"]: record for record in self.gradient[domain]}
-
-    def _expected_gradient_lookup(self, domain):
-        if self.expected_gradients is None:
-            return {}
-        return {record["feature"]: record for record in self.expected_gradients[domain]}
-
-    def _kernel_shap_lookup(self, domain):
-        if self.kernel_shap is None:
-            return {}
-        return {record["feature"]: record for record in self.kernel_shap[domain]}
+        return {record["feature"]: record for record in results[domain]}
 
     def _rank_map(self, scores):
         if not scores:
@@ -244,9 +234,9 @@ class FeatureImportancePipeline:
     def _merged_rows(self, layout, domain, permutation_key):
         permutation_features        = self._perturbation_lookup(self.permutation, permutation_key)
         occlusion_features          = self._perturbation_lookup(self.occlusion, permutation_key)
-        gradient_features           = self._gradient_lookup(domain)
-        expected_gradient_features  = self._expected_gradient_lookup(domain)
-        kernel_shap_features        = self._kernel_shap_lookup(domain)
+        gradient_features           = self._feature_lookup(self.gradient, domain)
+        expected_gradient_features  = self._feature_lookup(self.expected_gradients, domain)
+        kernel_shap_features        = self._feature_lookup(self.kernel_shap, domain)
 
         rows = []
         for name, group in layout:
@@ -321,15 +311,7 @@ class FeatureImportancePipeline:
         }
 
     def _gradient_figure(self, records, value_key, title, filename, color):
-        return {
-            "names"    : [record["feature"] for record in records],
-            "values"   : [record[value_key] for record in records],
-            "errors"   : None,
-            "xlabel"   : "Mean magnitude (normalized feature space)",
-            "title"    : title,
-            "filename" : filename,
-            "color"    : color,
-        }
+        return self._axis_figure(records, value_key, title, filename, color, "Mean magnitude (normalized feature space)")
 
     def _axis_figure(self, records, value_key, title, filename, color, xlabel):
         return {
