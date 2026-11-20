@@ -3,7 +3,7 @@ from pathlib import Path
 
 from configuration                 import DatasetConfig, TrainEntryConfig
 from configuration.explainability  import FeatureImportanceConfig
-from tools                         import Logger
+from tools.monitoring              import Logger
 from pipelines.dataset             import FeatureLayout
 from pipelines.training            import TrainingPipeline
 from pipelines.explainability      import FeatureImportancePipeline

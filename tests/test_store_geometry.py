@@ -13,7 +13,7 @@ from configuration.benchmark.general             import BenchmarkConfig
 from configuration.explainability                import FeatureImportanceConfig
 from configuration.shared                        import IoNames
 from configuration.sweep                         import EnergyEfficiencySweepConfig
-from tools                                       import Logger
+from tools.monitoring                            import Logger
 from pipelines.benchmark.pipeline                import BenchmarkPipeline
 from pipelines.dataset                           import ParquetEventReader
 from pipelines.explainability                    import FeatureImportancePipeline
