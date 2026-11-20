@@ -16,7 +16,6 @@ from pipelines.shared.run_metadata import RunPaths
 
 from config_registry       import ConfigRegistry
 from event_explorer        import EventExplorer
-from gpu_watchdog          import GpuWatchdog
 from model_library         import ModelLibrary
 from preprocessing_preview import PreprocessingPreview
 from process_manager       import ProcessManager
@@ -24,7 +23,7 @@ from project_paths         import ProjectPaths
 from results_browser       import ResultsBrowser
 from script_catalog        import ScriptCatalog
 from server_logger         import ServerLogger
-from system_monitor        import SystemMonitor
+from system_monitor        import GpuWatchdog, SystemMonitor
 from tensorboard_manager   import TensorboardManager
 
 
