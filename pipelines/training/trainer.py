@@ -12,8 +12,7 @@ from tools.monitoring.resource_monitor import ResourceMonitor
 from tools.runtime.run_tag             import CompletionMarker
 from tools.training.checkpoint         import Checkpoint, TrainerState, WeightEma
 from tools.training.gradients          import GradientClipper
-from tools.training.optimization       import LearningRateScaler
-from tools.training.scheduling         import Scheduler, Warmup
+from tools.training.scheduling         import LearningRateScaler, Scheduler, Warmup
 from tools.training.stopping           import EarlyStopping
 from tools.training.vram_reservation   import VramReservation
 

@@ -15,7 +15,7 @@ from torch_geometric.loader import DataLoader as GraphDataLoader
 from configuration.entry              import TrainEntryConfig
 from configuration.shared             import IoNames
 from models                          import get_model
-from tools.training.optimization      import LearningRateScaler
+from tools.training.scheduling        import LearningRateScaler
 from pipelines.dataset.pipeline       import DatasetPipeline
 from pipelines.inference.metrics      import InferenceMetrics
 from pipelines.inference.predictor    import Predictor

@@ -11,7 +11,7 @@ from torch_geometric.data import Batch
 
 from configuration.shared          import IoNames
 from tools.runtime.reproducibility import RngSnapshot
-from tools.training.optimization   import LearningRateScaler
+from tools.training.scheduling     import LearningRateScaler
 
 
 class RepeatedBatchLoader:
