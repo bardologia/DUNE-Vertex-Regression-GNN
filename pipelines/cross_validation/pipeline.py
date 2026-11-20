@@ -5,7 +5,6 @@ from datetime import datetime
 from pathlib  import Path
 
 import numpy as np
-import pandas as pd
 import torch
 
 from configuration.cross_validation.general import CrossValidationReportFields
@@ -143,12 +142,9 @@ class CrossValidationPipeline:
         self.dataset_pipeline = DatasetPipeline(self.entry.dataset, self.logger)
         self.samples          = self.dataset_pipeline.prepare_samples()
 
-        present_base_ids  = np.unique(self.samples[:, 7].astype(np.int64))
-        canonical_targets = self.dataset_pipeline.event_targets[present_base_ids]
-
-        target_dataframe = pd.DataFrame(canonical_targets, columns=list(self.entry.dataset.data.coordinate_columns))
-        event_folds      = CrossValidationSplitter(self.logger, self.entry.dataset.data.coordinate_columns, self.cross_validation).split(target_dataframe)
-        self.folds       = self._expand_event_folds(present_base_ids, event_folds)
+        present_base_ids, target_dataframe = self.dataset_pipeline.base_event_targets(self.samples)
+        event_folds                        = CrossValidationSplitter(self.logger, self.entry.dataset.data.coordinate_columns, self.cross_validation).split(target_dataframe)
+        self.folds                         = self._expand_event_folds(present_base_ids, event_folds)
 
         self.logger.subsection(f"Samples: {len(self.samples)} | Base events: {len(present_base_ids)} | Folds: {len(self.folds)}")
 

@@ -73,10 +73,7 @@ class DatasetPipeline:
         return {"geometry_fingerprint": self.geometry_fingerprint, "channel_count": int(self.geometry_positions.shape[0])}
 
     def _split_samples(self, samples):
-        present_base_ids  = np.unique(samples[:, 7].astype(np.int64))
-        canonical_targets = self.event_targets[present_base_ids]
-
-        target_dataframe                          = pd.DataFrame(canonical_targets, columns=list(self.config.data.coordinate_columns))
+        present_base_ids, target_dataframe        = self.base_event_targets(samples)
         balancer                                  = TargetBalancer(self.logger, self.config.data.coordinate_columns, self.config.split)
         train_rows, validation_rows, test_rows, _ = balancer.balance(target_dataframe)
 
@@ -86,6 +83,12 @@ class DatasetPipeline:
             "test"  : present_base_ids[test_rows].tolist(),
         }
         return self._partition_by_base_ids(samples, self.split_base_ids)
+
+    def base_event_targets(self, samples):
+        present_base_ids  = np.unique(samples[:, 7].astype(np.int64))
+        canonical_targets = self.event_targets[present_base_ids]
+        target_dataframe  = pd.DataFrame(canonical_targets, columns=list(self.config.data.coordinate_columns))
+        return present_base_ids, target_dataframe
 
     def _partition_by_base_ids(self, samples, split_base_ids):
         sample_base_ids = samples[:, 7].astype(np.int64)
