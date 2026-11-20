@@ -50,9 +50,6 @@ class ModelLibrary:
 
         return {"ok": True, "models": introspected["payload"]["models"]}
 
-    def _capacity(self, defaults: dict) -> str:
-        return f"{defaults['hidden_dim']} dim, {defaults['num_layers']} layers"
-
     def _families(self, models: list[dict]) -> dict:
         defaults  = {model["name"]: model["config_defaults"] for model in models}
         described = {entry["key"] for family in ModelFamilies.families for entry in family["models"]}
@@ -82,6 +79,9 @@ class ModelLibrary:
             families.append({"family": family["family"], "models": entries})
 
         return {"ok": True, "families": families}
+
+    def _capacity(self, defaults: dict) -> str:
+        return f"{defaults['hidden_dim']} dim, {defaults['num_layers']} layers"
 
     def list(self, interpreter: str) -> dict:
         signature = self._signature()

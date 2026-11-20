@@ -35,17 +35,6 @@ class Tracker:
         finally:
             self._scopes.pop()
 
-    def _tag(self, tag: str) -> str:
-        return "/".join([*self._scopes, str(tag)])
-
-    def _resolve(self, step: Optional[int]) -> int:
-        return self._step if step is None else int(step)
-
-    def _emit(self, method: str, tag: str, payload: Any, step: Optional[int], **kwargs: Any) -> None:
-        if self.writer is None:
-            return
-        getattr(self.writer, method)(self._tag(tag), payload, self._resolve(step), **kwargs)
-
     def log_scalar(self, tag, value, step=None) -> None:
         self._emit("add_scalar", tag, float(value), step)
 
@@ -66,6 +55,17 @@ class Tracker:
             self._emit("add_histogram", tag, v, step, bins=bins)
         except (ValueError, RuntimeError):
             pass
+
+    def _emit(self, method: str, tag: str, payload: Any, step: Optional[int], **kwargs: Any) -> None:
+        if self.writer is None:
+            return
+        getattr(self.writer, method)(self._tag(tag), payload, self._resolve(step), **kwargs)
+
+    def _tag(self, tag: str) -> str:
+        return "/".join([*self._scopes, str(tag)])
+
+    def _resolve(self, step: Optional[int]) -> int:
+        return self._step if step is None else int(step)
 
     def log_memory(self, step=None, device=None) -> None:
         if self.writer is None or not torch.cuda.is_available():

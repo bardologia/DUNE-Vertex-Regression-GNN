@@ -129,6 +129,11 @@ class TensorboardManager:
         with self.lock:
             return self.instances.get(tb_id)
 
+    def list_instances(self) -> list[dict]:
+        with self.lock:
+            records = list(self.instances.values())
+        return [self._view(record) for record in sorted(records, key=lambda item: item["started"], reverse=True)]
+
     def _view(self, record: dict) -> dict:
         if record["status"] == "running" and record["process"].poll() is not None:
             record["status"] = "stopped"
@@ -141,26 +146,6 @@ class TensorboardManager:
             "started" : record["started"],
             "url"     : f"{TensorboardSettings.path_prefix}{record['id']}/",
         }
-
-    def list_instances(self) -> list[dict]:
-        with self.lock:
-            records = list(self.instances.values())
-        return [self._view(record) for record in sorted(records, key=lambda item: item["started"], reverse=True)]
-
-    def _terminate(self, record: dict) -> None:
-        process = record["process"]
-
-        if process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=TensorboardSettings.shutdown_grace_s)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
-        else:
-            process.wait()
-
-        record["status"] = "stopped"
 
     def stop(self, tb_id: str) -> dict:
         with self.lock:
@@ -187,3 +172,18 @@ class TensorboardManager:
 
         for record in records:
             self._terminate(record)
+
+    def _terminate(self, record: dict) -> None:
+        process = record["process"]
+
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=TensorboardSettings.shutdown_grace_s)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+        else:
+            process.wait()
+
+        record["status"] = "stopped"

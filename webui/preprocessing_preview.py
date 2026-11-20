@@ -37,14 +37,6 @@ class PreprocessingPreview:
         self.bounds_min   = [0.0, 0.0, 0.0]
         self.bounds_max   = [0.0, 0.0, 0.0]
 
-    def defaults(self) -> dict:
-        physics = PhysicsConfig()
-        return {
-            "scaling"      : {"scale_factor": physics.scale_factor},
-            "efficiency"   : {"detection_efficiency": physics.detection_efficiency, "efficiency_seed": physics.efficiency_seed},
-            "augmentation" : asdict(AugmentationConfig()),
-        }
-
     def start_load(self) -> dict:
         with self.lock:
             if self.status["state"] == "loading":
@@ -55,6 +47,51 @@ class PreprocessingPreview:
 
         threading.Thread(target=self._load_worker, daemon=True).start()
         return {"ok": True}
+
+    def _load_worker(self) -> None:
+        try:
+            cache = self.paths.explorer_cache_dir / IoNames.raw_light_cache_file
+            if not cache.is_file():
+                self._set_stage("building the raw-light cache")
+                self.runner.spawn(self.paths.main_dir / IoNames.raw_light_script, [], IoNames.raw_light_export_log, cache)
+
+            self._set_stage("loading caches")
+            self._load_arrays(cache)
+
+            with self.lock:
+                self.loaded = True
+                self.status = {"state": "ready", "stage": "ready", "error": ""}
+
+            self.logger.ok(f"preprocessing preview ready: {self.octant_gt.shape[0]} octant events")
+        except Exception as error:
+            with self.lock:
+                self.loaded = False
+                self.status = {"state": "error", "stage": "", "error": str(error)}
+
+            self.logger.error(f"preprocessing preview load failed: {error}")
+
+    def _load_arrays(self, cache: Path) -> None:
+        reader  = ParquetEventReader(DatasetConfig().data.parquet_store_dir).load_store()
+        frame   = reader.octant_frame
+        archive = np.load(cache)
+        CacheGeometryStamp.require(archive, cache, reader.geometry_fingerprint)
+
+        geometry = archive["geometry_positions"].astype(np.float32)
+        light    = archive["light_matrix"]
+
+        with self.lock:
+            self.geometry     = geometry
+            self.light_matrix = light
+            self.octant_base  = frame["base_event_id"].values.astype(np.int64)
+            self.octant_signs = frame[["sign_x", "sign_y", "sign_z"]].values.astype(np.float32)
+            self.octant_gt    = frame[["target_x", "target_y", "target_z"]].values.astype(np.float32)
+            self.octant_tags  = frame["octant"].values.astype(str)
+            self.bounds_min   = self.octant_gt.min(axis=0).tolist()
+            self.bounds_max   = self.octant_gt.max(axis=0).tolist()
+
+    def _set_stage(self, stage: str) -> None:
+        with self.lock:
+            self.status["stage"] = stage
 
     def load_status(self) -> dict:
         with self.lock:
@@ -77,6 +114,14 @@ class PreprocessingPreview:
                 "detector_max" : self.geometry.max(axis=0).tolist(),
                 "defaults"     : self.defaults(),
             }
+
+    def defaults(self) -> dict:
+        physics = PhysicsConfig()
+        return {
+            "scaling"      : {"scale_factor": physics.scale_factor},
+            "efficiency"   : {"detection_efficiency": physics.detection_efficiency, "efficiency_seed": physics.efficiency_seed},
+            "augmentation" : asdict(AugmentationConfig()),
+        }
 
     def preview(self, index: int, config: dict) -> dict:
         with self.lock:
@@ -172,48 +217,3 @@ class PreprocessingPreview:
             "n_active"    : int(active.size),
             "total_light" : float(lit.sum()),
         }
-
-    def _load_worker(self) -> None:
-        try:
-            cache = self.paths.explorer_cache_dir / IoNames.raw_light_cache_file
-            if not cache.is_file():
-                self._set_stage("building the raw-light cache")
-                self.runner.spawn(self.paths.main_dir / IoNames.raw_light_script, [], IoNames.raw_light_export_log, cache)
-
-            self._set_stage("loading caches")
-            self._load_arrays(cache)
-
-            with self.lock:
-                self.loaded = True
-                self.status = {"state": "ready", "stage": "ready", "error": ""}
-
-            self.logger.ok(f"preprocessing preview ready: {self.octant_gt.shape[0]} octant events")
-        except Exception as error:
-            with self.lock:
-                self.loaded = False
-                self.status = {"state": "error", "stage": "", "error": str(error)}
-
-            self.logger.error(f"preprocessing preview load failed: {error}")
-
-    def _set_stage(self, stage: str) -> None:
-        with self.lock:
-            self.status["stage"] = stage
-
-    def _load_arrays(self, cache: Path) -> None:
-        reader  = ParquetEventReader(DatasetConfig().data.parquet_store_dir).load_store()
-        frame   = reader.octant_frame
-        archive = np.load(cache)
-        CacheGeometryStamp.require(archive, cache, reader.geometry_fingerprint)
-
-        geometry = archive["geometry_positions"].astype(np.float32)
-        light    = archive["light_matrix"]
-
-        with self.lock:
-            self.geometry     = geometry
-            self.light_matrix = light
-            self.octant_base  = frame["base_event_id"].values.astype(np.int64)
-            self.octant_signs = frame[["sign_x", "sign_y", "sign_z"]].values.astype(np.float32)
-            self.octant_gt    = frame[["target_x", "target_y", "target_z"]].values.astype(np.float32)
-            self.octant_tags  = frame["octant"].values.astype(str)
-            self.bounds_min   = self.octant_gt.min(axis=0).tolist()
-            self.bounds_max   = self.octant_gt.max(axis=0).tolist()

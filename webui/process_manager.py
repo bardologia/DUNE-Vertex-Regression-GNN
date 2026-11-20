@@ -131,18 +131,18 @@ class ProcessManager:
             argv += [f"--{path}", value]
         return argv
 
-    def _render_command(self, interpreter: str, entry: dict, overrides: dict) -> str:
-        parts = [interpreter, "-u", entry["relative"]]
-        for path, value in overrides.items():
-            parts += [f"--{path}", shlex.quote(value)]
-        return " ".join(parts)
-
     def _runtime_environment(self, interpreter: str) -> dict:
         environment                = SubprocessRunner.environment(interpreter)
         environment["FORCE_COLOR"] = "1"
         environment["COLUMNS"]     = str(LogSettings.terminal_columns)
         environment["LINES"]       = LogSettings.terminal_lines
         return environment
+
+    def _render_command(self, interpreter: str, entry: dict, overrides: dict) -> str:
+        parts = [interpreter, "-u", entry["relative"]]
+        for path, value in overrides.items():
+            parts += [f"--{path}", shlex.quote(value)]
+        return " ".join(parts)
 
     def _pump(self, pid: int, process: subprocess.Popen, stream: JobStream) -> None:
         descriptor = process.stdout.fileno()
@@ -188,6 +188,11 @@ class ProcessManager:
             self.processes.pop(record["pid"])
             self.streams.pop(record["pid"])
 
+    def list(self) -> list[dict]:
+        with self.lock:
+            records = list(self.processes.values())
+        return [self._view(record) for record in sorted(records, key=lambda item: item["started"], reverse=True)]
+
     def _view(self, record: dict) -> dict:
         return {
             "pid"         : record["pid"],
@@ -198,11 +203,6 @@ class ProcessManager:
             "started"     : record["started"],
             "exit_code"   : record["exit_code"],
         }
-
-    def list(self) -> list[dict]:
-        with self.lock:
-            records = list(self.processes.values())
-        return [self._view(record) for record in sorted(records, key=lambda item: item["started"], reverse=True)]
 
     def get_stream(self, pid: int) -> JobStream | None:
         with self.lock:
@@ -220,19 +220,6 @@ class ProcessManager:
         self._signal_group(pid, signal.SIGTERM)
         self.logger.warning(f"stop requested for pid {pid}")
         return {"ok": True}
-
-    @staticmethod
-    def _signal_group(pid: int, requested_signal: signal.Signals) -> None:
-        try:
-            os.killpg(pid, requested_signal)
-            return
-        except (ProcessLookupError, PermissionError):
-            pass
-
-        try:
-            os.kill(pid, requested_signal)
-        except (ProcessLookupError, PermissionError):
-            pass
 
     def stop_all(self) -> None:
         with self.lock:
@@ -253,3 +240,16 @@ class ProcessManager:
             except subprocess.TimeoutExpired:
                 self._signal_group(record["pid"], signal.SIGKILL)
                 self.logger.warning(f"escalated to SIGKILL for pid {record['pid']}")
+
+    @staticmethod
+    def _signal_group(pid: int, requested_signal: signal.Signals) -> None:
+        try:
+            os.killpg(pid, requested_signal)
+            return
+        except (ProcessLookupError, PermissionError):
+            pass
+
+        try:
+            os.kill(pid, requested_signal)
+        except (ProcessLookupError, PermissionError):
+            pass

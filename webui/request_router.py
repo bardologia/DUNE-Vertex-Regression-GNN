@@ -46,6 +46,48 @@ class RequestRouter:
 
         self.processes.add_exit_listener(self._on_job_exit)
 
+    def _on_job_exit(self, pid: int, code: int) -> None:
+        self.tensorboard.stop_for_owner(pid)
+
+    def _proxy_tensorboard(self, handler) -> None:
+        segments = handler.path.split("/")
+        tb_id    = segments[2].split("?")[0] if len(segments) > 2 else ""
+        record   = self.tensorboard.get(tb_id)
+
+        if record is None:
+            self._send_json(handler, {"error": "unknown tensorboard instance"}, HTTPStatus.NOT_FOUND)
+            return
+
+        length = int(handler.headers.get("Content-Length", 0) or 0)
+        body   = handler.rfile.read(length) if length > 0 else None
+
+        headers = {"Host": f"{TensorboardSettings.host}:{record['port']}", "Accept-Encoding": TensorboardSettings.proxy_accept_encoding}
+        for name in TensorboardSettings.proxy_request_headers:
+            value = handler.headers.get(name)
+            if value:
+                headers[name] = value
+
+        connection = http.client.HTTPConnection(TensorboardSettings.host, record["port"], timeout=TensorboardSettings.proxy_timeout_s)
+        try:
+            connection.request(handler.command, handler.path, body=body, headers=headers)
+            response = connection.getresponse()
+            payload  = response.read()
+            status   = response.status
+            passthru = {name: response.getheader(name) for name in TensorboardSettings.proxy_response_headers}
+        except OSError as error:
+            self._send_json(handler, {"error": f"tensorboard unreachable: {error}"}, HTTPStatus.BAD_GATEWAY)
+            return
+        finally:
+            connection.close()
+
+        handler.send_response(status)
+        for name, value in passthru.items():
+            if value:
+                handler.send_header(name, value)
+        handler.send_header("Content-Length", str(len(payload)))
+        handler.end_headers()
+        handler.wfile.write(payload)
+
     def _route_get(self, handler, path: str) -> None:
         if path == ApiRoutes.index:
             self._serve_static(handler, IoNames.index_file)
@@ -127,6 +169,91 @@ class RequestRouter:
 
         self._send_json(handler, {"error": "not found"}, HTTPStatus.NOT_FOUND)
 
+    def _serve_static(self, handler, relative: str) -> None:
+        target = (self.paths.static_dir / relative).resolve()
+        if not target.is_relative_to(self.paths.static_dir.resolve()):
+            self._send_json(handler, {"error": "forbidden"}, HTTPStatus.FORBIDDEN)
+            return
+        if not target.is_file():
+            self._send_json(handler, {"error": "not found"}, HTTPStatus.NOT_FOUND)
+            return
+
+        self._send_file(handler, target, HttpSettings.no_cache_control)
+
+    def _system_payload(self) -> dict:
+        payload  = self.system.status()
+        watchdog = self.gpu_watchdog.latest()
+
+        payload["watchdog"] = {
+            "armed"     : watchdog["armed"],
+            "interval"  : SystemMonitorSettings.gpu_poll_interval_s,
+            "gpu_count" : len(payload["gpus"]),
+            "updated"   : watchdog["updated"],
+        }
+        return payload
+
+    def _serve_run_file(self, handler, raw_path: str) -> None:
+        runs_root = self.paths.runs_dir.resolve()
+        target    = (runs_root / raw_path) if not Path(raw_path).is_absolute() else Path(raw_path)
+        target    = target.resolve()
+
+        if not target.is_relative_to(runs_root) or not target.is_file():
+            self._send_json(handler, {"error": "not found"}, HTTPStatus.NOT_FOUND)
+            return
+
+        self._send_file(handler, target, HttpSettings.run_file_cache_control)
+
+    def _send_file(self, handler, target: Path, cache_control: str) -> None:
+        data         = target.read_bytes()
+        content_type = mimetypes.guess_type(str(target))[0] or HttpSettings.binary_content_type
+
+        handler.send_response(HTTPStatus.OK)
+        handler.send_header("Content-Type", content_type)
+        handler.send_header("Content-Length", str(len(data)))
+        handler.send_header("Cache-Control", cache_control)
+        handler.end_headers()
+        handler.wfile.write(data)
+
+    def _stream_process(self, handler, identifier: str) -> None:
+        try:
+            pid = int(identifier)
+        except ValueError:
+            self._send_json(handler, {"error": "invalid pid"}, HTTPStatus.BAD_REQUEST)
+            return
+
+        stream = self.processes.get_stream(pid)
+        if stream is None:
+            self._send_json(handler, {"error": "unknown process"}, HTTPStatus.NOT_FOUND)
+            return
+
+        handler.send_response(HTTPStatus.OK)
+        handler.send_header("Content-Type", HttpSettings.stream_content_type)
+        handler.send_header("Cache-Control", HttpSettings.no_cache_control)
+        handler.send_header("Connection", HttpSettings.stream_connection)
+        handler.send_header("Access-Control-Allow-Origin", HttpSettings.stream_allowed_origin)
+        handler.end_headers()
+
+        subscriber = stream.subscribe()
+        try:
+            while True:
+                try:
+                    event = subscriber.get(timeout=HttpSettings.stream_keepalive_s)
+                except queue.Empty:
+                    handler.wfile.write(b": keepalive\n\n")
+                    handler.wfile.flush()
+                    continue
+
+                payload = json.dumps(event)
+                handler.wfile.write(f"data: {payload}\n\n".encode("utf-8"))
+                handler.wfile.flush()
+
+                if event["type"] == "end":
+                    break
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            stream.unsubscribe(subscriber)
+
     def _route_post(self, handler, path: str) -> None:
         body = self._read_json(handler)
 
@@ -194,12 +321,19 @@ class RequestRouter:
 
         self._send_json(handler, {"error": "not found"}, HTTPStatus.NOT_FOUND)
 
+    def _read_json(self, handler) -> dict:
+        length = int(handler.headers.get("Content-Length", 0) or 0)
+        if length <= 0:
+            return {}
+        raw = handler.rfile.read(length)
+        try:
+            return json.loads(raw.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            return {}
+
     @staticmethod
     def _tensorboard_requested(overrides: dict) -> bool:
         return str(overrides.get("tensorboard", "")).strip().lower() in LaunchSettings.tensorboard_flags
-
-    def _on_job_exit(self, pid: int, code: int) -> None:
-        self.tensorboard.stop_for_owner(pid)
 
     def _scoped_train_logdir(self, overrides: dict, interpreter: str) -> str:
         defaults    = self._train_config_defaults(interpreter)
@@ -216,68 +350,6 @@ class RequestRouter:
         schema = self.configs.schema("train", interpreter)
         return {leaf["path"]: leaf["value"] for leaf in schema["leaves"]}
 
-    def _system_payload(self) -> dict:
-        payload   = self.system.status()
-        watchdog  = self.gpu_watchdog.latest()
-        payload["watchdog"] = {
-            "armed"     : watchdog["armed"],
-            "interval"  : SystemMonitorSettings.gpu_poll_interval_s,
-            "gpu_count" : len(payload["gpus"]),
-            "updated"   : watchdog["updated"],
-        }
-        return payload
-
-    def _serve_run_file(self, handler, raw_path: str) -> None:
-        runs_root = self.paths.runs_dir.resolve()
-        target    = (runs_root / raw_path) if not Path(raw_path).is_absolute() else Path(raw_path)
-        target    = target.resolve()
-
-        if not target.is_relative_to(runs_root) or not target.is_file():
-            self._send_json(handler, {"error": "not found"}, HTTPStatus.NOT_FOUND)
-            return
-
-        self._send_file(handler, target, HttpSettings.run_file_cache_control)
-
-    def _stream_process(self, handler, identifier: str) -> None:
-        try:
-            pid = int(identifier)
-        except ValueError:
-            self._send_json(handler, {"error": "invalid pid"}, HTTPStatus.BAD_REQUEST)
-            return
-
-        stream = self.processes.get_stream(pid)
-        if stream is None:
-            self._send_json(handler, {"error": "unknown process"}, HTTPStatus.NOT_FOUND)
-            return
-
-        handler.send_response(HTTPStatus.OK)
-        handler.send_header("Content-Type", HttpSettings.stream_content_type)
-        handler.send_header("Cache-Control", HttpSettings.no_cache_control)
-        handler.send_header("Connection", HttpSettings.stream_connection)
-        handler.send_header("Access-Control-Allow-Origin", HttpSettings.stream_allowed_origin)
-        handler.end_headers()
-
-        subscriber = stream.subscribe()
-        try:
-            while True:
-                try:
-                    event = subscriber.get(timeout=HttpSettings.stream_keepalive_s)
-                except queue.Empty:
-                    handler.wfile.write(b": keepalive\n\n")
-                    handler.wfile.flush()
-                    continue
-
-                payload = json.dumps(event)
-                handler.wfile.write(f"data: {payload}\n\n".encode("utf-8"))
-                handler.wfile.flush()
-
-                if event["type"] == "end":
-                    break
-        except (BrokenPipeError, ConnectionResetError):
-            pass
-        finally:
-            stream.unsubscribe(subscriber)
-
     def _with_pid(self, identifier: str, action):
         try:
             pid = int(identifier)
@@ -285,29 +357,8 @@ class RequestRouter:
             return {"ok": False, "error": "invalid pid"}
         return action(pid)
 
-    def _read_json(self, handler) -> dict:
-        length = int(handler.headers.get("Content-Length", 0) or 0)
-        if length <= 0:
-            return {}
-        raw = handler.rfile.read(length)
-        try:
-            return json.loads(raw.decode("utf-8"))
-        except (ValueError, UnicodeDecodeError):
-            return {}
-
     def _send_result(self, handler, result: dict, failure: HTTPStatus = HTTPStatus.BAD_REQUEST) -> None:
         self._send_json(handler, result, HTTPStatus.OK if result["ok"] else failure)
-
-    def _send_file(self, handler, target: Path, cache_control: str) -> None:
-        data         = target.read_bytes()
-        content_type = mimetypes.guess_type(str(target))[0] or HttpSettings.binary_content_type
-
-        handler.send_response(HTTPStatus.OK)
-        handler.send_header("Content-Type", content_type)
-        handler.send_header("Content-Length", str(len(data)))
-        handler.send_header("Cache-Control", cache_control)
-        handler.end_headers()
-        handler.wfile.write(data)
 
     def _send_json(self, handler, payload: dict, status: int = HTTPStatus.OK) -> None:
         encoded = json.dumps(payload).encode("utf-8")
@@ -316,56 +367,6 @@ class RequestRouter:
         handler.send_header("Content-Length", str(len(encoded)))
         handler.end_headers()
         handler.wfile.write(encoded)
-
-    def _serve_static(self, handler, relative: str) -> None:
-        target = (self.paths.static_dir / relative).resolve()
-        if not target.is_relative_to(self.paths.static_dir.resolve()):
-            self._send_json(handler, {"error": "forbidden"}, HTTPStatus.FORBIDDEN)
-            return
-        if not target.is_file():
-            self._send_json(handler, {"error": "not found"}, HTTPStatus.NOT_FOUND)
-            return
-
-        self._send_file(handler, target, HttpSettings.no_cache_control)
-
-    def _proxy_tensorboard(self, handler) -> None:
-        segments = handler.path.split("/")
-        tb_id    = segments[2].split("?")[0] if len(segments) > 2 else ""
-        record   = self.tensorboard.get(tb_id)
-
-        if record is None:
-            self._send_json(handler, {"error": "unknown tensorboard instance"}, HTTPStatus.NOT_FOUND)
-            return
-
-        length = int(handler.headers.get("Content-Length", 0) or 0)
-        body   = handler.rfile.read(length) if length > 0 else None
-
-        headers = {"Host": f"{TensorboardSettings.host}:{record['port']}", "Accept-Encoding": TensorboardSettings.proxy_accept_encoding}
-        for name in TensorboardSettings.proxy_request_headers:
-            value = handler.headers.get(name)
-            if value:
-                headers[name] = value
-
-        connection = http.client.HTTPConnection(TensorboardSettings.host, record["port"], timeout=TensorboardSettings.proxy_timeout_s)
-        try:
-            connection.request(handler.command, handler.path, body=body, headers=headers)
-            response = connection.getresponse()
-            payload  = response.read()
-            status   = response.status
-            passthru = {name: response.getheader(name) for name in TensorboardSettings.proxy_response_headers}
-        except OSError as error:
-            self._send_json(handler, {"error": f"tensorboard unreachable: {error}"}, HTTPStatus.BAD_GATEWAY)
-            return
-        finally:
-            connection.close()
-
-        handler.send_response(status)
-        for name, value in passthru.items():
-            if value:
-                handler.send_header(name, value)
-        handler.send_header("Content-Length", str(len(payload)))
-        handler.end_headers()
-        handler.wfile.write(payload)
 
     def route(self, handler) -> None:
         parsed = urlparse(handler.path)

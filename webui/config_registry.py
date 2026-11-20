@@ -78,6 +78,12 @@ class ConfigRegistry:
             return None
         return entry
 
+    def _signature(self) -> tuple:
+        watched = sorted((self.paths.repo_root / IoNames.configuration_dir).rglob(IoNames.python_glob))
+        watched.append(self.paths.repo_root / IoNames.tools_dir / IoNames.runtime_dir / IoNames.config_cli_file)
+        watched.append(self.paths.webui_root / IoNames.launch_layout_file)
+        return self.introspection.signature(watched)
+
     def _run_bootstrap(self, entry: dict, interpreter: str) -> dict:
         introspected = self.introspection.run([interpreter, "-c", self.BOOTSTRAP, str(self.paths.repo_root), entry["entry_config_module"], entry["entry_config_class"]])
         if not introspected["ok"]:
@@ -94,12 +100,6 @@ class ConfigRegistry:
             return {**result, "layout": self.layout.build(script_key, result["leaves"])}
         except LayoutError as error:
             return {"ok": False, "error": str(error)}
-
-    def _signature(self) -> tuple:
-        watched = sorted((self.paths.repo_root / IoNames.configuration_dir).rglob(IoNames.python_glob))
-        watched.append(self.paths.repo_root / IoNames.tools_dir / IoNames.runtime_dir / IoNames.config_cli_file)
-        watched.append(self.paths.webui_root / IoNames.launch_layout_file)
-        return self.introspection.signature(watched)
 
     def schema(self, script_key: str, interpreter: str) -> dict:
         entry = self._entry(script_key)

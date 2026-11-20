@@ -45,9 +45,9 @@ class ResourceMonitor:
         self._gpu_handles = []
         try:
             pynvml.nvmlInit()
-            n = pynvml.nvmlDeviceGetCount()
+            n                 = pynvml.nvmlDeviceGetCount()
             self._gpu_handles = [pynvml.nvmlDeviceGetHandleByIndex(i) for i in range(n)]
-            self._nvml_ok = True
+            self._nvml_ok     = True
         except Exception:
             pass
 
@@ -72,27 +72,65 @@ class ResourceMonitor:
             "vram_pct"     : 0.0,
         }
 
-    @staticmethod
-    def _bytes_to_gb(x):
-        return float(x) / MeasurementUnits.bytes_per_gib
-
-    def _get_shm_usage(self):
-        try:
-            usage = psutil.disk_usage(IoNames.shm_dir)
-            return self._bytes_to_gb(usage.used), float(usage.percent)
-        except (FileNotFoundError, PermissionError, OSError):
-            return 0.0, 0.0
-
-    def _maybe_warn(self, key, message):
-        now  = time.time()
-        last = self._last_warn_t.get(key, 0.0)
-        if now - last < self.warn_cooldown_s:
+    def start(self):
+        if not self.enabled:
+            self.logger.subsection("[ResourceMonitor] disabled by config")
             return
-        self._last_warn_t[key] = now
-        self.logger.warning(f"[ResourceMonitor] {message}")
+
+        if self._thread is not None and self._thread.is_alive():
+            return
+
+        self._log_startup_info()
+
+        self._stop_evt.clear()
+        self._thread = threading.Thread(target=self._run, name="ResourceMonitor", daemon=True)
+        self._thread.start()
+
+    def _log_startup_info(self):
+        self.logger.section("[Resource Monitor]")
+        self.logger.kv_table({
+            "Enabled"         : True,
+            "Poll interval"   : f"{self.interval:.1f} s",
+            "NVML available"  : f"{self._nvml_ok} ({len(self._gpu_handles)} GPUs)",
+            "TB logging"      : self.log_to_tb,
+            "Warn thresholds" : f"RAM>={self.warn_ram_pct:.0f}%  VRAM>={self.warn_vram_pct:.0f}%  SWAP>={self.warn_swap_pct:.0f}%  SHM>={self.warn_shm_pct:.0f}%",
+        })
+
+    def _run(self):
+        while not self._stop_evt.is_set():
+            try:
+                metrics = self.sample()
+                self._publish(metrics)
+                self._sample_idx += 1
+            except Exception as exc:
+                self.logger.warning(f"[ResourceMonitor] sample failed: {exc}")
+            self._stop_evt.wait(self.interval)
+
+    def sample(self):
+        metrics = {}
+
+        self._sample_ram_metrics(metrics)
+        self._sample_swap_metrics(metrics)
+        self._sample_process_memory_metrics(metrics)
+        self._sample_process_stats(metrics)
+        self._sample_process_children(metrics)
+        self._sample_cpu_metrics(metrics)
+        self._sample_shm_metrics(metrics)
+        self._sample_disk_io_metrics(metrics)
+
+        gpu_used, gpu_total, gpu_index = self._sample_gpu_nvml_metrics(metrics)
+
+        metrics["vram_used_gb"] = gpu_used
+        metrics["vram_pct"]     = (ResourceMonitorSettings.percent_scale * gpu_used / gpu_total) if gpu_total > 0 else 0.0
+
+        self._update_peak_metrics(metrics)
+        self._check_warnings(metrics, gpu_used, gpu_total, gpu_index)
+
+        return metrics
 
     def _sample_ram_metrics(self, metrics):
         vm = psutil.virtual_memory()
+
         metrics["ram_used_gb"]      = self._bytes_to_gb(vm.used)
         metrics["ram_available_gb"] = self._bytes_to_gb(vm.available)
         metrics["ram_total_gb"]     = self._bytes_to_gb(vm.total)
@@ -100,18 +138,21 @@ class ResourceMonitor:
 
     def _sample_swap_metrics(self, metrics):
         sm = psutil.swap_memory()
+
         metrics["swap_used_gb"] = self._bytes_to_gb(sm.used)
         metrics["swap_pct"]     = float(sm.percent)
 
     def _sample_process_memory_metrics(self, metrics):
         try:
             mi = self.process.memory_full_info()
+
             metrics["proc_rss_gb"]    = self._bytes_to_gb(mi.rss)
             metrics["proc_vms_gb"]    = self._bytes_to_gb(mi.vms)
             metrics["proc_uss_gb"]    = self._bytes_to_gb(getattr(mi, "uss", 0))
             metrics["proc_shared_gb"] = self._bytes_to_gb(getattr(mi, "shared", 0))
         except (psutil.AccessDenied, psutil.NoSuchProcess):
             mi = self.process.memory_info()
+
             metrics["proc_rss_gb"] = self._bytes_to_gb(mi.rss)
             metrics["proc_vms_gb"] = self._bytes_to_gb(mi.vms)
 
@@ -124,14 +165,15 @@ class ResourceMonitor:
 
     def _sample_process_children(self, metrics):
         try:
-            children = self.process.children(recursive=True)
-            metrics["proc_num_children"] = float(len(children))
+            children  = self.process.children(recursive=True)
             child_rss = 0
             for c in children:
                 try:
                     child_rss += c.memory_info().rss
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
+
+            metrics["proc_num_children"]    = float(len(children))
             metrics["proc_children_rss_gb"] = self._bytes_to_gb(child_rss)
         except (psutil.AccessDenied, psutil.NoSuchProcess):
             pass
@@ -152,6 +194,13 @@ class ResourceMonitor:
         metrics["shm_used_gb"] = shm_used_gb
         metrics["shm_pct"]     = shm_pct
 
+    def _get_shm_usage(self):
+        try:
+            usage = psutil.disk_usage(IoNames.shm_dir)
+            return self._bytes_to_gb(usage.used), float(usage.percent)
+        except OSError:
+            return 0.0, 0.0
+
     def _sample_disk_io_metrics(self, metrics):
         now = time.time()
         try:
@@ -162,7 +211,7 @@ class ResourceMonitor:
                 metrics["disk_write_mb_s"] = (io.write_bytes - self._last_disk_io.write_bytes) / dt / MeasurementUnits.bytes_per_mib
             self._last_disk_io = io
             self._last_disk_t  = now
-        except (PermissionError, OSError):
+        except OSError:
             pass
 
     def _sample_gpu_nvml_metrics(self, metrics):
@@ -207,6 +256,10 @@ class ResourceMonitor:
 
         return busiest_used, busiest_total, busiest_index
 
+    @staticmethod
+    def _bytes_to_gb(x):
+        return float(x) / MeasurementUnits.bytes_per_gib
+
     def _update_peak_metrics(self, metrics):
         for k in list(self.peak.keys()):
             if k in metrics and metrics[k] > self.peak[k]:
@@ -247,27 +300,18 @@ class ResourceMonitor:
                 f"(DataLoader workers may exhaust shared memory)",
             )
 
-    def sample(self):
-        metrics = {}
+    def _maybe_warn(self, key, message):
+        now  = time.time()
+        last = self._last_warn_t.get(key, 0.0)
+        if now - last < self.warn_cooldown_s:
+            return
+        self._last_warn_t[key] = now
+        self.logger.warning(f"[ResourceMonitor] {message}")
 
-        self._sample_ram_metrics(metrics)
-        self._sample_swap_metrics(metrics)
-        self._sample_process_memory_metrics(metrics)
-        self._sample_process_stats(metrics)
-        self._sample_process_children(metrics)
-        self._sample_cpu_metrics(metrics)
-        self._sample_shm_metrics(metrics)
-        self._sample_disk_io_metrics(metrics)
-
-        gpu_used, gpu_total, gpu_index = self._sample_gpu_nvml_metrics(metrics)
-
-        metrics["vram_used_gb"] = gpu_used
-        metrics["vram_pct"]     = (ResourceMonitorSettings.percent_scale * gpu_used / gpu_total) if gpu_total > 0 else 0.0
-
-        self._update_peak_metrics(metrics)
-        self._check_warnings(metrics, gpu_used, gpu_total, gpu_index)
-
-        return metrics
+    def _publish(self, metrics):
+        step = int(self.step_getter())
+        if self.log_to_tb:
+            self.tracker.log_metrics("system", self._tb_metrics(metrics), step)
 
     def _tb_metrics(self, metrics):
         allowed = set(ResourceMonitorSettings.tensorboard_scalars)
@@ -276,44 +320,18 @@ class ResourceMonitor:
 
         return {k: v for k, v in metrics.items() if k in allowed}
 
-    def _publish(self, metrics):
-        step = int(self.step_getter())
-        if self.log_to_tb:
-            self.tracker.log_metrics("system", self._tb_metrics(metrics), step)
+    def stop(self):
+        self._stop_thread()
+        self._log_peak_metrics()
+        self._shutdown_nvml()
 
-    def _run(self):
-        while not self._stop_evt.is_set():
-            try:
-                metrics = self.sample()
-                self._publish(metrics)
-                self._sample_idx += 1
-            except Exception as exc:
-                self.logger.warning(f"[ResourceMonitor] sample failed: {exc}")
-            self._stop_evt.wait(self.interval)
-
-    def _log_startup_info(self):
-        self.logger.section("[Resource Monitor]")
-        self.logger.kv_table({
-            "Enabled"         : True,
-            "Poll interval"   : f"{self.interval:.1f} s",
-            "NVML available"  : f"{self._nvml_ok} ({len(self._gpu_handles)} GPUs)",
-            "TB logging"      : self.log_to_tb,
-            "Warn thresholds" : f"RAM>={self.warn_ram_pct:.0f}%  VRAM>={self.warn_vram_pct:.0f}%  SWAP>={self.warn_swap_pct:.0f}%  SHM>={self.warn_shm_pct:.0f}%",
-        })
-
-    def start(self):
-        if not self.enabled:
-            self.logger.subsection("[ResourceMonitor] disabled by config")
+    def _stop_thread(self):
+        if self._thread is None:
             return
 
-        if self._thread is not None and self._thread.is_alive():
-            return
-
-        self._log_startup_info()
-
-        self._stop_evt.clear()
-        self._thread = threading.Thread(target=self._run, name="ResourceMonitor", daemon=True)
-        self._thread.start()
+        self._stop_evt.set()
+        self._thread.join(timeout=max(self.interval * ResourceMonitorSettings.join_interval_factor, ResourceMonitorSettings.min_join_timeout_s))
+        self._thread = None
 
     def _log_peak_metrics(self):
         peaks = {}
@@ -324,19 +342,6 @@ class ResourceMonitor:
 
         self.logger.section("[Resource Monitor - Peaks]")
         self.logger.kv_table(peaks)
-
-    def _stop_thread(self):
-        if self._thread is None:
-            return
-
-        self._stop_evt.set()
-        self._thread.join(timeout=max(self.interval * ResourceMonitorSettings.join_interval_factor, ResourceMonitorSettings.min_join_timeout_s))
-        self._thread = None
-
-    def stop(self):
-        self._stop_thread()
-        self._log_peak_metrics()
-        self._shutdown_nvml()
 
     def _shutdown_nvml(self):
         if self._nvml_ok:
