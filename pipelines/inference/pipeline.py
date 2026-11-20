@@ -12,7 +12,7 @@ from configuration.shared            import IoNames
 from models                          import get_model
 from tools.monitoring.logger         import Logger
 from tools.runtime.config_cli        import ConfigCli
-from pipelines.dataset.pipeline       import DatasetPipeline
+from pipelines.dataset.pipeline      import DatasetPipeline
 from pipelines.dataset.normalization import NormalizationStats
 from pipelines.shared.store_geometry import StoreGeometryRecord
 
@@ -38,8 +38,8 @@ class InferencePipeline:
 
     def _load_run_config(self):
         resolved_path = self.run_directory / IoNames.metadata_dir / IoNames.resolved_config_file
-        entry      = TrainEntryConfig()
-        self.entry = ConfigCli.load_resolved(entry, resolved_path)
+        self.entry    = ConfigCli.load_resolved(TrainEntryConfig(), resolved_path)
+
         self.logger.subsection(f"Config loaded: model={self.entry.model_name} | run={self.run_directory.name}")
 
     def _prepare(self):
@@ -66,13 +66,14 @@ class InferencePipeline:
 
     def _analyze_split(self, split_name):
         self.logger.section(f"[Inference: {split_name}]")
+
         loader               = GraphDataLoader(self.dataset_splits[split_name], batch_size=self.batch_size, shuffle=False)
         predictions, targets = self.predictor.predict(loader)
 
-        metrics    = InferenceMetrics(self.logger).compute(predictions, targets, stage=split_name)
+        metrics         = InferenceMetrics(self.logger).compute(predictions, targets, stage=split_name)
         split_directory = self.analysis_directory / split_name
-        plots      = AnalysisPlots(split_directory, self.logger).run(predictions, targets)
-        animations = AnalysisAnimations(split_directory, self.logger).run(predictions, targets)
+        plots           = AnalysisPlots(split_directory, self.logger).run(predictions, targets)
+        animations      = AnalysisAnimations(split_directory, self.logger).run(predictions, targets)
 
         return {"metrics": metrics, "plots": plots, "animations": animations}
 

@@ -11,7 +11,6 @@ from pipelines.shared.store_geometry import CacheGeometryStamp
 
 
 class EventExportPipeline:
-
     def __init__(self, run_directory, device=None, splits=None, batch_size=None):
         self.inference          = InferencePipeline(run_directory, device=device, splits=splits, batch_size=batch_size)
         self.run_directory      = self.inference.run_directory

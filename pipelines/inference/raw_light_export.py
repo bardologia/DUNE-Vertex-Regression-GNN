@@ -12,7 +12,6 @@ from tools.monitoring.logger         import Logger
 
 
 class RawLightExportPipeline:
-
     def __init__(self, raw_input_dir, cache_directory, logger=None, dataset_config=None):
         self.raw_input_dir   = Path(raw_input_dir)
         self.cache_directory = Path(cache_directory)
