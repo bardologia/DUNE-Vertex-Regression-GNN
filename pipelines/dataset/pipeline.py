@@ -34,11 +34,8 @@ class DatasetPipeline:
 
     def _ensure_store(self):
         store_directory = self.config.data.parquet_store_dir
-        if (store_directory / IoNames.events_table_file).exists():
+        if (store_directory / IoNames.events_table_file).exists() or not self.config.data.build_store:
             return
-
-        if not self.config.data.build_store:
-            raise FileNotFoundError(f"Parquet store not found at {store_directory}. Build it first or set data.build_store=true.")
 
         self.logger.section("[Building Parquet Store]")
         store_parent = store_directory.parent
@@ -73,8 +70,6 @@ class DatasetPipeline:
         return self.samples
 
     def store_geometry(self):
-        if self.geometry_fingerprint is None:
-            raise ValueError("store_geometry needs the loaded store; call prepare_samples first.")
         return {"geometry_fingerprint": self.geometry_fingerprint, "channel_count": int(self.geometry_positions.shape[0])}
 
     def _split_samples(self, samples):
@@ -237,9 +232,6 @@ class DatasetPipeline:
         return {**model_overrides, "input_dim": node_dimension, "edge_dim": edge_dimension, "graph_dim": graph_dimension, "clamp_lower": clamp_lower, "clamp_upper": clamp_upper}
 
     def _normalized_detector_bounds(self):
-        if self.stats is None:
-            raise ValueError("inject_model_overrides needs fitted normalization statistics: run the dataset pipeline (or hand it stats) before building the model, because the detector envelope is only meaningful once the target frame is known.")
-
         half_extent = np.asarray(self.config.data.detector_half_extent, dtype=np.float64)
         center      = np.asarray(self.stats.target.center, dtype=np.float64)
         scale       = np.asarray(self.stats.target.scale,  dtype=np.float64)

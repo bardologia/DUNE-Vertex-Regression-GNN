@@ -71,8 +71,6 @@ class TargetBalancer:
 
             return number_of_bins, stratification_labels, train_validation_indices, test_indices, train_indices, validation_indices
 
-        raise ValueError("Unable to construct a valid stratified split for the current dataset and split configuration.")
-
     @staticmethod
     def _resolve_split_size(total_size, split_size):
         if isinstance(split_size, float):

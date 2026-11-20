@@ -25,7 +25,6 @@ class Loss:
             return F.mse_loss(predictions, targets)
         if self.config.data_term == "huber":
             return F.huber_loss(predictions, targets, delta=self.config.huber_delta)
-        raise ValueError(f"Unknown data term '{self.config.data_term}'")
 
     def _euclidean_term(self, predictions, targets):
         return torch.sqrt(((predictions - targets) ** 2).sum(dim=1) + LossSettings.epsilon).mean()
