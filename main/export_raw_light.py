@@ -6,7 +6,7 @@ from configuration.entry                  import RawLightExportEntryConfig
 from configuration.shared                 import IoNames
 from tools.monitoring.logger              import Logger
 from tools.runtime.config_cli             import ConfigCli
-from pipelines.inference.raw_light_export import RawLightExportPipeline
+from pipelines.inference.exports          import RawLightExportPipeline
 
 
 class RawLightExportEntry:

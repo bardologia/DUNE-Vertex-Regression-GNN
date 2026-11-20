@@ -2,11 +2,11 @@ from _bootstrap import EnvironmentPinner
 
 EnvironmentPinner.pin()
 
-from configuration.entry                         import DatasetExplorerEntryConfig
-from configuration.shared                        import IoNames
-from tools.monitoring.logger                     import Logger
-from tools.runtime.config_cli                    import ConfigCli
-from pipelines.inference.dataset_explorer_export import DatasetExplorerExportPipeline
+from configuration.entry         import DatasetExplorerEntryConfig
+from configuration.shared        import IoNames
+from tools.monitoring.logger     import Logger
+from tools.runtime.config_cli    import ConfigCli
+from pipelines.inference.exports import DatasetExplorerExportPipeline
 
 
 class DatasetExplorerExportEntry:

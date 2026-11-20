@@ -19,7 +19,7 @@ from pipelines.dataset                           import ParquetEventReader
 from pipelines.explainability                    import FeatureImportancePipeline
 from pipelines.inference                         import InferencePipeline
 from pipelines.sweep                             import EnergyEfficiencySweepPipeline
-from pipelines.inference.dataset_explorer_export import DatasetExplorerExportPipeline
+from pipelines.inference.exports                 import DatasetExplorerExportPipeline
 from pipelines.shared                            import CacheGeometryStamp, StoreGeometryRecord, TrainingRunMetadata
 from pipelines.training                          import TrainingPipeline
 

@@ -1,4 +1,4 @@
-from .event_export import EventExportPipeline
+from .exports      import EventExportPipeline
 from .metrics      import InferenceMetrics
 from .pipeline     import InferencePipeline
 from .plots        import AnalysisAnimations, AnalysisPlots
