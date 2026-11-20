@@ -20,17 +20,14 @@ class GraphAssembler:
         self.edge_rbf_count     = int(config.graph.edge_rbf_count)
         self.edge_rbf_max       = float(config.graph.edge_rbf_max)
 
-    def _effective_neighbors(self, number_of_nodes):
-        return max(1, min(int(self.k_neighbors), number_of_nodes - 1))
-
     def _nearest_neighbors(self, positions):
         effective_neighbors = self._effective_neighbors(positions.shape[0])
         tree                = cKDTree(positions)
         distances, indices  = tree.query(positions, k=effective_neighbors + 1)
         return distances.astype(np.float64), indices.astype(np.int64)
 
-    def _light_centroid(self, positions, light, total_light):
-        return (light[:, None] * positions).sum(axis=0) / total_light
+    def _effective_neighbors(self, number_of_nodes):
+        return max(1, min(int(self.k_neighbors), number_of_nodes - 1))
 
     def _light_covariance_eigenvalues(self, positions, light, total_light):
         centroid   = self._light_centroid(positions, light, total_light)
@@ -38,9 +35,8 @@ class GraphAssembler:
         covariance = (centered * light[:, None]).T @ centered / total_light
         return np.clip(np.linalg.eigvalsh(covariance)[::-1], 0.0, None)
 
-    def _sharp_light_centroid(self, positions, light):
-        sharp_weights = light.astype(np.float64) ** 2
-        return (sharp_weights[:, None] * positions).sum(axis=0) / (sharp_weights.sum() + self.EPSILON)
+    def _light_centroid(self, positions, light, total_light):
+        return (light[:, None] * positions).sum(axis=0) / total_light
 
     def _axis_moments(self, positions, light, total_light, centroid):
         centered = positions - centroid[None, :]
@@ -52,6 +48,10 @@ class GraphAssembler:
         skew     = third / (spread ** 3 + self.EPSILON)
 
         return spread, skew
+
+    def _sharp_light_centroid(self, positions, light):
+        sharp_weights = light.astype(np.float64) ** 2
+        return (sharp_weights[:, None] * positions).sum(axis=0) / (sharp_weights.sum() + self.EPSILON)
 
     def _weighted_quantiles(self, positions, light, quantiles):
         blocks = []
@@ -129,12 +129,31 @@ class NodeFeatures(GraphAssembler):
 
 
 class EdgeFeatures(GraphAssembler):
-    def _distance(self, distance):
-        return distance.reshape(-1, 1)
+    def _neighbor_pairs(self, number_of_nodes, neighbor_distances, neighbor_indices):
+        neighbor_indices_without_self   = neighbor_indices[:, 1:]
+        neighbor_distances_without_self = neighbor_distances[:, 1:]
+
+        destination = np.repeat(np.arange(number_of_nodes), neighbor_indices_without_self.shape[1]).astype(np.int64)
+        source      = neighbor_indices_without_self.reshape(-1).astype(np.int64)
+        distance    = neighbor_distances_without_self.reshape(-1).astype(np.float64)
+        return source, destination, distance
+
+    def _append_pairs(self, positions, pairs, source_node_indices, destination_node_indices, distance):
+        extra_source, extra_destination = pairs
+        extra_distance                  = np.linalg.norm(positions[extra_destination] - positions[extra_source], axis=1).astype(np.float64)
+
+        return (
+            np.concatenate([source_node_indices,      extra_source]),
+            np.concatenate([destination_node_indices, extra_destination]),
+            np.concatenate([distance,                 extra_distance]),
+        )
 
     def _displacement(self, source_positions, destination_positions, distance):
         normalization = np.maximum(distance, self.EPSILON)
         return (destination_positions - source_positions) / normalization[:, None]
+
+    def _distance(self, distance):
+        return distance.reshape(-1, 1)
 
     def _inverse_square_distance(self, distance):
         return (1.0 / (distance ** 2 + self.EPSILON)).reshape(-1, 1)
@@ -172,25 +191,6 @@ class EdgeFeatures(GraphAssembler):
         edge_index = torch.tensor(np.vstack([interleaved_source, interleaved_destination]), dtype=torch.long)
         edge_attr  = torch.tensor(interleaved_features, dtype=torch.float32)
         return edge_index, edge_attr
-
-    def _neighbor_pairs(self, number_of_nodes, neighbor_distances, neighbor_indices):
-        neighbor_indices_without_self   = neighbor_indices[:, 1:]
-        neighbor_distances_without_self = neighbor_distances[:, 1:]
-
-        destination = np.repeat(np.arange(number_of_nodes), neighbor_indices_without_self.shape[1]).astype(np.int64)
-        source      = neighbor_indices_without_self.reshape(-1).astype(np.int64)
-        distance    = neighbor_distances_without_self.reshape(-1).astype(np.float64)
-        return source, destination, distance
-
-    def _append_pairs(self, positions, pairs, source_node_indices, destination_node_indices, distance):
-        extra_source, extra_destination = pairs
-        extra_distance                  = np.linalg.norm(positions[extra_destination] - positions[extra_source], axis=1).astype(np.float64)
-
-        return (
-            np.concatenate([source_node_indices,      extra_source]),
-            np.concatenate([destination_node_indices, extra_destination]),
-            np.concatenate([distance,                 extra_distance]),
-        )
 
     def build(self, positions, light, neighbor_distances, neighbor_indices, extra_pairs=None):
         number_of_nodes = int(neighbor_indices.shape[0])

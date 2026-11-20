@@ -41,12 +41,6 @@ class TargetBalancer:
         self.split_config       = split_config
         self.labeller           = StratificationLabeller()
 
-    @staticmethod
-    def _resolve_split_size(total_size, split_size):
-        if isinstance(split_size, float):
-            return int(np.ceil(total_size * split_size))
-        return int(split_size)
-
     def _find_valid_stratification(self, targets):
         number_of_targets = len(targets)
         maximum_bins      = self.labeller.maximum_bins(number_of_targets)
@@ -79,6 +73,12 @@ class TargetBalancer:
             return number_of_bins, stratification_labels, train_validation_indices, test_indices, train_indices, validation_indices
 
         raise ValueError("Unable to construct a valid stratified split for the current dataset and split configuration.")
+
+    @staticmethod
+    def _resolve_split_size(total_size, split_size):
+        if isinstance(split_size, float):
+            return int(np.ceil(total_size * split_size))
+        return int(split_size)
 
     def _log_distribution(self, title, targets, named_indices):
         rows = []

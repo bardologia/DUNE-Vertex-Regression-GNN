@@ -49,30 +49,6 @@ class ParquetDatasetWriter:
         self.logger.subsection(f"Canonical geometry: {len(geometry_frame)} channels of {len(raw_frame)} raw bins (stored once)")
         return geometry_frame, geometry_hash
 
-    @staticmethod
-    def read_event(source_path_string: str, geometry_hash: str) -> tuple[str, float, float, float, np.ndarray]:
-        source_path = Path(source_path_string)
-        transform   = CoordinateTransform()
-
-        tokens   = source_path.stem.split("_")
-        target_x = float(tokens[1])
-        target_y = float(tokens[2])
-        target_z = float(tokens[3])
-        sensor_x, sensor_y, sensor_z = transform.apply_to_target(target_x, target_y, target_z)
-
-        event_frame    = pd.read_csv(source_path)
-        geometry_bytes = np.ascontiguousarray(event_frame[list(ChannelMapping.RAW_COLUMNS)].values)
-        event_hash     = hashlib.md5(geometry_bytes.tobytes()).hexdigest()
-        if event_hash != geometry_hash:
-            raise ValueError(f"Geometry mismatch in {source_path.name}; the store assumes one shared raw layout.")
-
-        light_values = event_frame["ly_amount"].values
-        if not np.all(np.mod(light_values, 1.0) == 0.0):
-            raise ValueError(f"Non-integer photon count in {source_path.name}; light is expected to be integer counts.")
-        light_vector = light_values.astype(np.int32)
-
-        return source_path.name, sensor_x, sensor_y, sensor_z, light_vector
-
     def read_all_events(self, discovered_files: list[Path], geometry_hash: str, geometry_frame: pd.DataFrame) -> tuple[list[str], np.ndarray, np.ndarray]:
         kept_rows    = geometry_frame["raw_channel_index"].to_numpy(dtype=np.int64)
         source_names = [None] * len(discovered_files)
@@ -98,6 +74,30 @@ class ParquetDatasetWriter:
 
         return source_names, target_array, light_matrix
 
+    @staticmethod
+    def read_event(source_path_string: str, geometry_hash: str) -> tuple[str, float, float, float, np.ndarray]:
+        source_path = Path(source_path_string)
+        transform   = CoordinateTransform()
+
+        tokens   = source_path.stem.split("_")
+        target_x = float(tokens[1])
+        target_y = float(tokens[2])
+        target_z = float(tokens[3])
+        sensor_x, sensor_y, sensor_z = transform.apply_to_target(target_x, target_y, target_z)
+
+        event_frame    = pd.read_csv(source_path)
+        geometry_bytes = np.ascontiguousarray(event_frame[list(ChannelMapping.RAW_COLUMNS)].values)
+        event_hash     = hashlib.md5(geometry_bytes.tobytes()).hexdigest()
+        if event_hash != geometry_hash:
+            raise ValueError(f"Geometry mismatch in {source_path.name}; the store assumes one shared raw layout.")
+
+        light_values = event_frame["ly_amount"].values
+        if not np.all(np.mod(light_values, 1.0) == 0.0):
+            raise ValueError(f"Non-integer photon count in {source_path.name}; light is expected to be integer counts.")
+        light_vector = light_values.astype(np.int32)
+
+        return source_path.name, sensor_x, sensor_y, sensor_z, light_vector
+
     def build_octant_index(self, target_array: np.ndarray) -> list[tuple]:
         octant_rows = []
         symbol      = {1: "p", -1: "n"}
@@ -119,14 +119,6 @@ class ParquetDatasetWriter:
 
         self.logger.subsection(f"Octant index: {len(target_array)} events expanded to {len(octant_rows)} full-volume events")
         return octant_rows
-
-    @classmethod
-    def geometry_table(cls, geometry_frame: pd.DataFrame) -> pa.Table:
-        columns = {}
-        for name, arrow_type in zip(ChannelMapping.GEOMETRY_COLUMNS, cls.GEOMETRY_TYPES):
-            values        = geometry_frame[name].tolist() if pa.types.is_string(arrow_type) else geometry_frame[name].to_numpy()
-            columns[name] = pa.array(values, type=arrow_type)
-        return pa.table(columns)
 
     def write_parquet(self, geometry_frame: pd.DataFrame, source_names: list[str], target_array: np.ndarray, light_matrix: np.ndarray, octant_rows: list[tuple]) -> None:
         os.makedirs(self.store_directory, exist_ok=True)
@@ -166,6 +158,14 @@ class ParquetDatasetWriter:
         self.logger.subsection(f"Geometry written to {self.geometry_path}")
         self.logger.subsection(f"Events written to {self.events_path}")
         self.logger.subsection(f"Octants written to {self.octants_path}")
+
+    @classmethod
+    def geometry_table(cls, geometry_frame: pd.DataFrame) -> pa.Table:
+        columns = {}
+        for name, arrow_type in zip(ChannelMapping.GEOMETRY_COLUMNS, cls.GEOMETRY_TYPES):
+            values        = geometry_frame[name].tolist() if pa.types.is_string(arrow_type) else geometry_frame[name].to_numpy()
+            columns[name] = pa.array(values, type=arrow_type)
+        return pa.table(columns)
 
     def report_sizes(self, octant_rows: list[tuple]) -> None:
         geometry_size = self.geometry_path.stat().st_size
@@ -208,6 +208,15 @@ class ParquetEventReader:
         self.event_targets        = None
         self.octant_frame         = None
 
+    def load_geometry(self) -> "ParquetEventReader":
+        self.geometry_frame = pa_parquet.read_table(self.geometry_path).to_pandas()
+
+        if tuple(self.geometry_frame.columns) != ChannelMapping.GEOMETRY_COLUMNS:
+            raise ValueError(f"The store {self.store_directory} has the geometry columns {list(self.geometry_frame.columns)}, expected {list(ChannelMapping.GEOMETRY_COLUMNS)}. A store without raw_channel_index was built from the raw positions before the documented channel mapping, with misplaced sensors and the three face totals as channels; rebuild it with main/build_parquet_store.py.")
+
+        self.geometry_fingerprint = self.fingerprint(self.geometry_frame)
+        return self
+
     @classmethod
     def fingerprint(cls, geometry_frame: pd.DataFrame) -> str:
         table  = ParquetDatasetWriter.geometry_table(geometry_frame)
@@ -220,15 +229,6 @@ class ParquetEventReader:
             else:
                 digest.update(np.ascontiguousarray(column.to_numpy()).tobytes())
         return digest.hexdigest()
-
-    def load_geometry(self) -> "ParquetEventReader":
-        self.geometry_frame = pa_parquet.read_table(self.geometry_path).to_pandas()
-
-        if tuple(self.geometry_frame.columns) != ChannelMapping.GEOMETRY_COLUMNS:
-            raise ValueError(f"The store {self.store_directory} has the geometry columns {list(self.geometry_frame.columns)}, expected {list(ChannelMapping.GEOMETRY_COLUMNS)}. A store without raw_channel_index was built from the raw positions before the documented channel mapping, with misplaced sensors and the three face totals as channels; rebuild it with main/build_parquet_store.py.")
-
-        self.geometry_fingerprint = self.fingerprint(self.geometry_frame)
-        return self
 
     def load_store(self) -> "ParquetEventReader":
         self.load_geometry()
@@ -254,6 +254,13 @@ class ParquetEventReader:
 
         return pa_parquet.read_table(self.octants_path, columns=list(self.OCTANT_COLUMNS)).to_pandas()
 
+    def iterate_corrected(self):
+        for event_id in range(len(self.light_matrix)):
+            light_vector = self.light_matrix[event_id]
+            event_frame  = self._build_event_frame(light_vector, 1, 1, 1)
+            target       = tuple(float(value) for value in self.event_targets[event_id])
+            yield event_frame, target
+
     def _build_event_frame(self, light_vector: np.ndarray, sign_x: int, sign_y: int, sign_z: int) -> pd.DataFrame:
         event_frame = pd.DataFrame({
             "bin"       : self.geometry_frame["bin"].values,
@@ -263,13 +270,6 @@ class ParquetEventReader:
             "ly_amount" : light_vector,
         })
         return event_frame
-
-    def iterate_corrected(self):
-        for event_id in range(len(self.light_matrix)):
-            light_vector = self.light_matrix[event_id]
-            event_frame  = self._build_event_frame(light_vector, 1, 1, 1)
-            target       = tuple(float(value) for value in self.event_targets[event_id])
-            yield event_frame, target
 
 
 __all__ = [

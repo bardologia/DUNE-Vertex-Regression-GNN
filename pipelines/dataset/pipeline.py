@@ -33,13 +33,6 @@ class DatasetPipeline:
         self.split_base_ids       = None
         self.raw_train_graphs     = None
 
-    @classmethod
-    def validate_split_names(cls, split_names):
-        unknown = tuple(name for name in split_names if name not in cls.SPLIT_NAMES)
-        if unknown:
-            raise KeyError(f"Unknown split name(s) {unknown}. Expected any of {cls.SPLIT_NAMES}.")
-        return tuple(split_names)
-
     def _ensure_store(self):
         store_directory = self.config.data.parquet_store_dir
         if (store_directory / IoNames.events_table_file).exists():
@@ -85,6 +78,33 @@ class DatasetPipeline:
             raise ValueError("store_geometry needs the loaded store; call prepare_samples first.")
         return {"geometry_fingerprint": self.geometry_fingerprint, "channel_count": int(self.geometry_positions.shape[0])}
 
+    def _split_samples(self, samples):
+        present_base_ids  = np.unique(samples[:, 7].astype(np.int64))
+        canonical_targets = self.event_targets[present_base_ids]
+
+        target_dataframe = pd.DataFrame(canonical_targets, columns=list(self.config.data.coordinate_columns))
+        balancer         = TargetBalancer(self.logger, self.config.data.coordinate_columns, self.config.split)
+        train_rows, validation_rows, test_rows, _ = balancer.balance(target_dataframe)
+
+        self.split_base_ids = {
+            "train" : present_base_ids[train_rows].tolist(),
+            "val"   : present_base_ids[validation_rows].tolist(),
+            "test"  : present_base_ids[test_rows].tolist(),
+        }
+        return self._partition_by_base_ids(samples, self.split_base_ids)
+
+    def _partition_by_base_ids(self, samples, split_base_ids):
+        sample_base_ids = samples[:, 7].astype(np.int64)
+        train_ids       = set(split_base_ids["train"])
+        validation_ids  = set(split_base_ids["val"])
+        test_ids        = set(split_base_ids["test"])
+
+        train_mask      = np.fromiter((base_id in train_ids      for base_id in sample_base_ids), dtype=bool, count=len(sample_base_ids))
+        validation_mask = np.fromiter((base_id in validation_ids for base_id in sample_base_ids), dtype=bool, count=len(sample_base_ids))
+        test_mask       = np.fromiter((base_id in test_ids       for base_id in sample_base_ids), dtype=bool, count=len(sample_base_ids))
+
+        return samples[train_mask], samples[validation_mask], samples[test_mask]
+
     def _subsample(self, samples):
         subset_fraction = self.config.data.subset_fraction
         if not (0.0 < subset_fraction < 1.0):
@@ -129,41 +149,6 @@ class DatasetPipeline:
         self.logger.subsection(f"Train samples: {len(train_samples)} rows from {len(selected_base_samples)} base events (octants={self.config.data.augment_octants}, subset_fraction={self.config.data.subset_fraction})")
         return train_samples
 
-    def _split_samples(self, samples):
-        present_base_ids  = np.unique(samples[:, 7].astype(np.int64))
-        canonical_targets = self.event_targets[present_base_ids]
-
-        target_dataframe = pd.DataFrame(canonical_targets, columns=list(self.config.data.coordinate_columns))
-        balancer         = TargetBalancer(self.logger, self.config.data.coordinate_columns, self.config.split)
-        train_rows, validation_rows, test_rows, _ = balancer.balance(target_dataframe)
-
-        self.split_base_ids = {
-            "train" : present_base_ids[train_rows].tolist(),
-            "val"   : present_base_ids[validation_rows].tolist(),
-            "test"  : present_base_ids[test_rows].tolist(),
-        }
-        return self._partition_by_base_ids(samples, self.split_base_ids)
-
-    def _partition_by_base_ids(self, samples, split_base_ids):
-        sample_base_ids = samples[:, 7].astype(np.int64)
-        train_ids       = set(split_base_ids["train"])
-        validation_ids  = set(split_base_ids["val"])
-        test_ids        = set(split_base_ids["test"])
-
-        train_mask      = np.fromiter((base_id in train_ids      for base_id in sample_base_ids), dtype=bool, count=len(sample_base_ids))
-        validation_mask = np.fromiter((base_id in validation_ids for base_id in sample_base_ids), dtype=bool, count=len(sample_base_ids))
-        test_mask       = np.fromiter((base_id in test_ids       for base_id in sample_base_ids), dtype=bool, count=len(sample_base_ids))
-
-        return samples[train_mask], samples[validation_mask], samples[test_mask]
-
-    def _make_dataset(self, samples, augmentation, stats):
-        graph_builder = Graph(self.config)
-        return GraphDataset(samples, self.geometry_positions, self.light_matrix, graph_builder, self.config.physics, augmentation=augmentation, stats=stats)
-
-    def _augmentation(self):
-        augmentation = Augmentation(self.config.augmentation)
-        return augmentation if augmentation.active else None
-
     def _fit_stats(self, train_samples, split_names):
         if self.stats is not None:
             self.logger.subsection("Normalization stats reused from caller (skipping fit)")
@@ -179,18 +164,6 @@ class DatasetPipeline:
             stats_source = clean_train_dataset
 
         self.stats = StatsEstimator(stats_source, self.config.data.stats_sample_size, self.logger, self.config).fit()
-
-    def _train_dataset(self, train_samples, augmentation):
-        if self.raw_train_graphs is not None:
-            base_dataset          = self._make_dataset(train_samples, None, self.stats)
-            normalized_graphs     = GraphNormalizer(self.stats).apply_all(self.raw_train_graphs)
-            self.raw_train_graphs = None
-            return CachedGraphDataset(base_dataset, self.logger, graphs=normalized_graphs)
-
-        dataset = self._make_dataset(train_samples, augmentation, self.stats)
-        if augmentation is not None and not self.evaluation_mode:
-            return dataset
-        return CachedGraphDataset(dataset, self.logger)
 
     def _build_datasets(self, train_samples, validation_samples, test_samples, split_names):
         augmentation = self._augmentation()
@@ -213,14 +186,25 @@ class DatasetPipeline:
         if "test" in split_names:
             self.datasets["test"] = CachedGraphDataset(self._make_dataset(test_samples, augmentation, self.stats), self.logger)
 
-    @staticmethod
-    def _split_workers(dataset, num_workers, logger, split_name):
-        if num_workers == 0 or not isinstance(dataset, CachedGraphDataset):
-            return num_workers
+    def _train_dataset(self, train_samples, augmentation):
+        if self.raw_train_graphs is not None:
+            base_dataset          = self._make_dataset(train_samples, None, self.stats)
+            normalized_graphs     = GraphNormalizer(self.stats).apply_all(self.raw_train_graphs)
+            self.raw_train_graphs = None
+            return CachedGraphDataset(base_dataset, self.logger, graphs=normalized_graphs)
 
-        if logger is not None:
-            logger.warning(f"{split_name} split is already materialised in RAM, so num_workers={num_workers} is overridden to 0: forked workers copy the {len(dataset)} cached graphs page by page as they walk them and the host runs out of memory long before the GPU does.")
-        return 0
+        dataset = self._make_dataset(train_samples, augmentation, self.stats)
+        if augmentation is not None and not self.evaluation_mode:
+            return dataset
+        return CachedGraphDataset(dataset, self.logger)
+
+    def _make_dataset(self, samples, augmentation, stats):
+        graph_builder = Graph(self.config)
+        return GraphDataset(samples, self.geometry_positions, self.light_matrix, graph_builder, self.config.physics, augmentation=augmentation, stats=stats)
+
+    def _augmentation(self):
+        augmentation = Augmentation(self.config.augmentation)
+        return augmentation if augmentation.active else None
 
     @staticmethod
     def _split_loader(dataset, batch_size, shuffle, num_workers, pin_memory, persistent_workers, prefetch_factor, seed, logger, split_name):
@@ -232,11 +216,26 @@ class DatasetPipeline:
         return GraphDataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=workers, pin_memory=pin_memory, persistent_workers=persistent, **shuffle_option, **worker_options)
 
     @staticmethod
+    def _split_workers(dataset, num_workers, logger, split_name):
+        if num_workers == 0 or not isinstance(dataset, CachedGraphDataset):
+            return num_workers
+
+        if logger is not None:
+            logger.warning(f"{split_name} split is already materialised in RAM, so num_workers={num_workers} is overridden to 0: forked workers copy the {len(dataset)} cached graphs page by page as they walk them and the host runs out of memory long before the GPU does.")
+        return 0
+
+    @staticmethod
     def build_loaders(datasets, batch_size, num_workers=0, pin_memory=False, persistent_workers=False, prefetch_factor=2, seed=0, logger=None):
         train_loader = DatasetPipeline._split_loader(datasets["train"], batch_size, True,  num_workers, pin_memory, persistent_workers, prefetch_factor, seed, logger, "train")
         val_loader   = DatasetPipeline._split_loader(datasets["val"],   batch_size, False, num_workers, pin_memory, persistent_workers, prefetch_factor, seed, logger, "val")
         test_loader  = DatasetPipeline._split_loader(datasets["test"],  batch_size, False, num_workers, pin_memory, persistent_workers, prefetch_factor, seed, logger, "test")
         return train_loader, val_loader, test_loader
+
+    def inject_model_overrides(self, model_overrides):
+        node_dimension, edge_dimension, graph_dimension = FeatureSchema(self.config).dimensions()
+        clamp_lower, clamp_upper                        = self._normalized_detector_bounds()
+
+        return {**model_overrides, "input_dim": node_dimension, "edge_dim": edge_dimension, "graph_dim": graph_dimension, "clamp_lower": clamp_lower, "clamp_upper": clamp_upper}
 
     def _normalized_detector_bounds(self):
         if self.stats is None:
@@ -254,12 +253,6 @@ class DatasetPipeline:
 
         self.logger.subsection(f"Output clamp envelope: +-{tuple(float(value) for value in half_extent)} m maps to [{lower.round(3).tolist()}, {upper.round(3).tolist()}] in the normalized target frame")
         return tuple(lower.tolist()), tuple(upper.tolist())
-
-    def inject_model_overrides(self, model_overrides):
-        node_dimension, edge_dimension, graph_dimension = FeatureSchema(self.config).dimensions()
-        clamp_lower, clamp_upper                        = self._normalized_detector_bounds()
-
-        return {**model_overrides, "input_dim": node_dimension, "edge_dim": edge_dimension, "graph_dim": graph_dimension, "clamp_lower": clamp_lower, "clamp_upper": clamp_upper}
 
     def pna_degree_histogram(self, model_name, dataset):
         if model_name != "pna":
@@ -314,6 +307,13 @@ class DatasetPipeline:
         split_samples = partitions[split_name]
         split_dataset = self._make_dataset(split_samples, self._augmentation(), self.stats)
         return CachedGraphDataset(split_dataset, self.logger)
+
+    @classmethod
+    def validate_split_names(cls, split_names):
+        unknown = tuple(name for name in split_names if name not in cls.SPLIT_NAMES)
+        if unknown:
+            raise KeyError(f"Unknown split name(s) {unknown}. Expected any of {cls.SPLIT_NAMES}.")
+        return tuple(split_names)
 
     def run_split_samples(self):
         self.logger.section("[Dataset Pipeline | Split Samples]")

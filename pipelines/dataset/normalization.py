@@ -117,6 +117,12 @@ class FeatureGroupNormalizer:
         transformed = np.where(self.log_mask, np.log1p(np.maximum(matrix, 0.0)), matrix)
         return (transformed - self.center) / self.scale
 
+    def inverse_torch(self, values, device):
+        center, scale, log_mask = self._tensors_for(device)
+
+        unscaled = values * scale + center
+        return torch.where(log_mask, torch.expm1(unscaled), unscaled)
+
     def _tensors_for(self, device):
         key = str(device)
         if key not in self.device_tensors:
@@ -126,12 +132,6 @@ class FeatureGroupNormalizer:
 
             self.device_tensors[key] = (center, scale, log_mask)
         return self.device_tensors[key]
-
-    def inverse_torch(self, values, device):
-        center, scale, log_mask = self._tensors_for(device)
-
-        unscaled = values * scale + center
-        return torch.where(log_mask, torch.expm1(unscaled), unscaled)
 
     def strategy_counts(self):
         from collections import Counter

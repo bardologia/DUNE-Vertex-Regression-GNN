@@ -21,11 +21,6 @@ class PretrainPreflight:
     def _enabled(self) -> bool:
         return bool(self.pretrain.find_batch_size or self.pretrain.tune_loader)
 
-    def _release(self, trainer) -> None:
-        trainer.optimizer.zero_grad(set_to_none=True)
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
     def _build_context(self, logger: Logger, device: torch.device) -> PretrainContext:
         trainer, dataset, model = self.build_trainer(logger)
         trainer.model.train()
@@ -44,6 +39,11 @@ class PretrainPreflight:
             context_gb     = context_gb,
             on_oom         = lambda: self._release(trainer),
         )
+
+    def _release(self, trainer) -> None:
+        trainer.optimizer.zero_grad(set_to_none=True)
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     def run(self) -> None:
         if not self._enabled():

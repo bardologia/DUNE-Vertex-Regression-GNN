@@ -60,9 +60,6 @@ class OverfitCheck:
     def planned_epochs(self) -> int:
         return math.ceil(self.config.max_steps / self.epoch_steps)
 
-    def record(self, key: str, value) -> None:
-        self.overrides[key] = value
-
     def sanitized_training_config(self, training_config):
         config = copy.deepcopy(training_config)
 
@@ -124,6 +121,9 @@ class OverfitCheck:
         self.record("augmentation", "disabled")
 
         return Batch.from_data_list(items), indices
+
+    def record(self, key: str, value) -> None:
+        self.overrides[key] = value
 
     def _verdict(self, train_losses: list[float]) -> dict:
         initial = float(train_losses[0])

@@ -38,23 +38,6 @@ class Tuner:
         self.datasets, self.stats = self.dataset_pipeline.run()
         self.train_loader, self.val_loader, _ = DatasetPipeline.build_loaders(self.datasets, self.tuning.batch_size, num_workers=0, logger=self.logger)
 
-    def _suggest(self, trial):
-        return self._sample(trial, self.model_space), self._sample(trial, self.optimizer_space)
-
-    def _sample(self, trial, space):
-        sampled = {}
-        for name, specification in space.items():
-            kind = specification["type"]
-            if kind == "float":
-                sampled[name] = trial.suggest_float(name, specification["low"], specification["high"], step=specification.get("step"), log=specification.get("log", False))
-            elif kind == "int":
-                sampled[name] = trial.suggest_int(name, specification["low"], specification["high"])
-            elif kind == "categorical":
-                sampled[name] = trial.suggest_categorical(name, specification["choices"])
-            else:
-                raise ValueError(f"Unknown tunable type '{kind}' for '{name}'")
-        return sampled
-
     def _objective(self, trial):
         Reproducibility.seed_everything(self.tuning.random_state + trial.number)
 
@@ -94,12 +77,22 @@ class Tuner:
 
         return best_validation_loss
 
-    def build_best_overrides(self):
-        best_parameters     = self.study.best_params
-        optimizer_keys      = set(self.optimizer_space)
-        model_overrides     = {key: value for key, value in best_parameters.items() if key not in optimizer_keys}
-        optimizer_overrides = {key: value for key, value in best_parameters.items() if key in optimizer_keys}
-        return model_overrides, optimizer_overrides
+    def _suggest(self, trial):
+        return self._sample(trial, self.model_space), self._sample(trial, self.optimizer_space)
+
+    def _sample(self, trial, space):
+        sampled = {}
+        for name, specification in space.items():
+            kind = specification["type"]
+            if kind == "float":
+                sampled[name] = trial.suggest_float(name, specification["low"], specification["high"], step=specification.get("step"), log=specification.get("log", False))
+            elif kind == "int":
+                sampled[name] = trial.suggest_int(name, specification["low"], specification["high"])
+            elif kind == "categorical":
+                sampled[name] = trial.suggest_categorical(name, specification["choices"])
+            else:
+                raise ValueError(f"Unknown tunable type '{kind}' for '{name}'")
+        return sampled
 
     def _persist_results(self):
         model_overrides, optimizer_overrides = self.build_best_overrides()
@@ -118,6 +111,13 @@ class Tuner:
         results_path = self.tuner_directory / IoNames.best_trial_file
         results_path.write_text(json.dumps(record, indent=IoNames.json_indent), encoding="utf-8")
         self.logger.subsection(f"Best hyperparameters saved to {results_path}")
+
+    def build_best_overrides(self):
+        best_parameters     = self.study.best_params
+        optimizer_keys      = set(self.optimizer_space)
+        model_overrides     = {key: value for key, value in best_parameters.items() if key not in optimizer_keys}
+        optimizer_overrides = {key: value for key, value in best_parameters.items() if key in optimizer_keys}
+        return model_overrides, optimizer_overrides
 
     def optimize(self):
         self.logger.section("[Hyperparameter Tuning]")

@@ -111,12 +111,6 @@ class Trainer:
 
         return groups
 
-    def _clear_memory(self):
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        self.vram_reservation.refill()
-
     def _maybe_resume(self, loader_generator) -> int:
         if not self.resume:
             return 0
@@ -132,65 +126,6 @@ class Trainer:
         })
 
         return start_epoch
-
-    def _apply_learning_rates(self):
-        effective_learning_rates = self.scheduler.effective_lrs()
-        for group, learning_rate in zip(self.optimizer.param_groups, effective_learning_rates):
-            group["lr"] = learning_rate
-            self.tracker.log_scalar(f"lr/{group['name']}", learning_rate, self.global_step)
-
-    def capture_state(self, epoch) -> dict:
-        with self.ema.applied(self.model):
-            params = {name: tensor.detach().clone() for name, tensor in self.model.state_dict().items()}
-
-        return {
-            "params"      : params,
-            "epoch"       : epoch,
-            "global_step" : self.global_step,
-        }
-
-    def forward(self, data):
-        with torch.amp.autocast("cuda", enabled=self.use_amp):
-            predictions = self.model(data)
-            loss_dict   = self.criterion(predictions, data)
-        return predictions, loss_dict
-
-    def backward(self, loss, do_step: bool):
-        if self.scaler:
-            self.scaler.scale(loss).backward()
-        else:
-            loss.backward()
-
-        self.pending_backwards += 1
-        if do_step:
-            self._apply_step()
-
-    def _flush_pending_step(self):
-        if self.pending_backwards > 0:
-            self._apply_step()
-
-    def _apply_step(self):
-        if self.scaler:
-            self.scaler.unscale_(self.optimizer)
-
-        gradient_norm = self.gradient_clipper.maybe_clip(self.model, self.global_step)
-        self.gradient_clipper.record(gradient_norm, self.global_step)
-
-        if self.scaler:
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
-        else:
-            self.optimizer.step()
-
-        self.pending_backwards = 0
-        self._finish_step()
-
-    def _finish_step(self):
-        self.optimizer.zero_grad(set_to_none=True)
-        self.ema.update(self.model)
-        self.warmup.step()
-        self.global_step += 1
-        self._apply_learning_rates()
 
     def train_epoch(self, loader, epoch):
         self.model.train()
@@ -241,17 +176,49 @@ class Trainer:
 
         return weighted_loss / max(1, graph_count)
 
+    def backward(self, loss, do_step: bool):
+        if self.scaler:
+            self.scaler.scale(loss).backward()
+        else:
+            loss.backward()
+
+        self.pending_backwards += 1
+        if do_step:
+            self._apply_step()
+
+    def _flush_pending_step(self):
+        if self.pending_backwards > 0:
+            self._apply_step()
+
+    def _apply_step(self):
+        if self.scaler:
+            self.scaler.unscale_(self.optimizer)
+
+        gradient_norm = self.gradient_clipper.maybe_clip(self.model, self.global_step)
+        self.gradient_clipper.record(gradient_norm, self.global_step)
+
+        if self.scaler:
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+        else:
+            self.optimizer.step()
+
+        self.pending_backwards = 0
+        self._finish_step()
+
+    def _finish_step(self):
+        self.optimizer.zero_grad(set_to_none=True)
+        self.ema.update(self.model)
+        self.warmup.step()
+        self.global_step += 1
+        self._apply_learning_rates()
+
     def _log_throughput(self, epoch_time: float, data_wait: float, graph_count: int, epoch: int) -> None:
         elapsed = max(epoch_time, 1e-9)
 
         self.tracker.log_scalar("throughput/graphs_per_s",   graph_count / elapsed, epoch)
         self.tracker.log_scalar("throughput/epoch_time_s",   epoch_time,            epoch)
         self.tracker.log_scalar("throughput/data_wait_frac", data_wait / elapsed,   epoch)
-
-    def _physical_residual(self, predictions, targets):
-        physical_predictions = self.stats.target.inverse_torch(predictions, self.device)
-        physical_targets     = self.stats.target.inverse_torch(targets, self.device)
-        return physical_predictions - physical_targets
 
     def evaluate(self, loader):
         self.model.eval()
@@ -276,8 +243,22 @@ class Trainer:
 
         return {"avg_loss": weighted_loss / max(1, graph_count), "coordinate_errors": coordinate_errors.results()}
 
-    def _validates_at(self, epoch: int) -> bool:
-        return ((epoch + 1) % self.validation_frequency == 0) or ((epoch + 1) == self.epochs)
+    def forward(self, data):
+        with torch.amp.autocast("cuda", enabled=self.use_amp):
+            predictions = self.model(data)
+            loss_dict   = self.criterion(predictions, data)
+        return predictions, loss_dict
+
+    def _physical_residual(self, predictions, targets):
+        physical_predictions = self.stats.target.inverse_torch(predictions, self.device)
+        physical_targets     = self.stats.target.inverse_torch(targets, self.device)
+        return physical_predictions - physical_targets
+
+    def _clear_memory(self):
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        self.vram_reservation.refill()
 
     def run_epoch(self, train_loader, val_loader, epoch):
         self.scheduler.step(epoch)
@@ -295,6 +276,15 @@ class Trainer:
         self.scheduler.step_metric(evaluation["avg_loss"])
         return train_loss, evaluation["avg_loss"], evaluation["coordinate_errors"]
 
+    def _validates_at(self, epoch: int) -> bool:
+        return ((epoch + 1) % self.validation_frequency == 0) or ((epoch + 1) == self.epochs)
+
+    def _apply_learning_rates(self):
+        effective_learning_rates = self.scheduler.effective_lrs()
+        for group, learning_rate in zip(self.optimizer.param_groups, effective_learning_rates):
+            group["lr"] = learning_rate
+            self.tracker.log_scalar(f"lr/{group['name']}", learning_rate, self.global_step)
+
     def _log_coordinate_errors(self, coordinate_errors, epoch):
         if not coordinate_errors:
             return
@@ -304,6 +294,16 @@ class Trainer:
                 self.tracker.log_scalar(f"val_{metric}/{name}", coordinate_errors[f"{metric}_{name}"], epoch)
 
             self.logger.subsection(f"Epoch {epoch + 1} val {metric.upper():<4} x/y/z (m) = {self._coordinate_row(coordinate_errors, metric)}")
+
+    def capture_state(self, epoch) -> dict:
+        with self.ema.applied(self.model):
+            params = {name: tensor.detach().clone() for name, tensor in self.model.state_dict().items()}
+
+        return {
+            "params"      : params,
+            "epoch"       : epoch,
+            "global_step" : self.global_step,
+        }
 
     def _monitor_fields(self, coordinate_errors):
         if not coordinate_errors:
