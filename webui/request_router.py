@@ -9,8 +9,8 @@ from datetime      import datetime
 from pathlib       import Path
 from urllib.parse  import parse_qs, urlparse
 
-from configuration.shared       import IoNames
-from pipelines.shared.run_paths import RunPaths
+from configuration.shared          import IoNames
+from pipelines.shared.run_metadata import RunPaths
 
 from config_registry     import ConfigRegistry
 from event_explorer      import EventExplorer
