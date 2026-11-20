@@ -3,7 +3,7 @@ import pytest
 
 from configuration import BaselineEntryConfig, DatasetConfig
 from configuration.baseline import BaselineBoosterConfig, BaselineFeatureConfig, BaselineSearchConfig
-from pipelines.baseline import BASELINE_MODEL_FAMILIES, BoosterTuner, SummaryFeatureExtractor, TabularSplitBuilder
+from pipelines.baseline import BaselineFamilies, BoosterTuner, SummaryFeatureExtractor, TabularSplitBuilder
 
 
 def _synthetic_event(seed=0, sensors=40):
@@ -89,11 +89,11 @@ def test_tabular_split_builder_expands_train_octants(parquet_store, quiet_logger
     assert np.isfinite(train_features).all() and np.isfinite(val_features).all()
 
 
-@pytest.mark.parametrize("family_key", sorted(BASELINE_MODEL_FAMILIES))
+@pytest.mark.parametrize("family_key", sorted(BaselineFamilies.by_key()))
 def test_booster_families_fit_and_predict(family_key):
     booster = BaselineBoosterConfig(max_estimators=40, early_stopping_rounds=10, thread_count=2)
     splits  = _synthetic_splits()
-    family  = BASELINE_MODEL_FAMILIES[family_key]
+    family  = BaselineFamilies.by_key()[family_key]
 
     model = family(booster, seed=0).fit(splits["train"][0], splits["train"][1], splits["val"][0], splits["val"][1], {"learning_rate": 0.1})
 
@@ -111,7 +111,7 @@ def test_booster_tuner_returns_finished_study(quiet_logger):
     search  = BaselineSearchConfig(n_trials=2, startup_trials=1, random_state=0)
     splits  = _synthetic_splits(seed=1)
 
-    study = BoosterTuner(BASELINE_MODEL_FAMILIES["lightgbm"], booster, search, 0, splits, quiet_logger).optimize()
+    study = BoosterTuner(BaselineFamilies.by_key()["lightgbm"], booster, search, 0, splits, quiet_logger).optimize()
     assert len(study.trials) == 2
     assert np.isfinite(study.best_value)
 
@@ -130,4 +130,4 @@ def test_baseline_run_records_the_store_geometry(tmp_path, quiet_logger):
 def test_baseline_entry_defaults_enable_octants():
     entry = BaselineEntryConfig()
     assert entry.dataset.data.augment_octants is True
-    assert set(entry.models) == set(BASELINE_MODEL_FAMILIES)
+    assert set(entry.models) == set(BaselineFamilies.by_key())

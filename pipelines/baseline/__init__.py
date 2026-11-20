@@ -1,9 +1,9 @@
-from .boosters import BASELINE_MODEL_FAMILIES, LightGbmBaseline, XgBoostBaseline
+from .boosters import BaselineFamilies, LightGbmBaseline, XgBoostBaseline
 from .features import SummaryFeatureExtractor, TabularSplitBuilder
 from .pipeline import BaselinePipeline, BaselineRunWriter, BoosterTuner
 
 __all__ = [
-    "BASELINE_MODEL_FAMILIES",
+    "BaselineFamilies",
     "LightGbmBaseline",
     "XgBoostBaseline",
     "SummaryFeatureExtractor",

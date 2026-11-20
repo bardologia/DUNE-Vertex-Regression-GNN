@@ -4,12 +4,12 @@ import lightgbm
 import numpy as np
 import xgboost
 
-from configuration.shared import IoNames
+from configuration.baseline.general  import BaselineImportance, BaselineLabels, LightGbmSearchSpace, XgBoostSearchSpace
+from configuration.inference.general import VertexCoordinates
+from configuration.shared            import IoNames
 
 
 class BoostedAxisEnsemble:
-    AXES = ("x", "y", "z")
-
     def __init__(self, booster_config, seed):
         self.booster = booster_config
         self.seed    = int(seed)
@@ -36,24 +36,24 @@ class BoostedAxisEnsemble:
 
     def importances(self, feature_names):
         gains = np.mean([np.asarray(model.feature_importances_, dtype=np.float64) for model in self.models], axis=0)
-        share = gains / (gains.sum() + 1e-12)
+        share = gains / (gains.sum() + BaselineImportance.gain_epsilon)
         return {name: float(value) for name, value in zip(feature_names, share)}
 
 
 class LightGbmBaseline(BoostedAxisEnsemble):
-    KEY   = "lightgbm"
-    LABEL = "LightGBM"
+    KEY   = BaselineLabels.lightgbm_key
+    LABEL = BaselineLabels.lightgbm_label
 
     @staticmethod
     def search_space(trial):
         return {
-            "learning_rate"     : trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
-            "num_leaves"        : trial.suggest_int("num_leaves", 16, 512, log=True),
-            "min_child_samples" : trial.suggest_int("min_child_samples", 5, 200, log=True),
-            "subsample"         : trial.suggest_float("subsample", 0.5, 1.0),
-            "colsample_bytree"  : trial.suggest_float("colsample_bytree", 0.5, 1.0),
-            "reg_alpha"         : trial.suggest_float("reg_alpha", 1e-8, 10.0, log=True),
-            "reg_lambda"        : trial.suggest_float("reg_lambda", 1e-8, 10.0, log=True),
+            "learning_rate"     : trial.suggest_float("learning_rate", *LightGbmSearchSpace.learning_rate, log=True),
+            "num_leaves"        : trial.suggest_int("num_leaves", *LightGbmSearchSpace.num_leaves, log=True),
+            "min_child_samples" : trial.suggest_int("min_child_samples", *LightGbmSearchSpace.min_child_samples, log=True),
+            "subsample"         : trial.suggest_float("subsample", *LightGbmSearchSpace.subsample),
+            "colsample_bytree"  : trial.suggest_float("colsample_bytree", *LightGbmSearchSpace.colsample_bytree),
+            "reg_alpha"         : trial.suggest_float("reg_alpha", *LightGbmSearchSpace.reg_alpha, log=True),
+            "reg_lambda"        : trial.suggest_float("reg_lambda", *LightGbmSearchSpace.reg_lambda, log=True),
         }
 
     def _fit_axis(self, features, target, validation_features, validation_target, params, axis_index):
@@ -80,7 +80,7 @@ class LightGbmBaseline(BoostedAxisEnsemble):
 
     def save(self, directory):
         saved = []
-        for axis, model in zip(self.AXES, self.models):
+        for axis, model in zip(VertexCoordinates.names, self.models):
             path = directory / IoNames.lightgbm_model_file.format(axis=axis)
             model.booster_.save_model(str(path))
             saved.append(path)
@@ -88,20 +88,20 @@ class LightGbmBaseline(BoostedAxisEnsemble):
 
 
 class XgBoostBaseline(BoostedAxisEnsemble):
-    KEY   = "xgboost"
-    LABEL = "XGBoost"
+    KEY   = BaselineLabels.xgboost_key
+    LABEL = BaselineLabels.xgboost_label
 
     @staticmethod
     def search_space(trial):
         return {
-            "learning_rate"    : trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
-            "max_depth"        : trial.suggest_int("max_depth", 4, 12),
-            "min_child_weight" : trial.suggest_float("min_child_weight", 0.5, 64.0, log=True),
-            "subsample"        : trial.suggest_float("subsample", 0.5, 1.0),
-            "colsample_bytree" : trial.suggest_float("colsample_bytree", 0.5, 1.0),
-            "reg_alpha"        : trial.suggest_float("reg_alpha", 1e-8, 10.0, log=True),
-            "reg_lambda"       : trial.suggest_float("reg_lambda", 1e-8, 10.0, log=True),
-            "gamma"            : trial.suggest_float("gamma", 1e-8, 1.0, log=True),
+            "learning_rate"    : trial.suggest_float("learning_rate", *XgBoostSearchSpace.learning_rate, log=True),
+            "max_depth"        : trial.suggest_int("max_depth", *XgBoostSearchSpace.max_depth),
+            "min_child_weight" : trial.suggest_float("min_child_weight", *XgBoostSearchSpace.min_child_weight, log=True),
+            "subsample"        : trial.suggest_float("subsample", *XgBoostSearchSpace.subsample),
+            "colsample_bytree" : trial.suggest_float("colsample_bytree", *XgBoostSearchSpace.colsample_bytree),
+            "reg_alpha"        : trial.suggest_float("reg_alpha", *XgBoostSearchSpace.reg_alpha, log=True),
+            "reg_lambda"       : trial.suggest_float("reg_lambda", *XgBoostSearchSpace.reg_lambda, log=True),
+            "gamma"            : trial.suggest_float("gamma", *XgBoostSearchSpace.gamma, log=True),
         }
 
     def _fit_axis(self, features, target, validation_features, validation_target, params, axis_index):
@@ -125,11 +125,15 @@ class XgBoostBaseline(BoostedAxisEnsemble):
 
     def save(self, directory):
         saved = []
-        for axis, model in zip(self.AXES, self.models):
+        for axis, model in zip(VertexCoordinates.names, self.models):
             path = directory / IoNames.xgboost_model_file.format(axis=axis)
             model.save_model(str(path))
             saved.append(path)
         return saved
 
 
-BASELINE_MODEL_FAMILIES = {family.KEY: family for family in (LightGbmBaseline, XgBoostBaseline)}
+
+class BaselineFamilies:
+    @staticmethod
+    def by_key():
+        return {family.KEY: family for family in (LightGbmBaseline, XgBoostBaseline)}

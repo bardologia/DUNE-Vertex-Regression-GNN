@@ -12,7 +12,9 @@ import torch
 
 from optuna.samplers import TPESampler
 
-from configuration.shared          import IoNames
+from configuration.baseline.general  import BaselineImportance, BaselineLabels
+from configuration.inference.general import VertexCoordinates
+from configuration.shared            import IoNames
 from tools.reporting.markdown      import MarkdownDoc, MarkdownTable
 from tools.runtime.config_cli      import ConfigCli
 from tools.runtime.reproducibility import Reproducibility
@@ -21,7 +23,7 @@ from pipelines.inference.metrics     import InferenceMetrics
 from pipelines.inference.plots       import PublicationStyle
 from pipelines.shared.store_geometry import StoreGeometryRecord
 
-from pipelines.baseline.boosters import BASELINE_MODEL_FAMILIES
+from pipelines.baseline.boosters import BaselineFamilies
 from pipelines.baseline.features import TabularSplitBuilder
 
 
@@ -57,8 +59,6 @@ class BoosterTuner:
 
 
 class BaselineRunWriter:
-    TOP_IMPORTANCES = 25
-
     def __init__(self, run_directory, logger):
         self.run_directory      = Path(run_directory)
         self.metadata_directory = self.run_directory / IoNames.metadata_dir
@@ -89,7 +89,7 @@ class BaselineRunWriter:
         return self._write_json(self.metadata_directory / IoNames.best_trial_file, record)
 
     def write_metrics(self, per_split_metrics):
-        return self._write_json(self.metadata_directory / IoNames.metrics_file, {"unit": "m", "splits": per_split_metrics})
+        return self._write_json(self.metadata_directory / IoNames.metrics_file, {"unit": VertexCoordinates.unit, "splits": per_split_metrics})
 
     def _plot_importances(self, label, ranked):
         PublicationStyle.apply()
@@ -97,8 +97,8 @@ class BaselineRunWriter:
         names  = [name for name, _ in ranked][::-1]
         shares = [share for _, share in ranked][::-1]
 
-        figure, axes = plt.subplots(figsize=(7, 8))
-        axes.barh(names, shares, color="#4C72B0")
+        figure, axes = plt.subplots(figsize=BaselineImportance.figure)
+        axes.barh(names, shares, color=BaselineImportance.bar_color)
         axes.set_xlabel("Mean gain share across coordinate models")
         axes.set_title(f"{label} feature importance")
 
@@ -109,7 +109,7 @@ class BaselineRunWriter:
     def write_importances(self, label, importances):
         ranked = sorted(importances.items(), key=lambda item: item[1], reverse=True)
         self._write_json(self.analysis_directory / IoNames.feature_importance_file, dict(ranked))
-        self._plot_importances(label, ranked[: self.TOP_IMPORTANCES])
+        self._plot_importances(label, ranked[: BaselineImportance.top_count])
 
     def write_report(self, family, entry_config, study, model, per_split_metrics):
         document = MarkdownDoc(f"{family.LABEL} baseline")
@@ -129,7 +129,8 @@ class BaselineRunWriter:
         document.kv_table(study.best_params)
 
         document.heading("Metrics", level=2)
-        table = MarkdownTable(["Split", "Euclidean mean [m]", "Euclidean median [m]", "P90 [m]", "MAE x [m]", "MAE y [m]", "MAE z [m]"], align=["left"] + ["right"] * 6)
+        columns = ["Split", "Euclidean mean [m]", "Euclidean median [m]", "P90 [m]", "MAE x [m]", "MAE y [m]", "MAE z [m]"]
+        table   = MarkdownTable(columns, align=["left"] + ["right"] * (len(columns) - 1))
         for split_name, metrics in per_split_metrics.items():
             table.add_row(split_name, f"{metrics['euclidean_mean']:.4f}", f"{metrics['euclidean_median']:.4f}", f"{metrics['euclidean_p90']:.4f}", f"{metrics['mae_x']:.4f}", f"{metrics['mae_y']:.4f}", f"{metrics['mae_z']:.4f}")
         document.table(table)
@@ -143,8 +144,6 @@ class BaselineRunWriter:
 
 
 class BaselinePipeline:
-    SPLIT_ORDER = ("train", "val", "test")
-
     def __init__(self, entry_config, logger):
         self.entry  = entry_config
         self.logger = logger
@@ -156,13 +155,14 @@ class BaselinePipeline:
         self.splits  = None
 
     def _validate_models(self):
-        models  = tuple(self.entry.models)
-        unknown = tuple(key for key in models if key not in BASELINE_MODEL_FAMILIES)
+        families = BaselineFamilies.by_key()
+        models   = tuple(self.entry.models)
+        unknown  = tuple(key for key in models if key not in families)
 
         if not models:
-            raise ValueError(f"models is empty; select at least one of {tuple(BASELINE_MODEL_FAMILIES)}.")
+            raise ValueError(f"models is empty; select at least one of {tuple(families)}.")
         if unknown:
-            raise KeyError(f"Unknown baseline model(s) {unknown}. Expected any of {tuple(BASELINE_MODEL_FAMILIES)}.")
+            raise KeyError(f"Unknown baseline model(s) {unknown}. Expected any of {tuple(families)}.")
         return models
 
     def _prepare_data(self):
@@ -184,7 +184,7 @@ class BaselinePipeline:
 
     def _evaluate(self, family, model):
         per_split_metrics = {}
-        for split_name in self.SPLIT_ORDER:
+        for split_name in BaselineLabels.split_order:
             features, targets            = self.splits[split_name]
             predictions                  = model.predict(features)
             per_split_metrics[split_name] = InferenceMetrics(self.logger).compute(torch.from_numpy(predictions), torch.from_numpy(targets), stage=f"{family.KEY}/{split_name}")
@@ -194,11 +194,11 @@ class BaselinePipeline:
         run_directory = Path(self.entry.baseline.io.log_base_dir) / IoNames.baseline_run_dir.format(family=family.KEY, run=self.resolved_name)
         writer        = BaselineRunWriter(run_directory, self.logger)
 
-        writer.write_resolved_config(f"baseline_{family.KEY}", self.entry)
+        writer.write_resolved_config(BaselineLabels.model_name.format(family=family.KEY), self.entry)
         writer.write_store_geometry(self.builder.store_geometry)
         writer.write_split(self.builder.split_base_ids)
         writer.write_best_trial({
-            "model_name"        : f"baseline_{family.KEY}",
+            "model_name"        : BaselineLabels.model_name.format(family=family.KEY),
             "best_value"        : study.best_value,
             "best_trial_number" : study.best_trial.number,
             "random_state"      : self.entry.baseline.search.random_state,
@@ -218,7 +218,7 @@ class BaselinePipeline:
         rows = []
         for key, payload in summary.items():
             rows.append({
-                "Model"           : BASELINE_MODEL_FAMILIES[key].LABEL,
+                "Model"           : BaselineFamilies.by_key()[key].LABEL,
                 "Val euclidean"   : f"{payload['metrics']['val']['euclidean_mean']:.4f}",
                 "Test euclidean"  : f"{payload['metrics']['test']['euclidean_mean']:.4f}",
                 "Test median"     : f"{payload['metrics']['test']['euclidean_median']:.4f}",
@@ -227,7 +227,7 @@ class BaselinePipeline:
         self.logger.metrics_table(rows, ["Model", "Val euclidean", "Test euclidean", "Test median", "Test p90"], title="Baseline Comparison [m]")
 
         strongest = min(summary, key=lambda key: summary[key]["metrics"]["val"]["euclidean_mean"])
-        self.logger.subsection(f"Strongest baseline by val euclidean mean: {BASELINE_MODEL_FAMILIES[strongest].LABEL} (test euclidean mean {summary[strongest]['metrics']['test']['euclidean_mean']:.4f} m)")
+        self.logger.subsection(f"Strongest baseline by val euclidean mean: {BaselineFamilies.by_key()[strongest].LABEL} (test euclidean mean {summary[strongest]['metrics']['test']['euclidean_mean']:.4f} m)")
         return strongest
 
     def run(self):
@@ -238,7 +238,7 @@ class BaselinePipeline:
 
         summary = {}
         for key in models:
-            family            = BASELINE_MODEL_FAMILIES[key]
+            family            = BaselineFamilies.by_key()[key]
             study             = self._tune(family)
             model             = self._final_fit(family, study.best_params)
             per_split_metrics = self._evaluate(family, model)

@@ -3,6 +3,8 @@ from __future__ import annotations
 import numpy as np
 
 from configuration.data.general      import GraphSettings
+from configuration.inference.general import VertexCoordinates
+from configuration.shared            import MeasurementUnits
 from pipelines.dataset.augmentation  import Augmentation
 from pipelines.dataset.graph         import GraphAssembler
 from pipelines.dataset.graph_dataset import LightRealization
@@ -10,27 +12,25 @@ from pipelines.dataset.pipeline      import DatasetPipeline
 
 
 class SummaryFeatureExtractor(GraphAssembler):
-    AXES = ("x", "y", "z")
-
     def __init__(self, feature_config):
         self.top_channel_count = int(feature_config.top_channel_count)
         self.quantiles         = tuple(float(quantile) for quantile in feature_config.quantiles)
 
     def names(self):
         feature_names  = ["total_light", "active_count", "max_light", "max_light_fraction"]
-        feature_names += [f"centroid_{axis}"       for axis in self.AXES]
-        feature_names += [f"sharp_centroid_{axis}" for axis in self.AXES]
-        feature_names += [f"spread_{axis}"         for axis in self.AXES]
-        feature_names += [f"skew_{axis}"           for axis in self.AXES]
+        feature_names += [f"centroid_{axis}"       for axis in VertexCoordinates.names]
+        feature_names += [f"sharp_centroid_{axis}" for axis in VertexCoordinates.names]
+        feature_names += [f"spread_{axis}"         for axis in VertexCoordinates.names]
+        feature_names += [f"skew_{axis}"           for axis in VertexCoordinates.names]
         feature_names += [f"inertia_eigenvalue_{index}" for index in (1, 2, 3)]
-        feature_names += [f"brightest_offset_{axis}" for axis in self.AXES]
+        feature_names += [f"brightest_offset_{axis}" for axis in VertexCoordinates.names]
         feature_names += ["brightest_offset_norm"]
 
         for quantile in self.quantiles:
-            feature_names += [f"position_{axis}_q{int(round(quantile * 100)):02d}" for axis in self.AXES]
+            feature_names += [f"position_{axis}_q{int(round(quantile * MeasurementUnits.percent)):02d}" for axis in VertexCoordinates.names]
 
         for rank in range(1, self.top_channel_count + 1):
-            feature_names += [f"top{rank}_{axis}" for axis in self.AXES]
+            feature_names += [f"top{rank}_{axis}" for axis in VertexCoordinates.names]
             feature_names += [f"top{rank}_light_fraction"]
 
         return feature_names

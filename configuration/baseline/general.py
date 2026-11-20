@@ -38,3 +38,44 @@ class BaselineConfig:
     search   : BaselineSearchConfig  = field(default_factory=BaselineSearchConfig)
     booster  : BaselineBoosterConfig = field(default_factory=BaselineBoosterConfig)
     io       : BaselineIOConfig      = field(default_factory=BaselineIOConfig)
+
+
+@dataclass(frozen=True)
+class BaselineLabels:
+    model_name     : str   = "baseline_{family}"
+    lightgbm_key   : str   = "lightgbm"
+    lightgbm_label : str   = "LightGBM"
+    xgboost_key    : str   = "xgboost"
+    xgboost_label  : str   = "XGBoost"
+    split_order    : tuple = ("train", "val", "test")
+
+
+@dataclass(frozen=True)
+class LightGbmSearchSpace:
+    learning_rate     : tuple = (0.01, 0.3)
+    num_leaves        : tuple = (16, 512)
+    min_child_samples : tuple = (5, 200)
+    subsample         : tuple = (0.5, 1.0)
+    colsample_bytree  : tuple = (0.5, 1.0)
+    reg_alpha         : tuple = (1e-8, 10.0)
+    reg_lambda        : tuple = (1e-8, 10.0)
+
+
+@dataclass(frozen=True)
+class XgBoostSearchSpace:
+    learning_rate    : tuple = (0.01, 0.3)
+    max_depth        : tuple = (4, 12)
+    min_child_weight : tuple = (0.5, 64.0)
+    subsample        : tuple = (0.5, 1.0)
+    colsample_bytree : tuple = (0.5, 1.0)
+    reg_alpha        : tuple = (1e-8, 10.0)
+    reg_lambda       : tuple = (1e-8, 10.0)
+    gamma            : tuple = (1e-8, 1.0)
+
+
+@dataclass(frozen=True)
+class BaselineImportance:
+    gain_epsilon : float = 1e-12
+    top_count    : int   = 25
+    figure       : tuple = (7, 8)
+    bar_color    : str   = "#4C72B0"
