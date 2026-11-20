@@ -18,6 +18,7 @@ from torch.utils.data       import Dataset
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
 from configuration.shared import IoNames, MeasurementUnits
+from configuration.tools  import LoaderSweepPlotStyle, LoaderTuningSettings
 
 
 @dataclass(frozen=True)
@@ -43,7 +44,7 @@ class LoaderSpec:
 
 
 class GpuUtilizationSampler:
-    def __init__(self, gpu_index: Optional[int] = None, interval_s: float = 0.05) -> None:
+    def __init__(self, gpu_index: Optional[int] = None, interval_s: float = LoaderTuningSettings.sample_interval_s) -> None:
         self.interval_s = float(interval_s)
         self.gpu_index  = self._resolve_index(gpu_index)
 
@@ -102,7 +103,7 @@ class GpuUtilizationSampler:
     def stop(self) -> dict:
         if self._thread is not None:
             self._stop_evt.set()
-            self._thread.join(timeout=max(self.interval_s * 4, 1.0))
+            self._thread.join(timeout=max(self.interval_s * LoaderTuningSettings.join_intervals, LoaderTuningSettings.join_floor_s))
             self._thread = None
 
         if self._nvml_ok:
@@ -132,10 +133,10 @@ class GpuFeedBenchmark:
         to_model_input : Callable,
         forward_loss   : Callable,
         device         : torch.device,
+        warmup_batches : int,
+        timed_batches  : int,
         use_amp        : bool          = False,
         seed           : int           = 0,
-        warmup_batches : int           = 8,
-        timed_batches  : int           = 60,
         gpu_index      : Optional[int] = None,
         cpu_threads    : Optional[int] = None,
     ) -> None:
@@ -153,7 +154,7 @@ class GpuFeedBenchmark:
         if cpu_threads is not None:
             torch.set_num_threads(max(1, int(cpu_threads)))
 
-        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=1e-4)
+        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=LoaderTuningSettings.learning_rate)
 
     @staticmethod
     def _worker_init(worker_id: int) -> None:
@@ -205,7 +206,7 @@ class GpuFeedBenchmark:
             count += 1
         elapsed = time.perf_counter() - start
 
-        return count * spec.batch_size / max(elapsed, 1e-9)
+        return count * spec.batch_size / max(elapsed, LoaderTuningSettings.time_floor_s)
 
     def _reference_batch(self, loader):
         batch = next(self._iterate(loader, 1))
@@ -239,7 +240,7 @@ class GpuFeedBenchmark:
         self._synchronize()
         elapsed = time.perf_counter() - start
 
-        return self.timed_batches * spec.batch_size / max(elapsed, 1e-9)
+        return self.timed_batches * spec.batch_size / max(elapsed, LoaderTuningSettings.time_floor_s)
 
     def _measure_end_to_end(self, loader, spec: LoaderSpec) -> dict:
         self.model.train()
@@ -273,8 +274,8 @@ class GpuFeedBenchmark:
         gpu_summary = sampler.stop()
 
         total_seconds = data_seconds + compute_seconds
-        throughput    = counted * spec.batch_size / max(total_seconds, 1e-9)
-        wait_fraction = data_seconds / max(total_seconds, 1e-9)
+        throughput    = counted * spec.batch_size / max(total_seconds, LoaderTuningSettings.time_floor_s)
+        wait_fraction = data_seconds / max(total_seconds, LoaderTuningSettings.time_floor_s)
 
         return {
             "end_to_end_samples_per_s" : throughput,
@@ -290,8 +291,8 @@ class GpuFeedBenchmark:
         compute_ceiling = self._measure_compute_ceiling(reference, spec)
         end_to_end      = self._measure_end_to_end(loader, spec)
 
-        feed_ratio = loader_only / max(compute_ceiling, 1e-9)
-        efficiency = end_to_end["end_to_end_samples_per_s"] / max(compute_ceiling, 1e-9)
+        feed_ratio = loader_only / max(compute_ceiling, LoaderTuningSettings.time_floor_s)
+        efficiency = end_to_end["end_to_end_samples_per_s"] / max(compute_ceiling, LoaderTuningSettings.time_floor_s)
 
         record = {
             **spec.as_record(),
@@ -347,7 +348,7 @@ class DataLoaderSweep:
 
 
 class SweepReport:
-    def __init__(self, results: list[dict], wait_threshold: float = 0.05) -> None:
+    def __init__(self, results: list[dict], wait_threshold: float = LoaderTuningSettings.wait_threshold) -> None:
         self.wait_threshold = float(wait_threshold)
         self.frame          = pd.DataFrame(results)
         self.ok_frame       = self.frame[self.frame["status"] == "ok"].copy()
@@ -389,7 +390,7 @@ class SweepReport:
         }
 
     def _new_axes(self):
-        figure, axes = plt.subplots(figsize=(7.0, 4.5))
+        figure, axes = plt.subplots(figsize=LoaderSweepPlotStyle.figure_size)
         return figure, axes
 
     def _save(self, figure, axes, fig_dir: Path, name: str) -> Path:
@@ -397,7 +398,7 @@ class SweepReport:
         fig_dir.mkdir(parents=True, exist_ok=True)
 
         out_path = fig_dir / name
-        figure.savefig(out_path)
+        figure.savefig(out_path, dpi=LoaderSweepPlotStyle.dpi)
         plt.close(figure)
 
         return out_path
@@ -407,13 +408,13 @@ class SweepReport:
 
         for workers, group in self.ok_frame.groupby("num_workers"):
             ordered = group.sort_values("batch_size")
-            axes.plot(ordered["batch_size"], ordered["end_to_end_samples_per_s"], marker="o", label=f"{workers} workers")
+            axes.plot(ordered["batch_size"], ordered["end_to_end_samples_per_s"], marker=LoaderSweepPlotStyle.marker, label=f"{workers} workers")
 
         axes.set_xscale("log", base=2)
         axes.set_xlabel("Batch size (samples)")
         axes.set_ylabel("End-to-end throughput (samples/s)")
         axes.set_title("End-to-end training throughput vs batch size")
-        axes.legend(title="DataLoader workers", bbox_to_anchor=(1.02, 1.0), loc="upper left", borderaxespad=0.0)
+        axes.legend(title="DataLoader workers", bbox_to_anchor=LoaderSweepPlotStyle.legend_anchor, loc="upper left", borderaxespad=0.0)
 
         return self._save(figure, axes, fig_dir, IoNames.throughput_figure)
 
@@ -422,13 +423,13 @@ class SweepReport:
 
         for batch_size, group in self.ok_frame.groupby("batch_size"):
             ordered = group.sort_values("num_workers")
-            axes.plot(ordered["num_workers"], 100.0 * ordered["data_wait_fraction"], marker="o", label=f"batch {batch_size}")
+            axes.plot(ordered["num_workers"], LoaderSweepPlotStyle.percent * ordered["data_wait_fraction"], marker=LoaderSweepPlotStyle.marker, label=f"batch {batch_size}")
 
-        axes.axhline(100.0 * self.wait_threshold, color="black", linestyle="--", linewidth=1.0, label=f"{100.0 * self.wait_threshold:.0f}% target")
+        axes.axhline(LoaderSweepPlotStyle.percent * self.wait_threshold, color=LoaderSweepPlotStyle.threshold_color, linestyle=LoaderSweepPlotStyle.threshold_style, linewidth=LoaderSweepPlotStyle.threshold_width, label=f"{LoaderSweepPlotStyle.percent * self.wait_threshold:.0f}% target")
         axes.set_xlabel("DataLoader workers")
         axes.set_ylabel("GPU idle waiting for data (%)")
         axes.set_title("Data-starvation share of step time vs worker count")
-        axes.legend(bbox_to_anchor=(1.02, 1.0), loc="upper left", borderaxespad=0.0)
+        axes.legend(bbox_to_anchor=LoaderSweepPlotStyle.legend_anchor, loc="upper left", borderaxespad=0.0)
 
         return self._save(figure, axes, fig_dir, IoNames.data_wait_figure)
 
@@ -439,8 +440,8 @@ class SweepReport:
             self.ok_frame["end_to_end_samples_per_s"],
             self.ok_frame["gpu_util_mean"],
             c=self.ok_frame["num_workers"],
-            cmap="viridis",
-            s=55,
+            cmap=LoaderSweepPlotStyle.colormap,
+            s=LoaderSweepPlotStyle.scatter_size,
         )
 
         axes.set_xlabel("End-to-end throughput (samples/s)")
@@ -457,13 +458,13 @@ class SweepReport:
 
         for batch_size, group in self.ok_frame.groupby("batch_size"):
             ordered = group.sort_values("num_workers")
-            axes.plot(ordered["num_workers"], ordered["feed_ratio"], marker="o", label=f"batch {batch_size}")
+            axes.plot(ordered["num_workers"], ordered["feed_ratio"], marker=LoaderSweepPlotStyle.marker, label=f"batch {batch_size}")
 
-        axes.axhline(1.0, color="black", linestyle="--", linewidth=1.0, label="GPU-bound threshold")
+        axes.axhline(1.0, color=LoaderSweepPlotStyle.threshold_color, linestyle=LoaderSweepPlotStyle.threshold_style, linewidth=LoaderSweepPlotStyle.threshold_width, label="GPU-bound threshold")
         axes.set_xlabel("DataLoader workers")
         axes.set_ylabel("Feed ratio (loader / GPU ceiling)")
         axes.set_title("CPU feed capacity relative to the GPU compute ceiling")
-        axes.legend(bbox_to_anchor=(1.02, 1.0), loc="upper left", borderaxespad=0.0)
+        axes.legend(bbox_to_anchor=LoaderSweepPlotStyle.legend_anchor, loc="upper left", borderaxespad=0.0)
 
         return self._save(figure, axes, fig_dir, IoNames.feed_ratio_figure)
 

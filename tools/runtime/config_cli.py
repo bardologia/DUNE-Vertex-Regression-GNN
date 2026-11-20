@@ -12,24 +12,20 @@ from datetime    import datetime
 from pathlib     import Path
 
 from configuration.shared import IoNames, LogSettings
-
-SUPPORTED_TYPES = (bool, int, float, str, Path, list, tuple, dict)
+from configuration.tools  import CliSettings
 
 
 class Detacher:
-
-    ENV_FLAG = "DUNE_GNN_DETACHED"
-    FLAGS    = ("--detach", "--nohup")
 
     def __init__(self, log_dir: str = IoNames.logs_dir) -> None:
         self.log_dir = Path(log_dir)
 
     def requested(self, argv: list[str] | None = None) -> bool:
         argv = sys.argv[1:] if argv is None else argv
-        return any(flag in argv for flag in self.FLAGS)
+        return any(flag in argv for flag in CliSettings.detach_flags)
 
     def active(self) -> bool:
-        return os.environ.get(self.ENV_FLAG) == "1"
+        return os.environ.get(CliSettings.detach_env_flag) == "1"
 
     def ensure(self) -> None:
         if self.active():
@@ -43,17 +39,17 @@ class Detacher:
 
         stamp    = datetime.now().strftime(IoNames.run_tag_format)
         name     = Path(sys.argv[0]).stem
-        log_path = self.log_dir / f"{name}_{stamp}{IoNames.output_log_suffix}"
+        log_path = self.log_dir / f"{IoNames.detached_log.format(script=name, stamp=stamp)}{IoNames.output_log_suffix}"
 
-        env                     = dict(os.environ)
-        env[self.ENV_FLAG]      = "1"
-        env["PYTHONUNBUFFERED"] = "1"
+        env                              = dict(os.environ)
+        env[CliSettings.detach_env_flag] = "1"
+        env["PYTHONUNBUFFERED"]          = "1"
         env.setdefault("FORCE_COLOR", "1")
         env.setdefault("COLUMNS", str(LogSettings.terminal_columns))
 
         with open(log_path, "ab") as sink:
             process = subprocess.Popen(
-                [sys.executable, "-u", *sys.argv],
+                [sys.executable, CliSettings.unbuffered_flag, *sys.argv],
                 cwd               = os.getcwd(),
                 stdout            = sink,
                 stderr            = subprocess.STDOUT,
@@ -71,23 +67,16 @@ class Detacher:
 
 class ConfigCli:
 
-    BOOTSTRAP_FLAGS = (
-        "-h", "--help",
-        "--help-config",
-        "--detach", "--nohup",
-        "--gpu",
-    )
-
     def __init__(self, config, description: str | None = None) -> None:
         self.config    = config
         self.overrides : dict = {}
         self.parser    = argparse.ArgumentParser(description=description, add_help=False, allow_abbrev=False)
 
-        self.parser.add_argument("--help-config", action="store_true", dest="_help_config")
-        self.parser.add_argument("--detach", "--nohup", action="store_true", dest="_detach")
+        self.parser.add_argument(CliSettings.help_config_flag, action="store_true", dest="_help_config")
+        self.parser.add_argument(*CliSettings.detach_flags, action="store_true", dest="_detach")
 
         for path, value in self._leaves(config):
-            if value is not None and not isinstance(value, SUPPORTED_TYPES):
+            if value is not None and not isinstance(value, CliSettings.supported_types):
                 continue
 
             options = [f"--{path}"]
@@ -128,14 +117,14 @@ class ConfigCli:
                 continue
 
             name = token.split("=", 1)[0]
-            if name in self.BOOTSTRAP_FLAGS:
+            if name in CliSettings.bootstrap_flags:
                 continue
 
             offenders.append(name)
 
         if offenders:
             keys = ", ".join(sorted(set(offenders)))
-            raise ValueError(f"Unrecognized override option(s): {keys}. Known overrides: --<path> from {type(self.config).__name__}; bootstrap flags: {', '.join(self.BOOTSTRAP_FLAGS)}")
+            raise ValueError(f"Unrecognized override option(s): {keys}. Known overrides: --<path> from {type(self.config).__name__}; bootstrap flags: {', '.join(CliSettings.bootstrap_flags)}")
 
     @classmethod
     def _leaves(cls, config, prefix: str = ""):
@@ -151,9 +140,9 @@ class ConfigCli:
     def _coerce(self, raw: str, current):
         if isinstance(current, bool):
             lowered = raw.strip().lower()
-            if lowered in ("true", "1", "yes", "on"):
+            if lowered in CliSettings.true_words:
                 return True
-            if lowered in ("false", "0", "no", "off"):
+            if lowered in CliSettings.false_words:
                 return False
             raise ValueError(f"Cannot parse boolean from '{raw}'")
 
@@ -217,7 +206,7 @@ class ConfigCli:
                 mapping[path] = str(value)
             elif isinstance(value, tuple):
                 mapping[path] = list(value)
-            elif value is None or isinstance(value, SUPPORTED_TYPES):
+            elif value is None or isinstance(value, CliSettings.supported_types):
                 mapping[path] = value
         return mapping
 

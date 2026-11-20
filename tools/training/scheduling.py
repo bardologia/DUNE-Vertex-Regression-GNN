@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import math
 
+from configuration.tools import SchedulerSettings
+
 
 class Warmup:
     def __init__(self, config, logger, tracker):
@@ -137,7 +139,7 @@ class Scheduler:
 
     def _exponential(self, epoch: int) -> list[float]:
         eta_min = float(self.config.scheduler.eta_min)
-        ratio   = max(eta_min / max(self.base_lrs[0], 1e-12), 1e-8)
+        ratio   = max(eta_min / max(self.base_lrs[0], SchedulerSettings.learning_rate_floor), SchedulerSettings.decay_ratio_floor)
         return [base_learning_rate * ratio ** self._progress(epoch) for base_learning_rate in self.base_lrs]
 
     def _step_decay(self, epoch: int) -> list[float]:

@@ -6,15 +6,12 @@ import numpy as np
 
 from configuration.data.general      import DataConfig
 from configuration.shared            import IoNames
+from configuration.tools             import LightCentroidSettings
 from pipelines.dataset.parquet_store import ParquetEventReader
 from tools.monitoring.logger         import Logger
 
 
 class LightCentroidCheck:
-    AXES         = ("x", "y", "z")
-    FACE_MARGIN  = 0.5
-    TABLE_FIELDS = ["Axis", "Pearson r", "Fit slope", "Fit intercept", "MAE raw", "MAE fitted", "Target std"]
-
     def __init__(self, store_directory, logger):
         self.store_directory = Path(store_directory)
         self.logger          = logger
@@ -26,12 +23,12 @@ class LightCentroidCheck:
     def _load(self):
         reader = ParquetEventReader(self.store_directory).load_store()
 
-        self.positions = reader.geometry_frame[list(self.AXES)].to_numpy(dtype=np.float64)
+        self.positions = reader.geometry_frame[list(LightCentroidSettings.axes)].to_numpy(dtype=np.float64)
         self.light     = reader.light_matrix.astype(np.float64)
         self.targets   = reader.event_targets.astype(np.float64)
 
     def _report_geometry(self):
-        ranges = {f"Range {axis}": f"[{self.positions[:, index].min():.2f}, {self.positions[:, index].max():.2f}]" for index, axis in enumerate(self.AXES)}
+        ranges = {f"Range {axis}": f"[{self.positions[:, index].min():.2f}, {self.positions[:, index].max():.2f}]" for index, axis in enumerate(LightCentroidSettings.axes)}
 
         self.logger.section("[Light Centroid Check]")
         self.logger.kv_table({"Channels": self.positions.shape[0], "Events": self.light.shape[0], **ranges}, title="Store")
@@ -40,7 +37,7 @@ class LightCentroidCheck:
         light     = self.light[:, channel_mask]
         positions = self.positions[channel_mask]
         weight    = light.sum(axis=1, keepdims=True)
-        return (light @ positions) / np.maximum(weight, 1e-12), weight[:, 0]
+        return (light @ positions) / np.maximum(weight, LightCentroidSettings.weight_floor), weight[:, 0]
 
     def _axis_row(self, axis, centroid_values, target_values):
         pearson_r        = float(np.corrcoef(centroid_values, target_values)[0, 1])
@@ -60,10 +57,10 @@ class LightCentroidCheck:
         lit_centroid = centroid[valid]
         lit_targets  = self.targets[valid]
 
-        rows = [self._axis_row(axis, lit_centroid[:, index], lit_targets[:, index]) for index, axis in enumerate(self.AXES)]
+        rows = [self._axis_row(axis, lit_centroid[:, index], lit_targets[:, index]) for index, axis in enumerate(LightCentroidSettings.axes)]
 
         self.logger.subsection(f"{title}: {int(valid.sum())}/{len(valid)} events carry light")
-        self.logger.metrics_table(rows, self.TABLE_FIELDS, title=title)
+        self.logger.metrics_table(rows, list(rows[0]), title=title)
 
     def _report_full_detector(self):
         full_mask         = np.ones(self.positions.shape[0], dtype=bool)
@@ -72,10 +69,10 @@ class LightCentroidCheck:
 
     def _report_barrel_only(self):
         extreme     = float(np.max(np.abs(self.positions[:, 2])))
-        barrel_mask = np.abs(self.positions[:, 2]) < (extreme - self.FACE_MARGIN)
+        barrel_mask = np.abs(self.positions[:, 2]) < (extreme - LightCentroidSettings.face_margin)
 
         centroid, weight = self._centroid(barrel_mask)
-        self._report_centroid(f"Endcap faces excluded (|z| < {extreme - self.FACE_MARGIN:.2f}, {int(barrel_mask.sum())} channels)", centroid, weight > 0)
+        self._report_centroid(f"Endcap faces excluded (|z| < {extreme - LightCentroidSettings.face_margin:.2f}, {int(barrel_mask.sum())} channels)", centroid, weight > 0)
 
     def run(self):
         self._load()

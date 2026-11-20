@@ -3,18 +3,18 @@ from __future__ import annotations
 from pathlib import Path
 from typing  import Any, Iterable, Mapping, Optional, Sequence
 
+from configuration.tools import MarkdownSettings
+
 
 class ScalarFormatter:
 
-    EMPTY = "—"
-
     @staticmethod
-    def format_scalar(value: Any, precision: int = 5, adaptive: bool = False, empty: str = EMPTY) -> str:
+    def format_scalar(value: Any, precision: int = MarkdownSettings.precision, adaptive: bool = False, empty: str = MarkdownSettings.empty_cell) -> str:
         if value is None:
             return empty
 
         if isinstance(value, float):
-            if adaptive and (abs(value) >= 1e4 or 0 < abs(value) < 1e-3):
+            if adaptive and (abs(value) >= MarkdownSettings.adaptive_upper or 0 < abs(value) < MarkdownSettings.adaptive_lower):
                 return f"{value:.4e}"
             return f"{value:.{precision}g}"
 
@@ -26,8 +26,6 @@ class ScalarFormatter:
 
 class MarkdownTable:
 
-    EMPTY = "—"
-
     def __init__(self, columns: Sequence[Any], align: Optional[Sequence[str]] = None) -> None:
         self.columns = [str(c) for c in columns]
         self.align   = list(align) if align is not None else ["left"] * len(self.columns)
@@ -38,7 +36,7 @@ class MarkdownTable:
             raise ValueError(f"Row has {len(cells)} cells but the table declares {len(self.columns)} column(s): {self.columns}.")
 
         padded = list(cells) + [None] * (len(self.columns) - len(cells))
-        self.rows.append([self.EMPTY if c is None else str(c) for c in padded])
+        self.rows.append([MarkdownSettings.empty_cell if c is None else str(c) for c in padded])
         return self
 
     def add_rows(self, rows: Iterable[Sequence[Any]]) -> "MarkdownTable":
@@ -50,7 +48,7 @@ class MarkdownTable:
         return not self.rows
 
     def _widths(self) -> list[int]:
-        widths = [max(3, len(c)) for c in self.columns]
+        widths = [max(MarkdownSettings.min_rule_width, len(c)) for c in self.columns]
         for row in self.rows:
             widths = [max(w, len(cell)) for w, cell in zip(widths, row)]
         return widths

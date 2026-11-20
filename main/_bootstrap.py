@@ -2,21 +2,27 @@ from __future__ import annotations
 
 import os
 import sys
+from dataclasses import dataclass
 
 from tools.runtime.warnings_filter import ThirdPartyWarnings
 
 
-class EnvironmentPinner:
-    DEFAULT_GPU = "0"
+@dataclass(frozen=True)
+class BootstrapSettings:
+    default_gpu     : str = "0"
+    gpu_flag        : str = "--gpu"
+    cuda_alloc_conf : str = "expandable_segments:True"
 
+
+class EnvironmentPinner:
     @staticmethod
     def _requested_gpu() -> str | None:
         argv = sys.argv[1:]
         gpu  = None
         for index, token in enumerate(argv):
-            if token == "--gpu" and index + 1 < len(argv):
+            if token == BootstrapSettings.gpu_flag and index + 1 < len(argv):
                 gpu = argv[index + 1]
-            elif token.startswith("--gpu="):
+            elif token.startswith(f"{BootstrapSettings.gpu_flag}="):
                 gpu = token.split("=", 1)[1]
         return gpu
 
@@ -28,6 +34,6 @@ class EnvironmentPinner:
         if requested is not None:
             os.environ["CUDA_VISIBLE_DEVICES"] = requested
         else:
-            os.environ.setdefault("CUDA_VISIBLE_DEVICES", EnvironmentPinner.DEFAULT_GPU)
+            os.environ.setdefault("CUDA_VISIBLE_DEVICES", BootstrapSettings.default_gpu)
 
-        os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+        os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", BootstrapSettings.cuda_alloc_conf)

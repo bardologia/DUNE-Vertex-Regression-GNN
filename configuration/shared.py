@@ -135,6 +135,7 @@ class IoNames:
     data_wait_figure   : str = "data_wait_vs_workers.png"
     gpu_util_figure    : str = "gpu_util_vs_throughput.png"
     feed_ratio_figure  : str = "feed_ratio_vs_workers.png"
+    detached_log       : str = "{script}_{stamp}"
 
     main_dir               : str   = "main"
     webui_dir              : str   = "webui"

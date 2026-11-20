@@ -5,16 +5,16 @@ import random
 import numpy as np
 import torch
 
+from configuration.tools import ReproducibilitySettings
+
 
 class Reproducibility:
-    SEED_MODULUS = 2 ** 32
-
     @staticmethod
     def seed_everything(seed: int) -> None:
         seed = int(seed)
 
         random.seed(seed)
-        np.random.seed(seed % Reproducibility.SEED_MODULUS)
+        np.random.seed(seed % ReproducibilitySettings.seed_modulus)
         torch.manual_seed(seed)
 
         if torch.cuda.is_available():
@@ -56,7 +56,7 @@ class WorkerInitializer:
         self.base_seed = int(base_seed)
 
     def __call__(self, worker_id: int) -> None:
-        seed = (self.base_seed + int(worker_id)) % Reproducibility.SEED_MODULUS
+        seed = (self.base_seed + int(worker_id)) % ReproducibilitySettings.seed_modulus
 
         random.seed(seed)
         np.random.seed(seed)

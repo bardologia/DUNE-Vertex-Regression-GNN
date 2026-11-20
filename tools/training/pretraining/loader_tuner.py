@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset
 
+from configuration.tools     import LoaderTuningSettings
 from tools.benchmarking      import LoaderSpec, GpuFeedBenchmark, DataLoaderSweep, SweepReport
 from tools.monitoring.logger import Logger
 
@@ -20,16 +21,16 @@ class LoaderTuner:
         forward_loss       : Callable,
         device             : torch.device,
         logger             : Logger,
+        warmup_batches     : int,
+        timed_batches      : int,
+        worker_counts      : tuple,
+        prefetch_factors   : tuple,
+        data_wait_target   : float,
         use_amp            : bool          = False,
         seed               : int           = 0,
-        warmup_batches     : int           = 8,
-        timed_batches      : int           = 60,
         gpu_index          : Optional[int] = None,
         cpu_threads        : Optional[int] = None,
-        worker_counts      : tuple         = (0, 2, 4, 6, 8),
-        prefetch_factors   : tuple         = (2, 4, 8),
-        reference_prefetch : int           = 4,
-        data_wait_target   : float         = 0.05,
+        reference_prefetch : int           = LoaderTuningSettings.reference_prefetch,
     ) -> None:
         self.dataset            = dataset
         self.model              = model
@@ -64,7 +65,7 @@ class LoaderTuner:
         )
 
     def _worker_counts(self) -> list[int]:
-        cores   = os.cpu_count() or 8
+        cores   = os.cpu_count() or LoaderTuningSettings.fallback_cores
         kept    = [workers for workers in self.worker_counts if workers <= cores]
         dropped = [workers for workers in self.worker_counts if workers > cores]
 

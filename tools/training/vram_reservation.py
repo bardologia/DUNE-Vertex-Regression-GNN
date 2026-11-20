@@ -3,12 +3,10 @@ from __future__ import annotations
 import torch
 
 from configuration.shared import MeasurementUnits
+from configuration.tools  import VramReservationSettings
 
 
 class VramReservation:
-
-    GRANULARITY_BYTES = 2 * MeasurementUnits.bytes_per_mib
-    CHUNK_FLOOR_BYTES = 16 * MeasurementUnits.bytes_per_mib
 
     def __init__(self, enabled: bool, keep_free_gb: float, device, logger) -> None:
         self.enabled         = bool(enabled) and torch.device(device).type == "cuda"
@@ -28,11 +26,11 @@ class VramReservation:
 
         while True:
             spare = self._free_bytes() - self.keep_free_bytes
-            if spare < self.CHUNK_FLOOR_BYTES:
+            if spare < VramReservationSettings.chunk_floor_bytes:
                 break
 
-            chunk = (spare // shrink // self.GRANULARITY_BYTES) * self.GRANULARITY_BYTES
-            if chunk < self.CHUNK_FLOOR_BYTES:
+            chunk = (spare // shrink // VramReservationSettings.granularity_bytes) * VramReservationSettings.granularity_bytes
+            if chunk < VramReservationSettings.chunk_floor_bytes:
                 break
 
             try:

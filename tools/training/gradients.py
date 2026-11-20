@@ -5,6 +5,8 @@ import math
 import numpy as np
 import torch
 
+from configuration.tools import GradientSettings
+
 
 class GradientClipper:
     def __init__(self, config, logger, tracker, param_groups=None):
@@ -105,7 +107,7 @@ class GradientClipper:
 
         norm = GradientClipper.global_norm(model)
 
-        if norm > 100.0:
+        if norm > GradientSettings.exploding_norm:
             self.logger.warning(f"Exploding gradient norm detected: {norm:.2f} at step {global_step}!")
 
         self.tracker.log_scalar("train/grad_norm_before_clip", norm, global_step)
