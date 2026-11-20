@@ -22,9 +22,8 @@ from pipelines.inference.scoring     import InferenceMetrics, Predictor
 from pipelines.shared.run_metadata   import LightweightRunContext, TrainingRunMetadata
 from pipelines.training.trainer      import OptimizerOverrideApplier, Trainer
 
-from pipelines.benchmark.batch_probe import MaxBatchProbe
-from pipelines.benchmark.results     import ComparisonReport, TrialCollector
-from pipelines.benchmark.sizing      import ModelSizer
+from pipelines.benchmark.results import ComparisonReport, TrialCollector
+from pipelines.benchmark.sizing  import MaxBatchProbe, ModelSizer
 
 
 class BenchmarkStage:
