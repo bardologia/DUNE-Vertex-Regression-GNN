@@ -15,9 +15,6 @@ class TrainEntry:
     def __init__(self):
         self.config = TrainEntryConfig()
 
-    def _pipeline(self, explicit_paths):
-        return TrainingPipeline(self.config, explicit_paths=explicit_paths)
-
     def _preflight(self, explicit_paths):
         run_directory = Path(self.config.training.io.log_base_dir) / IoNames.pretrain_dir / self.config.model_name
 
@@ -28,6 +25,9 @@ class TrainEntry:
             run_directory   = run_directory,
             label           = self.config.model_name,
         ).run()
+
+    def _pipeline(self, explicit_paths):
+        return TrainingPipeline(self.config, explicit_paths=explicit_paths)
 
     def run(self):
         cli            = ConfigCli(self.config, description="Train a DUNE-GNN model")
