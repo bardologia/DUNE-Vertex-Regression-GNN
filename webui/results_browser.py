@@ -4,9 +4,10 @@ import json
 from datetime import datetime
 from pathlib  import Path
 
-from configuration.data.general  import CoordinateAxes
-from configuration.shared        import IoNames
-from configuration.webui.general import ResultsBrowsing
+from configuration.data.general     import CoordinateAxes
+from configuration.shared           import IoNames
+from configuration.training.general import TrainerSettings
+from configuration.webui.general    import ResultsBrowsing
 
 from project_paths import ProjectPaths
 from server_logger import ServerLogger
@@ -96,14 +97,14 @@ class ResultsBrowser:
             return None
 
         splits        = metrics["splits"]
-        required_keys = [f"{metric}_{name}" for metric in ResultsBrowsing.error_metric_names for name in CoordinateAxes.names]
+        required_keys = [f"{metric}_{name}" for metric in TrainerSettings.error_metrics for name in CoordinateAxes.names]
 
         for split_name in ResultsBrowsing.best_metric_splits:
             split_metrics = splits.get(split_name, {})
             if not all(key in split_metrics for key in required_keys):
                 continue
 
-            values = {metric: {name: split_metrics[f"{metric}_{name}"] for name in CoordinateAxes.names} for metric in ResultsBrowsing.error_metric_names}
+            values = {metric: {name: split_metrics[f"{metric}_{name}"] for name in CoordinateAxes.names} for metric in TrainerSettings.error_metrics}
             return {"split": split_name, "unit": metrics["unit"], "values": values}
         return None
 

@@ -113,7 +113,6 @@ class ResultsBrowsing:
     nested_run_depth   : int   = 2
     best_metric_splits : tuple = ("test", "val", "train")
     best_metric_name   : str   = "euclidean_mean"
-    error_metric_names : tuple = ("mae", "rmse")
 
 
 @dataclass(frozen=True)
