@@ -7,6 +7,7 @@ from scipy.stats          import rankdata
 from torch_geometric.data import Data
 
 from configuration.data.general import CoordinateAxes, GraphSettings
+from configuration.shared       import MeasurementUnits
 
 
 class GraphAssembler:
@@ -428,7 +429,7 @@ class FeatureLayout:
             layout += [(f"axis_skew_{axis}",      "axis_skew")      for axis in CoordinateAxes.names]
 
         for quantile in self.graph_quantiles:
-            layout += [(f"light_quantile_{axis}_q{int(round(quantile * 100)):02d}", "light_quantile") for axis in CoordinateAxes.names]
+            layout += [(f"light_quantile_{axis}_q{int(round(quantile * MeasurementUnits.percent)):02d}", "light_quantile") for axis in CoordinateAxes.names]
 
         return layout
 
