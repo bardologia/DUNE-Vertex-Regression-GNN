@@ -268,12 +268,12 @@ class GPSEncoder(nn.Module):
 
 
 class MessagePassingEncoder(nn.Module):
-    def __init__(self, config, convolution_factory, edge_mode: str = "attr"):
+    def __init__(self, config, convolution, edge_mode: str):
         super().__init__()
         self.edge_mode  = edge_mode
         self.input_proj = nn.Sequential(nn.Linear(config.input_dim, config.hidden_dim), nn.LayerNorm(config.hidden_dim))
 
-        self.convolutions = nn.ModuleList([convolution_factory(config.hidden_dim, config.hidden_dim, index) for index in range(config.num_layers)])
+        self.convolutions = nn.ModuleList([convolution(config) for _ in range(config.num_layers)])
         self.norms        = nn.ModuleList([ModuleFactory.norm(config.normalization, config.hidden_dim) for _ in range(config.num_layers)])
         self.activation   = ModuleFactory.activation(config.activation)
         self.dropout      = nn.Dropout(config.dropout)
