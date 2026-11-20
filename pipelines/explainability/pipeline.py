@@ -83,6 +83,10 @@ class FeatureImportancePipeline:
         directory.mkdir(parents=True, exist_ok=True)
         self.output_directory = directory
 
+    def _multi_member_groups(self, layout):
+        groups = FeatureLayout.group_index(layout)
+        return {group: indices for group, indices in groups.items() if len(indices) > 1}
+
     def _load_run(self):
         resolved_path = self.run_directory / IoNames.metadata_dir / IoNames.resolved_config_file
         self.entry          = ConfigCli.load_resolved(TrainEntryConfig(), resolved_path)
@@ -109,15 +113,19 @@ class FeatureImportancePipeline:
             "Output"         : str(self.output_directory),
         }, title="Graph Feature Importance")
 
-    def _multi_member_groups(self, layout):
-        groups = FeatureLayout.group_index(layout)
-        return {group: indices for group, indices in groups.items() if len(indices) > 1}
-
     def _build_predictor(self):
         model, _        = get_model(self.entry.model_name, **self.entry.model_overrides)
         checkpoint_path = self.run_directory / IoNames.checkpoints_dir / self.entry.training.io.checkpoint_name
         self.predictor  = Predictor(model, checkpoint_path, self.stats, self.device, self.logger).prepare()
         self.predictor.logger = NullLogger()
+
+    def _assert_layout_consistency(self):
+        if self.engine.node_feature_count() != len(self.node_layout):
+            raise ValueError(f"Node feature layout ({len(self.node_layout)}) disagrees with the materialized graphs ({self.engine.node_feature_count()}). The run's GraphConfig and the feature layout are out of sync.")
+        if self.engine.edge_feature_count() != len(self.edge_layout):
+            raise ValueError(f"Edge feature layout ({len(self.edge_layout)}) disagrees with the materialized graphs ({self.engine.edge_feature_count()}). The run's GraphConfig and the feature layout are out of sync.")
+        if self.engine.graph_feature_count() != len(self.graph_layout):
+            raise ValueError(f"Graph scalar layout ({len(self.graph_layout)}) disagrees with the materialized graphs ({self.engine.graph_feature_count()}). The run's GraphConfig and the feature layout are out of sync.")
 
     def _prepare_engine(self):
         dataset_pipeline = DatasetPipeline(self.entry.dataset, self.logger, stats=self.stats, evaluation_mode=True)
@@ -133,14 +141,6 @@ class FeatureImportancePipeline:
 
         predictions, targets = self.predictor.predict(self.engine.loader())
         self.baseline        = InferenceMetrics(self.logger).compute(predictions, targets, stage="baseline")
-
-    def _assert_layout_consistency(self):
-        if self.engine.node_feature_count() != len(self.node_layout):
-            raise ValueError(f"Node feature layout ({len(self.node_layout)}) disagrees with the materialized graphs ({self.engine.node_feature_count()}). The run's GraphConfig and the feature layout are out of sync.")
-        if self.engine.edge_feature_count() != len(self.edge_layout):
-            raise ValueError(f"Edge feature layout ({len(self.edge_layout)}) disagrees with the materialized graphs ({self.engine.edge_feature_count()}). The run's GraphConfig and the feature layout are out of sync.")
-        if self.engine.graph_feature_count() != len(self.graph_layout):
-            raise ValueError(f"Graph scalar layout ({len(self.graph_layout)}) disagrees with the materialized graphs ({self.engine.graph_feature_count()}). The run's GraphConfig and the feature layout are out of sync.")
 
     def _run_permutation(self):
         if not self.config.permutation:
@@ -158,6 +158,12 @@ class FeatureImportancePipeline:
         estimator      = OcclusionImportance(self.engine, self.evaluator, self.baseline, ImportanceMetrics.keys, self.primary_metric, self.config.permutation_seed, self.logger)
         self.occlusion = estimator.run(self.node_columns, node_groups, self.edge_columns, edge_groups)
 
+    def _gradient_records(self, layout, saliency, input_times_grad):
+        records = []
+        for index, (name, group) in enumerate(layout):
+            records.append({"feature": name, "group": group, "saliency": float(saliency[index]), "input_times_grad": float(input_times_grad[index])})
+        return records
+
     def _run_gradient(self):
         if not self.config.gradient:
             return
@@ -166,12 +172,6 @@ class FeatureImportancePipeline:
             "node" : self._gradient_records(self.node_layout, means["node_saliency"], means["node_input_times_grad"]),
             "edge" : self._gradient_records(self.edge_layout, means["edge_saliency"], means["edge_input_times_grad"]),
         }
-
-    def _gradient_records(self, layout, saliency, input_times_grad):
-        records = []
-        for index, (name, group) in enumerate(layout):
-            records.append({"feature": name, "group": group, "saliency": float(saliency[index]), "input_times_grad": float(input_times_grad[index])})
-        return records
 
     def _run_expected_gradients(self):
         if not self.config.expected_gradients:
@@ -193,6 +193,15 @@ class FeatureImportancePipeline:
             "edge_feature_values" : means["edge_feature_values"].tolist(),
         }
 
+    def _axis_records(self, layout, coordinates, overall, per_axis):
+        records = []
+        for index, (name, group) in enumerate(layout):
+            record = {"feature": name, "group": group, "overall": float(overall[index])}
+            for axis_index, axis in enumerate(coordinates):
+                record[axis] = float(per_axis[axis_index][index])
+            records.append(record)
+        return records
+
     def _axis_attribution(self, means):
         return {
             "coordinates"  : list(means["coordinates"]),
@@ -203,15 +212,6 @@ class FeatureImportancePipeline:
             "edge"         : self._axis_records(self.edge_layout, means["coordinates"], means["edge_overall"], means["edge_per_axis"]),
         }
 
-    def _axis_records(self, layout, coordinates, overall, per_axis):
-        records = []
-        for index, (name, group) in enumerate(layout):
-            record = {"feature": name, "group": group, "overall": float(overall[index])}
-            for axis_index, axis in enumerate(coordinates):
-                record[axis] = float(per_axis[axis_index][index])
-            records.append(record)
-        return records
-
     def _perturbation_lookup(self, results, key):
         if results is None:
             return {}
@@ -221,15 +221,6 @@ class FeatureImportancePipeline:
         if results is None:
             return {}
         return {record["feature"]: record for record in results[domain]}
-
-    def _rank_map(self, scores):
-        if not scores:
-            return {}
-
-        features = list(scores)
-        values   = np.asarray([scores[feature] for feature in features], dtype=np.float64)
-        ranks    = rankdata(-values, method="average")
-        return {feature: float(rank) for feature, rank in zip(features, ranks)}
 
     def _merged_rows(self, layout, domain, permutation_key):
         permutation_features        = self._perturbation_lookup(self.permutation, permutation_key)
@@ -278,6 +269,15 @@ class FeatureImportancePipeline:
 
             rows.append(row)
         return rows
+
+    def _rank_map(self, scores):
+        if not scores:
+            return {}
+
+        features = list(scores)
+        values   = np.asarray([scores[feature] for feature in features], dtype=np.float64)
+        ranks    = rankdata(-values, method="average")
+        return {feature: float(rank) for feature, rank in zip(features, ranks)}
 
     def _consensus(self, rows):
         permutation_scores = {row["feature"]: self.metric.harm(row["permutation_delta"]) for row in rows if "permutation_delta" in row}

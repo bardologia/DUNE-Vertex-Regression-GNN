@@ -72,10 +72,6 @@ class BaselineRunWriter:
         for directory in (self.metadata_directory, self.checkpoint_dir, self.analysis_directory):
             directory.mkdir(parents=True, exist_ok=True)
 
-    def _write_json(self, path, payload):
-        path.write_text(json.dumps(payload, indent=IoNames.json_indent), encoding="utf-8")
-        return path
-
     def write_resolved_config(self, model_name, entry_config):
         return self._write_json(self.metadata_directory / IoNames.resolved_config_file, {"model_name": model_name, **ConfigCli.to_mapping(entry_config)})
 
@@ -110,6 +106,10 @@ class BaselineRunWriter:
         ranked = sorted(importances.items(), key=lambda item: item[1], reverse=True)
         self._write_json(self.analysis_directory / IoNames.feature_importance_file, dict(ranked))
         self._plot_importances(label, ranked[: BaselineImportance.top_count])
+
+    def _write_json(self, path, payload):
+        path.write_text(json.dumps(payload, indent=IoNames.json_indent), encoding="utf-8")
+        return path
 
     def write_report(self, family, entry_config, study, model, per_split_metrics):
         document = MarkdownDoc(f"{family.LABEL} baseline")

@@ -52,13 +52,9 @@ class ShapNativePlots(FigureWriter):
     def __init__(self, output_directory, logger):
         super().__init__(Path(output_directory) / IoNames.shap_plots_dir, logger)
 
-    def _save_current(self, title, filename):
-        figure = plt.gcf()
-        figure.axes[0].set_title(title)
-        figure.tight_layout()
-        figure.savefig(self.output_directory / filename, bbox_inches="tight")
-        plt.close(figure)
-        self.generated.append(f"{IoNames.shap_plots_dir}/{filename}")
+    def _overall_bar(self, shap_module, shap_values_per_axis, names, coordinates, title, filename):
+        shap_module.summary_plot(list(shap_values_per_axis), feature_names=names, plot_type="bar", class_names=list(coordinates), max_display=len(names), show=False)
+        self._save_current(title, filename)
 
     def _beeswarm(self, shap_module, shap_values, feature_values, names, title, filename):
         shap_module.summary_plot(shap_values, features=feature_values, feature_names=names, plot_type="dot", max_display=len(names), show=False)
@@ -68,9 +64,13 @@ class ShapNativePlots(FigureWriter):
         shap_module.summary_plot(shap_values, feature_names=names, plot_type="bar", max_display=len(names), show=False)
         self._save_current(title, filename)
 
-    def _overall_bar(self, shap_module, shap_values_per_axis, names, coordinates, title, filename):
-        shap_module.summary_plot(list(shap_values_per_axis), feature_names=names, plot_type="bar", class_names=list(coordinates), max_display=len(names), show=False)
-        self._save_current(title, filename)
+    def _save_current(self, title, filename):
+        figure = plt.gcf()
+        figure.axes[0].set_title(title)
+        figure.tight_layout()
+        figure.savefig(self.output_directory / filename, bbox_inches="tight")
+        plt.close(figure)
+        self.generated.append(f"{IoNames.shap_plots_dir}/{filename}")
 
     def _domain_plots(self, shap_module, domain, shap_matrix, feature_values, names, coordinates):
         self._overall_bar(shap_module, [shap_matrix[:, :, index] for index in range(len(coordinates))], names, coordinates, f"SHAP {domain} features (all axes)", IoNames.shap_bar_figure.format(domain=domain, axis="overall"))

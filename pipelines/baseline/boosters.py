@@ -15,9 +15,6 @@ class BoostedAxisEnsemble:
         self.seed    = int(seed)
         self.models  = []
 
-    def best_iterations(self):
-        return [int(self._best_iteration(model)) for model in self.models]
-
     def fit(self, features, targets, validation_features, validation_targets, params):
         self.models = []
 
@@ -33,6 +30,9 @@ class BoostedAxisEnsemble:
 
     def predict(self, features):
         return np.column_stack([model.predict(features) for model in self.models]).astype(np.float32)
+
+    def best_iterations(self):
+        return [int(self._best_iteration(model)) for model in self.models]
 
     def importances(self, feature_names):
         gains = np.mean([np.asarray(model.feature_importances_, dtype=np.float64) for model in self.models], axis=0)

@@ -27,16 +27,6 @@ class ModelSizer:
         self.attribute       = self.config.scaled_attribute
         self.model_overrides = {model_name: dict(overrides) for model_name, overrides in model_overrides.items()}
 
-    @staticmethod
-    def parameter_count(model):
-        return int(sum(parameter.numel() for parameter in model.parameters()))
-
-    def _count_at(self, model_name, width):
-        model, _ = get_model(model_name, **{**self.model_overrides[model_name], self.attribute: int(width)})
-        count    = self.parameter_count(model)
-        del model
-        return count
-
     def reference_count(self):
         reference = self.config.reference_model
         model, _  = get_model(reference, **self.model_overrides[reference])
@@ -47,12 +37,6 @@ class ModelSizer:
         heads  = getattr(config, "heads", 1)
         return max(1, int(heads))
 
-    def _snap(self, width, alignment):
-        floor   = math.ceil(self.config.minimum_width / alignment) * alignment
-        ceiling = (self.config.maximum_width // alignment) * alignment
-        aligned = max(1, int(round(width / alignment))) * alignment
-        return min(ceiling, max(floor, aligned))
-
     def _bracket_upper(self, model_name, target, alignment):
         width = self._snap(self.config.minimum_width, alignment)
         while width < self.config.maximum_width and self._count_at(model_name, width) < target:
@@ -61,6 +45,22 @@ class ModelSizer:
                 break
             width = widened
         return width
+
+    def _snap(self, width, alignment):
+        floor   = math.ceil(self.config.minimum_width / alignment) * alignment
+        ceiling = (self.config.maximum_width // alignment) * alignment
+        aligned = max(1, int(round(width / alignment))) * alignment
+        return min(ceiling, max(floor, aligned))
+
+    def _count_at(self, model_name, width):
+        model, _ = get_model(model_name, **{**self.model_overrides[model_name], self.attribute: int(width)})
+        count    = self.parameter_count(model)
+        del model
+        return count
+
+    @staticmethod
+    def parameter_count(model):
+        return int(sum(parameter.numel() for parameter in model.parameters()))
 
     def match(self, model_name, target):
         alignment  = self._alignment(model_name)

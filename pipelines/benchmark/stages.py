@@ -40,8 +40,8 @@ class BenchmarkStage:
         self.explicit_paths     = set(explicit_paths or ())
         self.size_records       = {}
 
-    def _result_path(self):
-        return self.pipeline_directory / self.RESULT_FILE
+    def _prepare(self):
+        return None
 
     def _load_existing(self):
         path = self._result_path()
@@ -49,25 +49,25 @@ class BenchmarkStage:
             return json.loads(path.read_text(encoding="utf-8"))
         return {}
 
-    def _save(self, records):
-        self._result_path().write_text(json.dumps(records, indent=IoNames.json_indent), encoding="utf-8")
-
-    def _overrides(self, model_name):
-        return {**self.model_overrides[model_name], **self.size_records.get(model_name, {}).get("overrides", {})}
+    def _reusable(self, record):
+        return True
 
     def _build_trainer(self, model_name, training_config, run_context):
         model, model_config = get_model(model_name, **self._overrides(model_name))
         OptimizerOverrideApplier(training_config, model_config, self.explicit_paths, self.logger).run()
         return Trainer(model, self.stats, training_config, run_context)
 
-    def _prepare(self):
-        return None
-
-    def _reusable(self, record):
-        return True
+    def _overrides(self, model_name):
+        return {**self.model_overrides[model_name], **self.size_records.get(model_name, {}).get("overrides", {})}
 
     def _compute(self, model_name):
         raise NotImplementedError
+
+    def _save(self, records):
+        self._result_path().write_text(json.dumps(records, indent=IoNames.json_indent), encoding="utf-8")
+
+    def _result_path(self):
+        return self.pipeline_directory / self.RESULT_FILE
 
     def _report(self, records):
         return None

@@ -64,6 +64,18 @@ class ComparisonReport:
         self.logger           = logger
         self.rank_metric      = configuration.comparison.rank_metric
 
+    def _ranked_records(self):
+        scored = [record for record in self.records if record["metrics"].get(self.rank_metric) is not None]
+        ascending = self.rank_metric != "r2"
+        return sorted(scored, key=lambda record: record["metrics"][self.rank_metric], reverse=not ascending)
+
+    def _leaderboard_table(self, ranked):
+        table = MarkdownTable(["Rank", "Model", *BenchmarkReportSettings.leaderboard_metrics], align=["right", "left"] + ["right"] * len(BenchmarkReportSettings.leaderboard_metrics))
+        for position, record in enumerate(ranked, start=1):
+            cells = [ScalarFormatter.format_scalar(record["metrics"].get(key)) for key in BenchmarkReportSettings.leaderboard_metrics]
+            table.add_row(position, record["model"], *cells)
+        return table
+
     def _capacity_table(self):
         table = MarkdownTable(["Model", "Parameters", "Width", "Deviation", "Flags"], align=["left", "right", "right", "right", "left"])
         for record in self.records:
@@ -93,18 +105,6 @@ class ComparisonReport:
                 lr_scale,
                 ScalarFormatter.format_scalar(record["duration_s"]),
             )
-        return table
-
-    def _ranked_records(self):
-        scored = [record for record in self.records if record["metrics"].get(self.rank_metric) is not None]
-        ascending = self.rank_metric != "r2"
-        return sorted(scored, key=lambda record: record["metrics"][self.rank_metric], reverse=not ascending)
-
-    def _leaderboard_table(self, ranked):
-        table = MarkdownTable(["Rank", "Model", *BenchmarkReportSettings.leaderboard_metrics], align=["right", "left"] + ["right"] * len(BenchmarkReportSettings.leaderboard_metrics))
-        for position, record in enumerate(ranked, start=1):
-            cells = [ScalarFormatter.format_scalar(record["metrics"].get(key)) for key in BenchmarkReportSettings.leaderboard_metrics]
-            table.add_row(position, record["model"], *cells)
         return table
 
     def _write_markdown(self, ranked):

@@ -22,8 +22,16 @@ class PerturbationImportance:
         self.seed           = seed
         self.logger         = logger
 
-    def _repeats(self):
-        raise NotImplementedError
+    def _total_steps(self, node_columns, node_groups, edge_columns, edge_groups):
+        node_items = len(node_columns) + len(node_groups)
+        edge_items = len(edge_columns) + len(edge_groups)
+        return (node_items + edge_items) * self._repeats()
+
+    def _feature_items(self, columns_layout):
+        return [(name, group, [index]) for index, name, group in columns_layout]
+
+    def _group_items(self, groups):
+        return [(group, group, indices) for group, indices in groups.items()]
 
     def _base_matrix(self, domain):
         return self.engine.node_matrix if domain == "node" else self.engine.edge_matrix
@@ -31,13 +39,13 @@ class PerturbationImportance:
     def _row_count(self, domain):
         return self.engine.node_row_count() if domain == "node" else self.engine.edge_row_count()
 
+    def _perturb(self, domain, columns, repeat_index):
+        raise NotImplementedError
+
     def _loader(self, domain, matrix):
         if domain == "node":
             return self.engine.loader(node_matrix=matrix)
         return self.engine.loader(edge_matrix=matrix)
-
-    def _perturb(self, domain, columns, repeat_index):
-        raise NotImplementedError
 
     def _aggregate(self, samples):
         deltas = {key: float(np.mean([sample[key] for sample in samples])) for key in self.metric_keys}
@@ -60,23 +68,15 @@ class PerturbationImportance:
         deltas, primary_std, pct_increase = self._aggregate(samples)
         return {"deltas": deltas, "primary_std": primary_std, "pct_increase": pct_increase}
 
+    def _repeats(self):
+        raise NotImplementedError
+
     def _collection(self, domain, items, progress, task_id):
         records = []
         for label, group, columns in items:
             outcome = self._evaluate_item(domain, columns, progress, task_id)
             records.append({"label": label, "group": group, "columns": list(columns), **outcome})
         return records
-
-    def _feature_items(self, columns_layout):
-        return [(name, group, [index]) for index, name, group in columns_layout]
-
-    def _group_items(self, groups):
-        return [(group, group, indices) for group, indices in groups.items()]
-
-    def _total_steps(self, node_columns, node_groups, edge_columns, edge_groups):
-        node_items = len(node_columns) + len(node_groups)
-        edge_items = len(edge_columns) + len(edge_groups)
-        return (node_items + edge_items) * self._repeats()
 
     def run(self, node_columns, node_groups, edge_columns, edge_groups):
         self.logger.section(f"[{self.label()}]")
@@ -228,6 +228,17 @@ class ExpectedGradients:
         self.real_output     = torch.zeros(self.coordinate_count, dtype=torch.float64)
         self.baseline_output = torch.zeros(self.coordinate_count, dtype=torch.float64)
 
+    def _coordinate_output(self, node_matrix, edge_matrix):
+        loader = self.subset.loader(node_matrix, edge_matrix)
+        totals = torch.zeros(self.coordinate_count, dtype=torch.float64)
+
+        with torch.no_grad():
+            for data in loader:
+                data         = data.to(self.device)
+                predictions  = self.model(data)
+                totals      += predictions.sum(dim=0).double().cpu()
+        return totals
+
     def _alpha_vector(self, slices, count, alphas):
         vector = torch.empty(count, 1, dtype=torch.float32)
         for index, (start, end) in enumerate(slices):
@@ -280,17 +291,6 @@ class ExpectedGradients:
 
             node_offset += node_rows
             edge_offset += edge_rows
-
-    def _coordinate_output(self, node_matrix, edge_matrix):
-        loader = self.subset.loader(node_matrix, edge_matrix)
-        totals = torch.zeros(self.coordinate_count, dtype=torch.float64)
-
-        with torch.no_grad():
-            for data in loader:
-                data         = data.to(self.device)
-                predictions  = self.model(data)
-                totals      += predictions.sum(dim=0).double().cpu()
-        return totals
 
     def _completeness(self):
         attributed = (self.node_signed.sum(dim=(0, 1)) + self.edge_signed.sum(dim=(0, 1))) / self.samples
@@ -373,27 +373,6 @@ class KernelShapImportance:
         self.edge_feature_values = np.zeros((event_count, self.edge_features), dtype=np.float64)
         self.completeness        = {name: 0.0 for name in VertexCoordinates.names}
 
-    def _masked_outputs(self, graph, gates):
-        outputs = np.zeros((gates.shape[0], self.coordinate_count), dtype=np.float64)
-
-        for start in range(0, gates.shape[0], KernelShapSettings.chunk_size):
-            block     = gates[start:start + KernelShapSettings.chunk_size]
-            data_list = []
-            for row in block:
-                node_gate = torch.from_numpy(row[: self.node_features].astype(np.float32))
-                edge_gate = torch.from_numpy(row[self.node_features:].astype(np.float32))
-
-                node = graph.x * node_gate + self.node_mean * (1.0 - node_gate)
-                edge = graph.edge_attr * edge_gate + self.edge_mean * (1.0 - edge_gate)
-                data_list.append(self.engine.rebuild(graph, node, edge))
-
-            batch = next(iter(GraphDataLoader(data_list, batch_size=len(data_list), shuffle=False))).to(self.device)
-            with torch.no_grad():
-                predictions = self.model(batch)
-            outputs[start:start + len(data_list)] = predictions.double().cpu().numpy()
-
-        return outputs
-
     def _per_coordinate(self, shap_values):
         values = np.squeeze(np.array(shap_values))
         if values.ndim == 1:
@@ -416,6 +395,27 @@ class KernelShapImportance:
         attributed       = per_coord.sum(axis=1)
         for index, name in enumerate(VertexCoordinates.names):
             self.completeness[name] += float(attributed[index] / reference[index]) / len(self.subset_graphs) if reference[index] != 0.0 else 0.0
+
+    def _masked_outputs(self, graph, gates):
+        outputs = np.zeros((gates.shape[0], self.coordinate_count), dtype=np.float64)
+
+        for start in range(0, gates.shape[0], KernelShapSettings.chunk_size):
+            block     = gates[start:start + KernelShapSettings.chunk_size]
+            data_list = []
+            for row in block:
+                node_gate = torch.from_numpy(row[: self.node_features].astype(np.float32))
+                edge_gate = torch.from_numpy(row[self.node_features:].astype(np.float32))
+
+                node = graph.x * node_gate + self.node_mean * (1.0 - node_gate)
+                edge = graph.edge_attr * edge_gate + self.edge_mean * (1.0 - edge_gate)
+                data_list.append(self.engine.rebuild(graph, node, edge))
+
+            batch = next(iter(GraphDataLoader(data_list, batch_size=len(data_list), shuffle=False))).to(self.device)
+            with torch.no_grad():
+                predictions = self.model(batch)
+            outputs[start:start + len(data_list)] = predictions.double().cpu().numpy()
+
+        return outputs
 
     def _means(self):
         event_count = len(self.subset_graphs)
