@@ -11,15 +11,15 @@ from configuration.entry                  import TrainEntryConfig
 from configuration.explainability.general import ImportanceMetrics
 from configuration.inference.general      import PlotStyle
 from configuration.shared                 import IoNames
-from models                          import get_model
-from tools.monitoring.logger         import Logger, NullLogger
-from tools.runtime.config_cli        import ConfigCli
-from pipelines.dataset.graph         import FeatureLayout
-from pipelines.dataset.normalization import NormalizationStats
-from pipelines.dataset.pipeline      import DatasetPipeline
-from pipelines.inference.metrics     import InferenceMetrics
-from pipelines.inference.predictor   import Predictor
-from pipelines.shared.store_geometry import StoreGeometryRecord
+from models                               import get_model
+from tools.monitoring.logger              import Logger, NullLogger
+from tools.runtime.config_cli             import ConfigCli
+from pipelines.dataset.graph              import FeatureLayout
+from pipelines.dataset.normalization      import NormalizationStats
+from pipelines.dataset.pipeline           import DatasetPipeline
+from pipelines.inference.metrics          import InferenceMetrics
+from pipelines.inference.predictor        import Predictor
+from pipelines.shared.store_geometry      import StoreGeometryRecord
 
 from pipelines.explainability.evaluation import EvaluationGraphTensors, SplitMetricEvaluator
 from pipelines.explainability.importance import ExpectedGradients, GradientSaliency, KernelShapImportance, OcclusionImportance, PermutationImportance
@@ -88,7 +88,7 @@ class FeatureImportancePipeline:
         return {group: indices for group, indices in groups.items() if len(indices) > 1}
 
     def _load_run(self):
-        resolved_path = self.run_directory / IoNames.metadata_dir / IoNames.resolved_config_file
+        resolved_path       = self.run_directory / IoNames.metadata_dir / IoNames.resolved_config_file
         self.entry          = ConfigCli.load_resolved(TrainEntryConfig(), resolved_path)
         self.stats          = NormalizationStats.load(self.run_directory / IoNames.metadata_dir)
         self.split_base_ids = json.loads((self.run_directory / IoNames.metadata_dir / IoNames.split_base_ids_file).read_text(encoding="utf-8"))
@@ -117,6 +117,7 @@ class FeatureImportancePipeline:
         model, _        = get_model(self.entry.model_name, **self.entry.model_overrides)
         checkpoint_path = self.run_directory / IoNames.checkpoints_dir / self.entry.training.io.checkpoint_name
         self.predictor  = Predictor(model, checkpoint_path, self.stats, self.device, self.logger).prepare()
+
         self.predictor.logger = NullLogger()
 
     def _assert_layout_consistency(self):
@@ -145,18 +146,23 @@ class FeatureImportancePipeline:
     def _run_permutation(self):
         if not self.config.permutation:
             return
-        node_groups      = self.node_groups if self.config.grouped else {}
-        edge_groups      = self.edge_groups if self.config.grouped else {}
-        estimator        = PermutationImportance(self.engine, self.evaluator, self.baseline, ImportanceMetrics.keys, self.primary_metric, self.config.permutation_seed, self.config.permutation_repeats, self.logger)
-        self.permutation = estimator.run(self.node_columns, node_groups, self.edge_columns, edge_groups)
+
+        node_groups, edge_groups = self._selected_groups()
+        estimator                = PermutationImportance(self.engine, self.evaluator, self.baseline, ImportanceMetrics.keys, self.primary_metric, self.config.permutation_seed, self.config.permutation_repeats, self.logger)
+        self.permutation         = estimator.run(self.node_columns, node_groups, self.edge_columns, edge_groups)
 
     def _run_occlusion(self):
         if not self.config.occlusion:
             return
-        node_groups    = self.node_groups if self.config.grouped else {}
-        edge_groups    = self.edge_groups if self.config.grouped else {}
-        estimator      = OcclusionImportance(self.engine, self.evaluator, self.baseline, ImportanceMetrics.keys, self.primary_metric, self.config.permutation_seed, self.logger)
-        self.occlusion = estimator.run(self.node_columns, node_groups, self.edge_columns, edge_groups)
+
+        node_groups, edge_groups = self._selected_groups()
+        estimator                = OcclusionImportance(self.engine, self.evaluator, self.baseline, ImportanceMetrics.keys, self.primary_metric, self.config.permutation_seed, self.logger)
+        self.occlusion           = estimator.run(self.node_columns, node_groups, self.edge_columns, edge_groups)
+
+    def _selected_groups(self):
+        if self.config.grouped:
+            return self.node_groups, self.edge_groups
+        return {}, {}
 
     def _gradient_records(self, layout, saliency, input_times_grad):
         records = []
@@ -167,6 +173,7 @@ class FeatureImportancePipeline:
     def _run_gradient(self):
         if not self.config.gradient:
             return
+
         means         = GradientSaliency(self.predictor.model, self.device, self.engine, self.logger).run()
         self.gradient = {
             "node" : self._gradient_records(self.node_layout, means["node_saliency"], means["node_input_times_grad"]),
@@ -176,15 +183,18 @@ class FeatureImportancePipeline:
     def _run_expected_gradients(self):
         if not self.config.expected_gradients:
             return
+
         means                   = ExpectedGradients(self.predictor.model, self.device, self.engine, self.config.eg_samples, self.config.eg_events, self.config.eg_seed, self.logger).run()
         self.expected_gradients = self._axis_attribution(means)
 
     def _run_kernel_shap(self):
         if not self.config.shap:
             return
+
         means                    = KernelShapImportance(self.predictor.model, self.device, self.engine, self.config.shap_nsamples, self.config.shap_events, self.config.shap_seed, self.logger).run()
-        self.kernel_shap          = self._axis_attribution(means)
-        self.kernel_shap_samples  = means
+        self.kernel_shap         = self._axis_attribution(means)
+        self.kernel_shap_samples = means
+
         self.kernel_shap["per_event"] = {
             "coordinates"         : list(means["coordinates"]),
             "node_shap"           : means["node_shap"].tolist(),
@@ -234,7 +244,7 @@ class FeatureImportancePipeline:
             row = {"feature": name, "group": group}
 
             if name in permutation_features:
-                record = permutation_features[name]
+                record                          = permutation_features[name]
                 row["permutation_delta"]        = record["deltas"][self.primary_metric]
                 row["permutation_std"]          = record["primary_std"]
                 row["permutation_pct_increase"] = record["pct_increase"]
@@ -243,7 +253,7 @@ class FeatureImportancePipeline:
                 row["permutation_delta_r2"]     = record["deltas"]["r2"]
 
             if name in occlusion_features:
-                record = occlusion_features[name]
+                record                      = occlusion_features[name]
                 row["occlusion_delta"]      = record["deltas"][self.primary_metric]
                 row["occlusion_delta_mae"]  = record["deltas"]["mae"]
                 row["occlusion_delta_rmse"] = record["deltas"]["rmse"]
@@ -290,7 +300,7 @@ class FeatureImportancePipeline:
 
         consensus = []
         for row in rows:
-            ranks   = [(method, rank_map[row["feature"]]) for method, rank_map in rank_maps.items() if row["feature"] in rank_map]
+            ranks = [(method, rank_map[row["feature"]]) for method, rank_map in rank_maps.items() if row["feature"] in rank_map]
             if not ranks:
                 continue
             mean_rank = float(np.mean([rank for _, rank in ranks]))
@@ -368,6 +378,7 @@ class FeatureImportancePipeline:
     def _native_shap_plots(self):
         if self.kernel_shap_samples is None:
             return []
+
         node_names = [name for name, _ in self.node_layout]
         edge_names = [name for name, _ in self.edge_layout]
         return ShapNativePlots(self.output_directory / IoNames.plots_dir, self.logger).run(self.kernel_shap_samples, node_names, edge_names, self.kernel_shap_samples["coordinates"])
@@ -379,8 +390,8 @@ class FeatureImportancePipeline:
         consensus_node = self._consensus(node_rows)
         consensus_edge = self._consensus(edge_rows)
 
-        plots         = FeatureImportancePlots(self.output_directory / IoNames.plots_dir, self.logger).run(self._figure_specifications())
-        plots        += self._native_shap_plots()
+        plots  = FeatureImportancePlots(self.output_directory / IoNames.plots_dir, self.logger).run(self._figure_specifications())
+        plots += self._native_shap_plots()
 
         context = {
             "run_directory"       : str(self.run_directory),

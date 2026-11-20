@@ -109,8 +109,8 @@ class PermutationImportance(PerturbationImportance):
         generator   = np.random.default_rng(identifier)
         permutation = torch.from_numpy(generator.permutation(self._row_count(domain)))
 
-        matrix              = self._base_matrix(domain).clone()
-        column_index        = torch.tensor(columns, dtype=torch.long)
+        matrix                  = self._base_matrix(domain).clone()
+        column_index            = torch.tensor(columns, dtype=torch.long)
         matrix[:, column_index] = matrix[permutation][:, column_index]
         return matrix
 
@@ -123,9 +123,9 @@ class OcclusionImportance(PerturbationImportance):
         return 1
 
     def _perturb(self, domain, columns, repeat_index):
-        base                = self._base_matrix(domain)
-        matrix              = base.clone()
-        column_index        = torch.tensor(columns, dtype=torch.long)
+        base                    = self._base_matrix(domain)
+        matrix                  = base.clone()
+        column_index            = torch.tensor(columns, dtype=torch.long)
         matrix[:, column_index] = base[:, column_index].mean(dim=0, keepdim=True)
         return matrix
 
@@ -326,8 +326,7 @@ class ExpectedGradients:
         with self.logger.track() as progress:
             task_id = progress.add_task("Expected gradients", total=self.samples)
             for sample_index in range(self.samples):
-                generator                                                                  = np.random.default_rng(self.seed + sample_index)
-                node_interpolated, edge_interpolated, node_delta, edge_delta, node_baseline, edge_baseline = self._sample_inputs(generator)
+                node_interpolated, edge_interpolated, node_delta, edge_delta, node_baseline, edge_baseline = self._sample_inputs(np.random.default_rng(self.seed + sample_index))
 
                 self._accumulate_path(node_interpolated, edge_interpolated, node_delta, edge_delta)
                 self.baseline_output += self._coordinate_output(node_baseline, edge_baseline) / self.samples

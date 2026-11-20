@@ -53,11 +53,11 @@ class FeatureImportanceReport:
 
         document.heading("Baseline performance", level=2)
         document.kv_table({
-            "Mean euclidean error [m]"   : f"{baseline['euclidean_mean']:.4f}",
-            "Median euclidean error [m]" : f"{baseline['euclidean_median']:.4f}",
-            "Mean absolute error [m]"    : f"{baseline['mae']:.4f}",
-            "Root-mean-square error [m]" : f"{baseline['rmse']:.4f}",
-            "Coefficient of determination": f"{baseline['r2']:.4f}",
+            "Mean euclidean error [m]"     : f"{baseline['euclidean_mean']:.4f}",
+            "Median euclidean error [m]"   : f"{baseline['euclidean_median']:.4f}",
+            "Mean absolute error [m]"      : f"{baseline['mae']:.4f}",
+            "Root-mean-square error [m]"   : f"{baseline['rmse']:.4f}",
+            "Coefficient of determination" : f"{baseline['r2']:.4f}",
         }, code_keys=False)
 
     def _inventory_table(self, document, title, inventory):
@@ -127,11 +127,11 @@ class FeatureImportanceReport:
         document.heading(heading, level=2)
         document.paragraph(description)
         document.kv_table({
-            "Attributed events"   : attribution["events"],
-            samples_label         : attribution["samples"],
-            "Completeness ratio x": f"{attribution['completeness']['x']:.4f}",
-            "Completeness ratio y": f"{attribution['completeness']['y']:.4f}",
-            "Completeness ratio z": f"{attribution['completeness']['z']:.4f}",
+            "Attributed events"    : attribution["events"],
+            samples_label          : attribution["samples"],
+            "Completeness ratio x" : f"{attribution['completeness']['x']:.4f}",
+            "Completeness ratio y" : f"{attribution['completeness']['y']:.4f}",
+            "Completeness ratio z" : f"{attribution['completeness']['z']:.4f}",
         }, code_keys=False)
 
         self._axis_table(document, "Node features", attribution["node"], attribution["coordinates"])
