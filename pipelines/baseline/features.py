@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from configuration.data.general      import GraphSettings
 from pipelines.dataset.augmentation  import Augmentation
 from pipelines.dataset.graph         import GraphAssembler
 from pipelines.dataset.graph_dataset import LightRealization
@@ -63,7 +64,7 @@ class SummaryFeatureExtractor(GraphAssembler):
 
         positions   = positions[active]
         light       = light[active]
-        total_light = light.sum() + self.EPSILON
+        total_light = light.sum() + GraphSettings.epsilon
 
         centroid     = self._light_centroid(positions, light, total_light)
         spread, skew = self._axis_moments(positions, light, total_light, centroid)
