@@ -5,6 +5,7 @@ import traceback
 import torch
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
+from configuration.shared                   import MeasurementUnits
 from models                                  import get_model
 from tools.runtime.reproducibility           import Reproducibility
 from tools.training.pretraining.batch_finder import BatchSizeFinder
@@ -68,7 +69,7 @@ class MaxBatchProbe:
             if steps >= self.max_batch_config.measure_steps:
                 break
 
-        return torch.cuda.max_memory_reserved(self.device) / (1024.0 ** 3)
+        return torch.cuda.max_memory_reserved(self.device) / MeasurementUnits.bytes_per_gib
 
     def _failed(self, error: str) -> dict:
         return {**self._skipped(), "status": "FAIL", "error": error}

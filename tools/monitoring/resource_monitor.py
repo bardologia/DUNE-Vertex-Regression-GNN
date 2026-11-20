@@ -7,7 +7,7 @@ import time
 import psutil
 import pynvml
 
-from configuration.shared import IoNames
+from configuration.shared import IoNames, MeasurementUnits
 
 
 class ResourceMonitor:
@@ -76,7 +76,7 @@ class ResourceMonitor:
 
     @staticmethod
     def _bytes_to_gb(x):
-        return float(x) / (1024.0 ** 3)
+        return float(x) / MeasurementUnits.bytes_per_gib
 
     def _get_shm_usage(self):
         try:
@@ -161,8 +161,8 @@ class ResourceMonitor:
             io = psutil.disk_io_counters()
             dt = max(now - self._last_disk_t, 1e-6)
             if io is not None and self._last_disk_io is not None:
-                metrics["disk_read_mb_s"]  = (io.read_bytes - self._last_disk_io.read_bytes) / dt / (1024.0 ** 2)
-                metrics["disk_write_mb_s"] = (io.write_bytes - self._last_disk_io.write_bytes) / dt / (1024.0 ** 2)
+                metrics["disk_read_mb_s"]  = (io.read_bytes - self._last_disk_io.read_bytes) / dt / MeasurementUnits.bytes_per_mib
+                metrics["disk_write_mb_s"] = (io.write_bytes - self._last_disk_io.write_bytes) / dt / MeasurementUnits.bytes_per_mib
             self._last_disk_io = io
             self._last_disk_t  = now
         except (PermissionError, OSError):

@@ -6,6 +6,8 @@ from typing     import Any, Mapping, Optional
 import numpy as np
 import torch
 
+from configuration.shared import MeasurementUnits
+
 
 class Tracker:
     def __init__(self, writer=None, debug: bool = False) -> None:
@@ -76,7 +78,7 @@ class Tracker:
             return
 
         target = device if device is not None else torch.cuda.current_device()
-        self.log_scalar("system/gpu_peak_alloc_gb", torch.cuda.max_memory_allocated(target) / 1024 ** 3, step)
+        self.log_scalar("system/gpu_peak_alloc_gb", torch.cuda.max_memory_allocated(target) / MeasurementUnits.bytes_per_gib, step)
 
     def flush(self) -> None:
         if self.writer is not None:

@@ -166,6 +166,12 @@ class IoNames:
 
 
 @dataclass(frozen=True)
+class MeasurementUnits:
+    bytes_per_mib : int = 1024 ** 2
+    bytes_per_gib : int = 1024 ** 3
+
+
+@dataclass(frozen=True)
 class LogSettings:
     level       : str   = "INFO"
     level_names : tuple = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")

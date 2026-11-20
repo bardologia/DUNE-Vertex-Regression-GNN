@@ -14,6 +14,8 @@ import torch.nn as nn
 from torch.utils.data       import Dataset
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
+from configuration.shared import MeasurementUnits
+
 
 @dataclass(frozen=True)
 class LoaderSpec:
@@ -90,7 +92,7 @@ class GpuUtilizationSampler:
             mem  = pynvml.nvmlDeviceGetMemoryInfo(self._handle)
 
             self._util_samples.append(float(util.gpu))
-            self._vram_samples.append(float(mem.used) / (1024.0 ** 3))
+            self._vram_samples.append(float(mem.used) / MeasurementUnits.bytes_per_gib)
         except Exception:
             pass
 

@@ -2,15 +2,17 @@ from __future__ import annotations
 
 import torch
 
+from configuration.shared import MeasurementUnits
+
 
 class VramReservation:
 
-    GRANULARITY_BYTES = 2 * 1024 ** 2
-    CHUNK_FLOOR_BYTES = 16 * 1024 ** 2
+    GRANULARITY_BYTES = 2 * MeasurementUnits.bytes_per_mib
+    CHUNK_FLOOR_BYTES = 16 * MeasurementUnits.bytes_per_mib
 
     def __init__(self, enabled: bool, keep_free_gb: float, device, logger) -> None:
         self.enabled         = bool(enabled) and torch.device(device).type == "cuda"
-        self.keep_free_bytes = int(float(keep_free_gb) * 1024 ** 3)
+        self.keep_free_bytes = int(float(keep_free_gb) * MeasurementUnits.bytes_per_gib)
         self.device          = torch.device(device)
         self.logger          = logger
         self.filled          = False
@@ -53,7 +55,7 @@ class VramReservation:
         self.filled = True
 
         free, total = torch.cuda.mem_get_info(self.device)
-        self.logger.subsection(f"VRAM reservation: parked {claimed / 1024 ** 3:.2f} GB in the allocator cache, {free / 1024 ** 3:.2f} GB of {total / 1024 ** 3:.2f} GB left free (keep-free target {self.keep_free_bytes / 1024 ** 3:.2f} GB)")
+        self.logger.subsection(f"VRAM reservation: parked {claimed / MeasurementUnits.bytes_per_gib:.2f} GB in the allocator cache, {free / MeasurementUnits.bytes_per_gib:.2f} GB of {total / MeasurementUnits.bytes_per_gib:.2f} GB left free (keep-free target {self.keep_free_bytes / MeasurementUnits.bytes_per_gib:.2f} GB)")
 
     def refill(self) -> None:
         if not (self.enabled and self.filled):

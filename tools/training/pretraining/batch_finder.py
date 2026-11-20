@@ -6,6 +6,7 @@ import torch
 from torch.utils.data       import Dataset
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
+from configuration.shared          import MeasurementUnits
 from tools.monitoring.logger       import Logger
 from tools.runtime.reproducibility import Reproducibility
 
@@ -31,7 +32,7 @@ class TrainStepMemoryProbe:
         free_bytes, total_bytes = torch.cuda.mem_get_info(device)
         process_reserved        = torch.cuda.memory_reserved(device)
 
-        return max(total_bytes - free_bytes - process_reserved, 0) / (1024.0 ** 3)
+        return max(total_bytes - free_bytes - process_reserved, 0) / MeasurementUnits.bytes_per_gib
 
     def __call__(self, batch_size: int) -> float:
         loader = GraphDataLoader(self.dataset, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=0, generator=Reproducibility.generator(self.seed))
@@ -64,7 +65,7 @@ class TrainStepMemoryProbe:
 
         del loss, batch, iterator, loader
 
-        return self.context_gb + peak_reserved / (1024.0 ** 3)
+        return self.context_gb + peak_reserved / MeasurementUnits.bytes_per_gib
 
 
 class BatchSizeFinder:
