@@ -74,7 +74,7 @@ class PretrainOrchestrator:
         if result["status"] != "PASS":
             raise SystemExit(f"max batch-size finder failed: {result['error']}")
 
-        self.training.batch_size = int(result["batch_size"])
+        self.training.batch_size  = int(result["batch_size"])
         self.report["batch_size"] = result
 
         self.logger.subsection(f"Resolved batch size: {self.training.batch_size} (peak {result['peak_gb']:.2f} GB of the {result['budget_gb']:.2f} GB budget)")

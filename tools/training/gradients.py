@@ -124,7 +124,7 @@ class GradientClipper:
             return norm
 
         norm_before, norm_after = self._clip(model, norm, threshold)
-        clip_ratio = norm_after / (norm_before + self.epsilon)
+        clip_ratio              = norm_after / (norm_before + self.epsilon)
 
         self.tracker.log_scalar("train/grad_norm_after_clip",  norm_after,  global_step)
         self.tracker.log_scalar("train/grad_clip_ratio",       clip_ratio,  global_step)
