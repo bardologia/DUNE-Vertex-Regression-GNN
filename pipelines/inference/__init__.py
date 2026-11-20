@@ -1,8 +1,7 @@
-from .animations   import AnalysisAnimations
 from .event_export import EventExportPipeline
 from .metrics      import InferenceMetrics
 from .pipeline     import InferencePipeline
-from .plots        import AnalysisPlots
+from .plots        import AnalysisAnimations, AnalysisPlots
 from .predictor    import Predictor
 from .report       import AnalysisReport
 
