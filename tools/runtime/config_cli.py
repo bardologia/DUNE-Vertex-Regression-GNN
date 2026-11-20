@@ -11,8 +11,9 @@ from dataclasses import fields, is_dataclass
 from datetime    import datetime
 from pathlib     import Path
 
-from configuration.shared import IoNames, LogSettings
-from configuration.tools  import CliSettings
+from configuration.shared    import IoNames, LogSettings
+from configuration.tools     import CliSettings
+from tools.monitoring.logger import Logger
 
 
 class Detacher:
@@ -58,9 +59,10 @@ class Detacher:
                 start_new_session = True,
             )
 
-        print(f"detached {name} as pid {process.pid}, immune to hangup")
-        print(f"output: {log_path}")
-        print(f"follow: tail -f {log_path}")
+        logger = Logger(log_dir="", name=name)
+        logger.info(f"detached {name} as pid {process.pid}, immune to hangup")
+        logger.info(f"output: {log_path}")
+        logger.info(f"follow: tail -f {log_path}")
 
         raise SystemExit(0)
 
@@ -92,7 +94,7 @@ class ConfigCli:
         self._reject_unknown_options(leftover)
 
         if getattr(args, "_help_config", False):
-            self._print_config_help()
+            self._log_config_help()
             raise SystemExit(0)
 
         if getattr(args, "_detach", False):
@@ -174,15 +176,12 @@ class ConfigCli:
 
         return raw
 
-    def _print_config_help(self) -> None:
-        rows  = [(path, type(value).__name__ if value is not None else "any", repr(value)) for path, value in self._leaves(self.config)]
-        width = max(len(path) for path, _, _ in rows)
+    def _log_config_help(self) -> None:
+        rows   = [{"Option": f"--{path}", "Type": type(value).__name__ if value is not None else "any", "Default": repr(value)} for path, value in self._leaves(self.config)]
+        logger = Logger(log_dir="", name=Path(sys.argv[0]).stem)
 
-        print(f"Configuration overrides for {type(self.config).__name__} (pass as --<path> <value>):")
-        for path, type_name, default in rows:
-            print(f"  --{path:<{width}}  {type_name:<6}  default: {default}")
-        print("Execution flags:")
-        print("  --detach (alias --nohup)  relaunch detached from the terminal, output to logs/<script>_<stamp>.out")
+        logger.metrics_table(rows, list(rows[0]), title=f"Configuration overrides for {type(self.config).__name__} (pass as --<path> <value>)")
+        logger.kv_table({"--detach (alias --nohup)": "relaunch detached from the terminal, output to logs/<script>_<stamp>.out"}, title="Execution flags", key_header="Flag", value_header="Effect")
 
     @staticmethod
     def set_path(config, path: str, value) -> None:
