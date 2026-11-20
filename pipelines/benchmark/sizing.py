@@ -37,10 +37,7 @@ class ModelSizer:
 
     def reference_count(self):
         reference = self.config.reference_model
-        if reference not in self.model_overrides:
-            raise ValueError(f"size_match.reference_model '{reference}' is not among the benchmarked models; remove it from skip_models or choose another reference.")
-
-        model, _ = get_model(reference, **self.model_overrides[reference])
+        model, _  = get_model(reference, **self.model_overrides[reference])
         return self.parameter_count(model)
 
     def _alignment(self, model_name):

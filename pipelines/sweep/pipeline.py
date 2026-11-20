@@ -55,9 +55,6 @@ class EnergyEfficiencySweepPipeline:
 
     def _load_run(self):
         resolved_path = self.run_directory / IoNames.metadata_dir / IoNames.resolved_config_file
-        if not resolved_path.exists():
-            raise FileNotFoundError(f"No training run found at {self.run_directory}: expected {resolved_path}. Pass --run_directory pointing at a completed run (runs/<model>_<stamp>).")
-
         self.entry          = ConfigCli.load_resolved(TrainEntryConfig(), resolved_path)
         self.stats          = NormalizationStats.load(self.run_directory / IoNames.metadata_dir)
         self.split_base_ids = json.loads((self.run_directory / IoNames.metadata_dir / IoNames.split_base_ids_file).read_text(encoding="utf-8"))

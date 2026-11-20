@@ -37,9 +37,6 @@ class InferencePipeline:
 
     def _load_run_config(self):
         resolved_path = self.run_directory / IoNames.metadata_dir / IoNames.resolved_config_file
-        if not resolved_path.exists():
-            raise FileNotFoundError(f"No training run found at {self.run_directory}: expected {resolved_path}. Pass --run_directory pointing at a completed run (runs/<model>_<stamp>).")
-
         entry      = TrainEntryConfig()
         self.entry = ConfigCli.load_resolved(entry, resolved_path)
         self.logger.subsection(f"Config loaded: model={self.entry.model_name} | run={self.run_directory.name}")
