@@ -284,8 +284,6 @@ class Logger:
         with progress:
             yield progress
 
-    progress_bar = track
-
     @contextmanager
     def live_monitor(self, title: str = "Training Monitor", enabled: bool = True):
         monitor = LiveMonitor(self.console, title=title, enabled=enabled)
