@@ -1,13 +1,14 @@
+import functools
 import logging
 import os
 from contextlib import contextmanager
 from datetime   import datetime
 from typing     import Any, Mapping, Optional, Sequence
 
-from rich.console import Console
-from rich.live    import Live
-from rich.logging import RichHandler
-from rich.panel   import Panel
+from rich.console  import Console
+from rich.live     import Live
+from rich.logging  import RichHandler
+from rich.panel    import Panel
 from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
@@ -18,14 +19,30 @@ from rich.progress import (
     TimeElapsedColumn,
     TimeRemainingColumn,
 )
-from rich.rule  import Rule
-from rich.table import Table
-from rich.text  import Text
-from rich.theme import Theme
+from rich.rule     import Rule
+from rich.table    import Table
+from rich.text     import Text
+from rich.theme    import Theme
 
 from configuration.shared     import IoNames, LogSettings, MeasurementUnits
 from tools.reporting.markdown import MarkdownDoc, MarkdownTable
 from tools.runtime.run_tag    import RunTag
+
+
+class SharedConsole:
+
+    @staticmethod
+    @functools.cache
+    def get() -> Console:
+        return Console(
+            theme          = Theme(dict(LogSettings.console_theme)),
+            highlight      = False,
+            soft_wrap      = False,
+            force_terminal = True,
+            color_system   = LogSettings.console_color_system,
+            legacy_windows = False,
+            no_color       = False,
+        )
 
 
 class LiveMonitor:
@@ -70,41 +87,6 @@ class LiveMonitor:
         return False
 
 
-_CONSOLE: Optional[Console] = None
-
-
-def get_console() -> Console:
-
-    global _CONSOLE
-    if _CONSOLE is None:
-        _CONSOLE = Console(
-            theme          = Theme(dict(LogSettings.console_theme)),
-            highlight      = False,
-            soft_wrap      = False,
-            force_terminal = True,
-            color_system   = LogSettings.console_color_system,
-            legacy_windows = False,
-            no_color       = False,
-        )
-    return _CONSOLE
-
-
-def _make_progress(console: Console, transient: bool = False) -> Progress:
-
-    return Progress(
-        SpinnerColumn(style=LogSettings.accent_style),
-        TextColumn(LogSettings.progress_description_format),
-        BarColumn(bar_width=None),
-        MofNCompleteColumn(),
-        TaskProgressColumn(),
-        TimeElapsedColumn(),
-        TimeRemainingColumn(),
-        console=console,
-        transient=transient,
-        refresh_per_second=LogSettings.progress_refresh_per_second,
-    )
-
-
 class Logger:
 
     def __init__(self, log_dir: str = IoNames.logs_dir, name: str = IoNames.default_log_name, level: str = LogSettings.level, config: Any = None) -> None:
@@ -118,7 +100,7 @@ class Logger:
         if log_dir:
             os.makedirs(self.log_dir, exist_ok=True)
 
-        self.console: Console = get_console()
+        self.console: Console = SharedConsole.get()
         self.logger           = logging.getLogger(name)
         self.logger.propagate = False
         if self.logger.hasHandlers():
@@ -143,7 +125,6 @@ class Logger:
         rich_handler.setLevel(log_level)
         self.logger.addHandler(rich_handler)
 
-
         self._file_handler: Optional[logging.FileHandler] = None
         if log_dir:
             file_formatter = logging.Formatter(LogSettings.file_format, datefmt=LogSettings.timestamp_format)
@@ -154,24 +135,6 @@ class Logger:
             self._file_handler = file_handler
 
         self._header(log_level)
-
-    def _to_file(self, message: str, level: int = logging.INFO) -> None:
-        if self._file_handler is None:
-            return
-        self._file_handler.handle(self.logger.makeRecord(self.name, level, "", 0, message, None, None))
-
-    def _file_raw(self, text: str = "") -> None:
-        if self._file_handler is None:
-            return
-        self._file_handler.stream.write(text + "\n")
-        self._file_handler.flush()
-
-    def _file_banner(self, line: str) -> None:
-        bar = LogSettings.file_rule_character * LogSettings.file_rule_width
-        self._file_raw()
-        self._file_raw(bar)
-        self._to_file(line)
-        self._file_raw(bar)
 
     def _header(self, log_level: int) -> None:
         started = self.start_time.strftime(LogSettings.timestamp_format)
@@ -184,15 +147,6 @@ class Logger:
             self.console.print(f"  [key]Log file[/key] : [value]{self._file_handler.baseFilename}[/value]")
 
         self._file_banner(f">>> RUN {self.name}  |  started {started}  |  level {level}")
-
-    @staticmethod
-    def _fmt_duration(seconds: float) -> str:
-        if seconds < MeasurementUnits.seconds_per_minute:
-            return f"{seconds:.1f}s"
-
-        minutes, secs    = divmod(int(seconds), MeasurementUnits.seconds_per_minute)
-        hours,   minutes = divmod(minutes, MeasurementUnits.minutes_per_hour)
-        return f"{hours}h{minutes:02d}m{secs:02d}s" if hours else f"{minutes}m{secs:02d}s"
 
     def section(self, title: str) -> None:
         text  = str(title).upper()
@@ -210,20 +164,29 @@ class Logger:
         suffix = "" if delta is None else f"  (+{delta})"
         self._file_banner(f">>> {text}{suffix}")
 
+    @staticmethod
+    def _fmt_duration(seconds: float) -> str:
+        if seconds < MeasurementUnits.seconds_per_minute:
+            return f"{seconds:.1f}s"
+
+        minutes, secs    = divmod(int(seconds), MeasurementUnits.seconds_per_minute)
+        hours,   minutes = divmod(minutes, MeasurementUnits.minutes_per_hour)
+        return f"{hours}h{minutes:02d}m{secs:02d}s" if hours else f"{minutes}m{secs:02d}s"
+
     def subsection(self, title: str) -> None:
         line = f"  [{LogSettings.accent_style}]>[/{LogSettings.accent_style}] {title}"
         self.console.print(line, style=LogSettings.subsection_style)
         self._to_file(f"  > {title}")
 
-    def debug(self, message: str) -> None:    
+    def debug(self, message: str) -> None:
         self.logger.debug(message)
-    
-    def info(self, message: str) -> None:     
+
+    def info(self, message: str) -> None:
         self.logger.info(message)
-    
-    def warning(self, message: str) -> None:  
+
+    def warning(self, message: str) -> None:
         self.logger.warning(message)
-    
+
     def error(self, message: str) -> None:
         self.logger.error(message)
 
@@ -233,12 +196,6 @@ class Logger:
     def ok(self, message: str) -> None:
         self.console.print(f"  [ok]+[/ok] {message}")
         self._to_file(f"  + {message}")
-
-    @staticmethod
-    def _fmt(value: Any) -> str:
-        if isinstance(value, float):
-            return f"{value:.6g}"
-        return str(value)
 
     def render(self, renderable: Any) -> None:
         self.console.print(renderable)
@@ -269,7 +226,7 @@ class Logger:
         for k, v in data.items():
             self._to_file(f"      {str(k):<{key_width}} : {self._fmt(v)}")
 
-    def metrics_table(self, rows: Sequence[Mapping[str, Any]], columns: Sequence[str], title: Optional[str] = None, column_styles: Optional[Mapping[str, str]] = None,) -> None:
+    def metrics_table(self, rows: Sequence[Mapping[str, Any]], columns: Sequence[str], title: Optional[str] = None, column_styles: Optional[Mapping[str, str]] = None) -> None:
         styles = column_styles or {}
         tbl    = Table(title=title, show_header=True, header_style=LogSettings.heading_style, expand=False)
 
@@ -291,6 +248,12 @@ class Logger:
         for row in cells:
             self._to_file("      " + "  ".join(row[index].ljust(widths[index]) for index in range(len(columns))))
 
+    @staticmethod
+    def _fmt(value: Any) -> str:
+        if isinstance(value, float):
+            return f"{value:.6g}"
+        return str(value)
+
     @contextmanager
     def timer(self, label: str):
         start = datetime.now()
@@ -306,7 +269,18 @@ class Logger:
 
     @contextmanager
     def track(self, transient: bool = False):
-        progress = _make_progress(self.console, transient=transient)
+        progress = Progress(
+            SpinnerColumn(style=LogSettings.accent_style),
+            TextColumn(LogSettings.progress_description_format),
+            BarColumn(bar_width=None),
+            MofNCompleteColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+            console=self.console,
+            transient=transient,
+            refresh_per_second=LogSettings.progress_refresh_per_second,
+        )
         with progress:
             yield progress
 
@@ -355,6 +329,24 @@ class Logger:
             handler.close()
             self.logger.removeHandler(handler)
         self._file_handler = None
+
+    def _file_banner(self, line: str) -> None:
+        bar = LogSettings.file_rule_character * LogSettings.file_rule_width
+        self._file_raw()
+        self._file_raw(bar)
+        self._to_file(line)
+        self._file_raw(bar)
+
+    def _file_raw(self, text: str = "") -> None:
+        if self._file_handler is None:
+            return
+        self._file_handler.stream.write(text + "\n")
+        self._file_handler.flush()
+
+    def _to_file(self, message: str, level: int = logging.INFO) -> None:
+        if self._file_handler is None:
+            return
+        self._file_handler.handle(self.logger.makeRecord(self.name, level, "", 0, message, None, None))
 
     def __enter__(self) -> "Logger":
         return self
