@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from configuration.sweep.general import SweepGridSettings
+
 
 class SweepAxis:
     def __init__(self, name, axis_config):
@@ -21,7 +23,7 @@ class SweepAxis:
 
         count  = int(round((self.maximum - self.minimum) / self.step)) + 1
         points = self.minimum + self.step * np.arange(count, dtype=np.float64)
-        return np.round(points, 10)
+        return np.round(points, SweepGridSettings.rounding_decimals)
 
 
 class SweepGrid:

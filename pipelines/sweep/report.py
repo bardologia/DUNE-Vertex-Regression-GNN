@@ -4,17 +4,13 @@ import csv
 import json
 from pathlib import Path
 
-from configuration.shared     import IoNames
-from tools.reporting.markdown import MarkdownDoc, MarkdownTable
+from configuration.inference.general import VertexCoordinates
+from configuration.shared            import IoNames
+from configuration.sweep.general     import SweepMetrics
+from tools.reporting.markdown        import MarkdownDoc, MarkdownTable
 
 
 class SweepReport:
-    CSV_COLUMNS = (
-        "scale_factor", "detection_efficiency", "count",
-        "mae", "rmse", "r2", "median_error", "bias",
-        "euclidean_mean", "euclidean_median", "euclidean_p90", "euclidean_p95",
-    )
-
     def __init__(self, output_directory, logger):
         self.output_directory = Path(output_directory)
         self.logger           = logger
@@ -22,7 +18,7 @@ class SweepReport:
 
     def _write_json(self, context, records):
         payload = {
-            "unit"    : "m",
+            "unit"    : VertexCoordinates.unit,
             "run"     : context,
             "results" : records,
         }
@@ -34,10 +30,10 @@ class SweepReport:
         path = self.output_directory / IoNames.sweep_results_table
         with open(path, "w", newline="", encoding="utf-8") as handle:
             writer = csv.writer(handle)
-            writer.writerow(self.CSV_COLUMNS)
+            writer.writerow(SweepMetrics.csv_columns)
             for record in records:
                 metrics = record["metrics"]
-                row     = [record["scale_factor"], record["detection_efficiency"]] + [metrics.get(column) for column in self.CSV_COLUMNS[2:]]
+                row     = [record["scale_factor"], record["detection_efficiency"]] + [metrics.get(column) for column in SweepMetrics.csv_columns[2:]]
                 writer.writerow(row)
         return path
 

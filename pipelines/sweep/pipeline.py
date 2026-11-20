@@ -9,6 +9,7 @@ from torch_geometric.loader import DataLoader as GraphDataLoader
 
 from configuration.entry             import TrainEntryConfig
 from configuration.shared            import IoNames
+from configuration.sweep.general     import SweepMetrics
 from models                          import get_model
 from tools.monitoring.logger         import Logger
 from tools.runtime.config_cli        import ConfigCli
@@ -24,8 +25,6 @@ from pipelines.sweep.report import SweepReport
 
 
 class EnergyEfficiencySweepPipeline:
-    GRID_METRIC_KEYS = ("euclidean_mean", "euclidean_median", "mae", "rmse", "r2")
-
     def __init__(self, config, logger=None):
         self.config           = config
         self.run_directory    = Path(config.run_directory)
@@ -104,7 +103,7 @@ class EnergyEfficiencySweepPipeline:
     def _metric_grids(self):
         rows, columns = self.grid.shape()
         grids         = {}
-        for key in self.GRID_METRIC_KEYS:
+        for key in SweepMetrics.grid_keys:
             values     = np.array([record["metrics"][key] for record in self.records], dtype=np.float64)
             grids[key] = values.reshape(rows, columns)
         return grids
