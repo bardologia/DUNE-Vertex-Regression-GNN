@@ -114,7 +114,7 @@ class GpuUtilizationSampler:
             "gpu_available" : True,
             "gpu_util_mean" : float(np.mean(self._util_samples)),
             "gpu_util_max"  : float(np.max(self._util_samples)),
-            "vram_peak_gb"  : float(np.max(self._vram_samples)) if self._vram_samples else float("nan"),
+            "vram_peak_gb"  : float(np.max(self._vram_samples)),
             "gpu_n_samples" : int(len(self._util_samples)),
         }
 
