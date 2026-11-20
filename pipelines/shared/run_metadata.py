@@ -6,6 +6,7 @@ from pathlib  import Path
 
 from torch.utils.tensorboard import SummaryWriter
 
+from configuration.shared     import IoNames
 from tools.monitoring.logger  import Logger
 from tools.monitoring.tracker import NullTracker, Tracker
 from tools.runtime.config_cli import ConfigCli
@@ -30,7 +31,7 @@ class TrainingRunMetadata:
         self.training_config = training_config
         self.model_name      = model_name
 
-        stamp         = datetime.now().strftime("%Y%m%d-%H%M%S")
+        stamp         = datetime.now().strftime(IoNames.run_stamp_format)
         resolved_name = run_name if run_name else stamp
         run_paths     = RunPaths(base_logdir, model_name, resolved_name)
 
@@ -78,14 +79,14 @@ class TrainingRunMetadata:
         return record.save(store_geometry)
 
     def save_resolved_config(self, config) -> Path:
-        return ConfigCli.save_resolved(config, self.metadata_directory / "resolved_config.json")
+        return ConfigCli.save_resolved(config, self.metadata_directory / IoNames.resolved_config_file)
 
     def save_normalization_stats(self, stats) -> Path:
         return stats.save(self.metadata_directory)
 
     def save_split(self, split_base_ids) -> Path:
-        path = self.metadata_directory / "split_base_ids.json"
-        path.write_text(json.dumps(split_base_ids, indent=2), encoding="utf-8")
+        path = self.metadata_directory / IoNames.split_base_ids_file
+        path.write_text(json.dumps(split_base_ids, indent=IoNames.json_indent), encoding="utf-8")
         return path
 
     def close(self) -> None:

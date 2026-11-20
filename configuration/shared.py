@@ -23,7 +23,30 @@ class IoNames:
     run_stamp_format  : str = "%Y%m%d-%H%M%S"
     json_indent       : int = 2
 
-    best_model_file : str = "best_model.pt"
+    run_dir                  : str = "{model}_{run}"
+    tensorboard_dir          : str = "tensorboard"
+    metadata_dir             : str = "metadata"
+    checkpoints_dir          : str = "checkpoints"
+    analysis_dir             : str = "analysis"
+    best_model_file          : str = "best_model.pt"
+    trainer_state_file       : str = "last.pt"
+    resolved_config_file     : str = "resolved_config.json"
+    split_base_ids_file      : str = "split_base_ids.json"
+    metrics_file             : str = "metrics.json"
+    normalization_stats_file : str = "normalization_stats.json"
+    store_geometry_file      : str = "store_geometry.json"
+    completion_file          : str = "complete.json"
+    model_summary_file       : str = "model_summary.md"
+
+    overfit_check_dir     : str = "overfit_check"
+    overfit_report_file   : str = "overfit_report.json"
+    pretrain_dir          : str = "pretrain"
+    pretrain_log          : str = "pretrain"
+    pretrain_report_file  : str = "pretrain_report.json"
+    probe_dir             : str = "probe"
+    probe_checkpoint_file : str = "probe.pt"
+    trial_dir             : str = "trial_{number}"
+    best_trial_file       : str = "best_trial.json"
 
 
 @dataclass(frozen=True)

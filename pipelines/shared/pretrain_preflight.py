@@ -5,7 +5,7 @@ from typing  import Callable, Optional
 
 import torch
 
-from configuration.shared        import LogSettings
+from configuration.shared        import IoNames, LogSettings
 from tools.monitoring.logger    import Logger
 from tools.training.pretraining import PretrainContext, PretrainOrchestrator, TrainStepMemoryProbe, TrainerFeed
 
@@ -49,10 +49,10 @@ class PretrainPreflight:
         if not self._enabled():
             return
 
-        result_dir = self.run_directory / "pretrain"
+        result_dir = self.run_directory / IoNames.pretrain_dir
         result_dir.mkdir(parents=True, exist_ok=True)
 
-        logger = Logger(log_dir=str(result_dir / "logs"), name="pretrain", level=LogSettings.level)
+        logger = Logger(log_dir=str(result_dir / IoNames.logs_dir), name=IoNames.pretrain_log, level=LogSettings.level)
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         orchestrator = PretrainOrchestrator(

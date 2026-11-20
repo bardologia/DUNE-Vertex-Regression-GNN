@@ -5,6 +5,7 @@ EnvironmentPinner.pin()
 from pathlib import Path
 
 from configuration.entry             import TrainEntryConfig
+from configuration.shared            import IoNames
 from tools.runtime.config_cli        import ConfigCli
 from pipelines.shared                import PretrainPreflight
 from pipelines.training              import TrainingPipeline
@@ -18,12 +19,12 @@ class TrainEntry:
         return TrainingPipeline(self.config, explicit_paths=explicit_paths)
 
     def _preflight(self, explicit_paths):
-        run_directory = Path(self.config.training.io.log_base_dir) / "pretrain" / self.config.model_name
+        run_directory = Path(self.config.training.io.log_base_dir) / IoNames.pretrain_dir / self.config.model_name
 
         PretrainPreflight(
             pretrain_config = self.config.training.pretrain,
             loop_config     = self.config.training.loop,
-            build_trainer   = lambda logger: self._pipeline(explicit_paths).build_pretrain_trainer(run_directory / "probe", logger),
+            build_trainer   = lambda logger: self._pipeline(explicit_paths).build_pretrain_trainer(run_directory / IoNames.probe_dir, logger),
             run_directory   = run_directory,
             label           = self.config.model_name,
         ).run()

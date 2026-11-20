@@ -9,7 +9,7 @@ from pathlib     import Path
 
 from torch_geometric.data import Batch
 
-from tools.runtime.completion      import CompletionMarker
+from configuration.shared          import IoNames
 from tools.runtime.reproducibility import RngSnapshot
 from tools.training.optimization   import LearningRateScaler
 
@@ -35,8 +35,7 @@ class FixedEpochDataset:
 
 class OverfitCheck:
 
-    REPORT_FILENAME = "overfit_report.json"
-    DROPOUT_SUFFIX  = ("dropout", "drop_path_rate")
+    DROPOUT_SUFFIX = ("dropout", "drop_path_rate")
 
     def __init__(self, config, run_directory, metadata_directory, logger) -> None:
         self.config             = config
@@ -44,8 +43,8 @@ class OverfitCheck:
         self.metadata_directory = Path(metadata_directory)
         self.logger             = logger
 
-        self.work_directory = self.run_directory / "overfit_check"
-        self.report_path    = self.metadata_directory / self.REPORT_FILENAME
+        self.work_directory = self.run_directory / IoNames.overfit_check_dir
+        self.report_path    = self.metadata_directory / IoNames.overfit_report_file
         self.overrides      = {}
         self.rng            = RngSnapshot() if config.enabled else None
 
@@ -158,10 +157,10 @@ class OverfitCheck:
         }
 
         self.report_path.parent.mkdir(parents=True, exist_ok=True)
-        self.report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        self.report_path.write_text(json.dumps(report, indent=IoNames.json_indent), encoding="utf-8")
 
     def _cleanup(self) -> None:
-        for name in ("best_model.pt", "last.pt", CompletionMarker.FILENAME):
+        for name in (IoNames.best_model_file, IoNames.trainer_state_file, IoNames.completion_file):
             (self.work_directory / name).unlink(missing_ok=True)
 
         if self.work_directory.is_dir() and not any(self.work_directory.iterdir()):

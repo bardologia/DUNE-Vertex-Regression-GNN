@@ -11,6 +11,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "webui"))
 from configuration                               import TrainEntryConfig
 from configuration.benchmark.general             import BenchmarkConfig
 from configuration.explainability                import FeatureImportanceConfig
+from configuration.shared                        import IoNames
 from configuration.sweep                         import EnergyEfficiencySweepConfig
 from tools                                       import Logger
 from pipelines.benchmark.pipeline                import BenchmarkPipeline
@@ -126,7 +127,7 @@ def test_inference_refuses_a_run_without_record(trained_run, tmp_path):
     run_directory, _ = trained_run
     old_run          = tmp_path / run_directory.name
     for path in run_directory.rglob("*"):
-        if path.is_file() and path.name != StoreGeometryRecord.FILENAME:
+        if path.is_file() and path.name != IoNames.store_geometry_file:
             target = old_run / path.relative_to(run_directory)
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(path.read_bytes())
@@ -151,7 +152,7 @@ def test_inference_refuses_a_run_of_another_geometry(trained_run):
 def test_resumed_training_refuses_a_run_without_record_before_writing(trained_run):
     run_directory, entry = trained_run
     run_name             = run_directory.name.removeprefix(f"{entry.model_name}_")
-    (run_directory / "metadata" / StoreGeometryRecord.FILENAME).rename(run_directory / "metadata" / "held.json")
+    (run_directory / "metadata" / IoNames.store_geometry_file).rename(run_directory / "metadata" / "held.json")
     before = sorted(path for path in run_directory.rglob("*"))
 
     try:
@@ -161,7 +162,7 @@ def test_resumed_training_refuses_a_run_without_record_before_writing(trained_ru
         assert sorted(path for path in run_directory.rglob("*")) == before
     finally:
         entry.training.loop.resume = False
-        (run_directory / "metadata" / "held.json").rename(run_directory / "metadata" / StoreGeometryRecord.FILENAME)
+        (run_directory / "metadata" / "held.json").rename(run_directory / "metadata" / IoNames.store_geometry_file)
 
 
 def test_resumed_training_refuses_a_run_of_another_geometry(trained_run):

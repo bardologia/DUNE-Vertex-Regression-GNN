@@ -3,16 +3,15 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from configuration.shared  import IoNames
 from tools.runtime.run_tag import RunTag
 
 
 class CompletionMarker:
 
-    FILENAME = "complete.json"
-
     @staticmethod
     def path(directory) -> Path:
-        return Path(directory) / CompletionMarker.FILENAME
+        return Path(directory) / IoNames.completion_file
 
     @staticmethod
     def is_complete(directory) -> bool:
@@ -30,5 +29,5 @@ class CompletionMarker:
     def stamp(directory, payload: dict) -> Path:
         path = CompletionMarker.path(directory)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"completed_at": RunTag.timestamp(), **payload}, indent=2), encoding="utf-8")
+        path.write_text(json.dumps({"completed_at": RunTag.timestamp(), **payload}, indent=IoNames.json_indent), encoding="utf-8")
         return path

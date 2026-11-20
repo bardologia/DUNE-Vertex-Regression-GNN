@@ -7,6 +7,8 @@ import numpy as np
 import torch
 from scipy.stats import skew
 
+from configuration.shared import IoNames
+
 
 class ChannelStrategySelector:
     EPSILON           = 1e-8
@@ -163,13 +165,13 @@ class NormalizationStats:
     def save(self, directory):
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
-        path    = directory / "normalization_stats.json"
+        path    = directory / IoNames.normalization_stats_file
         payload = {group: getattr(self, group).to_dict() for group in self.GROUPS}
-        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        path.write_text(json.dumps(payload, indent=IoNames.json_indent), encoding="utf-8")
         return path
 
     @classmethod
     def load(cls, directory):
-        path    = Path(directory) / "normalization_stats.json"
+        path    = Path(directory) / IoNames.normalization_stats_file
         payload = json.loads(path.read_text(encoding="utf-8"))
         return cls(**{group: FeatureGroupNormalizer.from_dict(payload[group]) for group in cls.GROUPS})

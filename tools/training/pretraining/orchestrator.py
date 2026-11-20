@@ -8,6 +8,7 @@ from typing      import Callable, Optional
 
 import torch
 
+from configuration.shared                    import IoNames
 from tools.monitoring.logger                 import Logger
 from tools.training.pretraining.batch_finder import BatchSizeFinder
 from tools.training.pretraining.loader_tuner import LoaderTuner
@@ -27,8 +28,6 @@ class PretrainContext:
 
 
 class PretrainOrchestrator:
-
-    RESULT_FILENAME = "pretrain_report.json"
 
     def __init__(self, pretrain_config, training_config, build_context: Callable[[], PretrainContext], logger: Logger, label: Optional[str] = None, result_dir: Optional[Path] = None) -> None:
         self.pretrain   = pretrain_config
@@ -107,7 +106,7 @@ class PretrainOrchestrator:
             return
 
         self.result_dir.mkdir(parents=True, exist_ok=True)
-        (self.result_dir / self.RESULT_FILENAME).write_text(json.dumps(self.report, indent=2), encoding="utf-8")
+        (self.result_dir / IoNames.pretrain_report_file).write_text(json.dumps(self.report, indent=IoNames.json_indent), encoding="utf-8")
 
     def run(self) -> None:
         if not self._enabled():

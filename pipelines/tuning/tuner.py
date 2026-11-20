@@ -11,6 +11,7 @@ from optuna.pruners  import MedianPruner
 from optuna.samplers import TPESampler
 
 from configuration.architectures      import MODEL_CONFIG_REGISTRY
+from configuration.shared             import IoNames
 from configuration.training.general   import OptimizerConfig
 from models                           import get_model
 from tools.runtime.reproducibility import Reproducibility
@@ -74,7 +75,7 @@ class Tuner:
             model_overrides = {**model_overrides, "degree_histogram": degree_histogram}
 
         model, _ = get_model(self.entry.model_name, **model_overrides)
-        context  = LightweightRunContext(self.logger, self.tuner_directory / f"trial_{trial.number}" / "best_model.pt")
+        context  = LightweightRunContext(self.logger, self.tuner_directory / IoNames.trial_dir.format(number=trial.number) / IoNames.best_model_file)
         trainer  = Trainer(model, self.stats, training_config, context)
 
         best_validation_loss = float("inf")
@@ -114,8 +115,8 @@ class Tuner:
             "optimizer_overrides" : optimizer_overrides,
         }
 
-        results_path = self.tuner_directory / "best_trial.json"
-        results_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+        results_path = self.tuner_directory / IoNames.best_trial_file
+        results_path.write_text(json.dumps(record, indent=IoNames.json_indent), encoding="utf-8")
         self.logger.subsection(f"Best hyperparameters saved to {results_path}")
 
     def optimize(self):

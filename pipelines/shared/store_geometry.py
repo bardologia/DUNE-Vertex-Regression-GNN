@@ -15,6 +15,8 @@ from pathlib import Path
 
 import numpy as np
 
+from configuration.shared import IoNames
+
 
 class StoreGeometryRecord:
     """Store-geometry record of one run directory.
@@ -24,15 +26,13 @@ class StoreGeometryRecord:
         path     : Path of the record file.
     """
 
-    FILENAME = "store_geometry.json"
-
     def __init__(self, directory: Path) -> None:
         """Resolves the record path.
 
         Args:
             directory : Directory that holds the record, the ``metadata`` directory of a run or the ``pipeline`` directory of a benchmark.
         """
-        self.path = Path(directory) / self.FILENAME
+        self.path = Path(directory) / IoNames.store_geometry_file
 
     def save(self, store_geometry: dict) -> Path:
         """Writes the record.
@@ -44,7 +44,7 @@ class StoreGeometryRecord:
             The record path.
         """
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(store_geometry, indent=2), encoding="utf-8")
+        self.path.write_text(json.dumps(store_geometry, indent=IoNames.json_indent), encoding="utf-8")
         return self.path
 
     def recorded(self) -> dict:
@@ -59,7 +59,7 @@ class StoreGeometryRecord:
         if not self.path.parent.is_dir():
             raise FileNotFoundError(f"{self.path.parent} does not exist; pass the directory of a completed run.")
         if not self.path.is_file():
-            raise FileNotFoundError(f"{self.path.parent} holds no {self.FILENAME}: the run was trained on a Parquet store built before the documented channel mapping, whose sensor positions are wrong for every odd raw row and which kept the three face totals as channels. Its checkpoint and statistics cannot be evaluated, resumed or reused on the rebuilt store; train a new run.")
+            raise FileNotFoundError(f"{self.path.parent} holds no {IoNames.store_geometry_file}: the run was trained on a Parquet store built before the documented channel mapping, whose sensor positions are wrong for every odd raw row and which kept the three face totals as channels. Its checkpoint and statistics cannot be evaluated, resumed or reused on the rebuilt store; train a new run.")
         return json.loads(self.path.read_text(encoding="utf-8"))
 
     @classmethod
@@ -79,7 +79,7 @@ class StoreGeometryRecord:
         Raises:
             FileNotFoundError : If the run directory does not exist or holds no record.
         """
-        record = cls(Path(run_directory) / "metadata")
+        record = cls(Path(run_directory) / IoNames.metadata_dir)
         record.recorded()
         return record
 

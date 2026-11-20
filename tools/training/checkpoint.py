@@ -8,6 +8,8 @@ from pathlib    import Path
 import numpy as np
 import torch
 
+from configuration.shared import IoNames
+
 
 class Checkpoint:
     def __init__(self, logger, tracker, save_path: str, min_delta: float = 0.0):
@@ -105,11 +107,9 @@ class WeightEma:
 
 class TrainerState:
 
-    FILENAME = "last.pt"
-
     @staticmethod
     def path(run_dir) -> Path:
-        return Path(run_dir) / TrainerState.FILENAME
+        return Path(run_dir) / IoNames.trainer_state_file
 
     @staticmethod
     def _rng_state(loader_generator) -> dict:

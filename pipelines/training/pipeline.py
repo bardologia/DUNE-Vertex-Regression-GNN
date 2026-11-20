@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 
+from configuration.shared           import IoNames
 from models                         import get_model
 from tools.runtime.reproducibility  import Reproducibility
 from pipelines.dataset.pipeline     import DatasetPipeline
@@ -94,7 +95,7 @@ class TrainingPipeline:
 
         OptimizerOverrideApplier(gate_config, gate_model_config, self.explicit_paths, self.logger).run()
 
-        gate_context = LightweightRunContext(self.logger, check.work_directory / "best_model.pt")
+        gate_context = LightweightRunContext(self.logger, check.work_directory / IoNames.best_model_file)
         gate_trainer = Trainer(gate_model, self.stats, gate_config, gate_context)
 
         check.run(gate_trainer, self.datasets["train"])
@@ -136,7 +137,7 @@ class TrainingPipeline:
 
         OptimizerOverrideApplier(probe_config, model_config, self.explicit_paths, logger).run()
 
-        trainer = Trainer(model, stats, probe_config, LightweightRunContext(logger, work_directory / "probe.pt"))
+        trainer = Trainer(model, stats, probe_config, LightweightRunContext(logger, work_directory / IoNames.probe_checkpoint_file))
 
         return trainer, datasets["train"], model
 

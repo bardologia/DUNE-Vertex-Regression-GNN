@@ -6,6 +6,7 @@ import time
 
 import torch
 
+from configuration.shared              import IoNames
 from tools.monitoring.inspection       import ModelSummary
 from tools.monitoring.resource_monitor import ResourceMonitor
 from tools.runtime.completion          import CompletionMarker
@@ -81,7 +82,7 @@ class Trainer:
             })
             summary = ModelSummary(self.logger, self.model)
             summary.run()
-            summary.save_markdown(run_metadata.metadata_directory / "model_summary.md")
+            summary.save_markdown(run_metadata.metadata_directory / IoNames.model_summary_file)
 
     def _build_param_groups(self):
         regression_head_parameters = list(self.model.regression_head.parameters())
