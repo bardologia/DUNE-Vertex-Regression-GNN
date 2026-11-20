@@ -52,9 +52,20 @@ class ModuleFactory:
             return MLPRegressionHead(input_dim, config)
         raise ValueError(f"Unknown head type '{config.head_type}'")
 
+    @staticmethod
+    def initialize(module: nn.Module) -> None:
+        for submodule in module.modules():
+            if isinstance(submodule, nn.Linear):
+                nn.init.kaiming_uniform_(submodule.weight, nonlinearity="relu")
+                if submodule.bias is not None:
+                    nn.init.zeros_(submodule.bias)
+            elif isinstance(submodule, (nn.LayerNorm, nn.BatchNorm1d)):
+                nn.init.constant_(submodule.weight, 1.0)
+                nn.init.constant_(submodule.bias, 0.0)
+
 
 class DropPath(nn.Module):
-    def __init__(self, drop_probability: float = 0.0):
+    def __init__(self, drop_probability: float):
         super().__init__()
         self.drop_probability = drop_probability
 
@@ -76,7 +87,7 @@ class DropPath(nn.Module):
 
 
 class FeedForward(nn.Module):
-    def __init__(self, dimension: int, ffn_ratio: float = 4.0, dropout: float = 0.1, activation: str = "gelu"):
+    def __init__(self, dimension: int, ffn_ratio: float, dropout: float, activation: str):
         super().__init__()
         hidden   = int(dimension * ffn_ratio)
         self.net = nn.Sequential(
@@ -86,14 +97,7 @@ class FeedForward(nn.Module):
             nn.Linear(hidden, dimension),
             nn.Dropout(dropout),
         )
-        self._initialize_weights()
-
-    def _initialize_weights(self):
-        for module in self.net.modules():
-            if isinstance(module, nn.Linear):
-                nn.init.kaiming_uniform_(module.weight, nonlinearity="relu")
-                if module.bias is not None:
-                    nn.init.zeros_(module.bias)
+        ModuleFactory.initialize(self.net)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x)
@@ -139,7 +143,7 @@ class MeanMaxSumPool(nn.Module):
 
 
 class MultiScalePool(nn.Module):
-    def __init__(self, hidden_dim: int, num_levels: int = 3, ratio: float = 0.5):
+    def __init__(self, hidden_dim: int, num_levels: int, ratio: float):
         super().__init__()
         self.sag_pools = nn.ModuleList([SAGPooling(hidden_dim, ratio=ratio, GNN=GATv2Conv) for _ in range(num_levels - 1)])
         self.mean_pool = MeanPooling()
@@ -158,7 +162,7 @@ class MultiScalePool(nn.Module):
 
 
 class Set2SetPool(nn.Module):
-    def __init__(self, hidden_dim: int, processing_steps: int = 3):
+    def __init__(self, hidden_dim: int, processing_steps: int):
         super().__init__()
         self.set2set = Set2Set(hidden_dim, processing_steps=processing_steps)
         self.out_dim = 2 * hidden_dim
@@ -168,7 +172,7 @@ class Set2SetPool(nn.Module):
 
 
 class GPSLayer(nn.Module):
-    def __init__(self, hidden_dim, edge_dim=7, heads=4, dropout=0.1, attention_dropout=0.1, ffn_ratio=4.0, drop_path=0.0, normalization="layer", activation="gelu"):
+    def __init__(self, hidden_dim, edge_dim, heads, dropout, attention_dropout, ffn_ratio, drop_path, normalization, activation):
         super().__init__()
         self.norm_local  = ModuleFactory.norm(normalization, hidden_dim)
         self.norm_global = ModuleFactory.norm(normalization, hidden_dim)
@@ -203,8 +207,9 @@ class GPSLayer(nn.Module):
         number_of_heads                  = self.global_attn.num_heads
         head_dimension                   = dimension // number_of_heads
 
-        projected                = F.linear(dense_batch_features, self.global_attn.in_proj_weight, self.global_attn.in_proj_bias)
-        queries, keys, values    = projected.chunk(3, dim=-1)
+        projected             = F.linear(dense_batch_features, self.global_attn.in_proj_weight, self.global_attn.in_proj_bias)
+        queries, keys, values = projected.chunk(3, dim=-1)
+
         queries = queries.reshape(batch_size, max_nodes, number_of_heads, head_dimension).transpose(1, 2)
         keys    = keys.reshape(batch_size, max_nodes, number_of_heads, head_dimension).transpose(1, 2)
         values  = values.reshape(batch_size, max_nodes, number_of_heads, head_dimension).transpose(1, 2)
@@ -220,7 +225,7 @@ class GPSLayer(nn.Module):
 
         global_representation = attention_output[valid_mask]
 
-        gate_values          = self.gate(torch.cat([local_representation, global_representation], dim=-1))
+        gate_values           = self.gate(torch.cat([local_representation, global_representation], dim=-1))
         fused_representation  = gate_values * local_representation + (1.0 - gate_values) * global_representation
         node_features         = node_features + self.drop_path(fused_representation, batch)
 
@@ -232,7 +237,7 @@ class GPSEncoder(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.input_proj = nn.Sequential(nn.Linear(config.input_dim, config.hidden_dim), ModuleFactory.norm(config.normalization, config.hidden_dim))
-        self._initialize_projection()
+        ModuleFactory.initialize(self.input_proj)
 
         drop_path_rates = [rate.item() for rate in torch.linspace(0, config.drop_path_rate, config.num_layers)]
         self.layers     = nn.ModuleList([
@@ -250,15 +255,6 @@ class GPSEncoder(nn.Module):
             for index in range(config.num_layers)
         ])
         self.out_dim = config.hidden_dim
-
-    def _initialize_projection(self):
-        for module in self.input_proj.modules():
-            if isinstance(module, nn.Linear):
-                nn.init.kaiming_uniform_(module.weight, nonlinearity="relu")
-                nn.init.zeros_(module.bias)
-            elif isinstance(module, (nn.LayerNorm, nn.BatchNorm1d)):
-                nn.init.constant_(module.weight, 1.0)
-                nn.init.constant_(module.bias, 0.0)
 
     def forward(self, node_features, edge_index, batch, edge_attr=None) -> torch.Tensor:
         node_features = self.input_proj(node_features)
@@ -282,16 +278,7 @@ class MessagePassingEncoder(nn.Module):
         self.drop_paths = nn.ModuleList([DropPath(rate) for rate in drop_path_rates])
 
         self.out_dim = config.hidden_dim
-        self._initialize_projection()
-
-    def _initialize_projection(self):
-        for module in self.input_proj.modules():
-            if isinstance(module, nn.Linear):
-                nn.init.kaiming_uniform_(module.weight, nonlinearity="relu")
-                nn.init.zeros_(module.bias)
-            elif isinstance(module, nn.LayerNorm):
-                nn.init.constant_(module.weight, 1.0)
-                nn.init.constant_(module.bias, 0.0)
+        ModuleFactory.initialize(self.input_proj)
 
     def _apply_convolution(self, convolution, node_features, edge_index, edge_attr):
         if self.edge_mode == "attr" and edge_attr is not None:
@@ -302,15 +289,15 @@ class MessagePassingEncoder(nn.Module):
         node_features = self.input_proj(node_features)
 
         for convolution, norm, drop_path in zip(self.convolutions, self.norms, self.drop_paths):
-            normalized = norm(node_features)
-            updated    = self._apply_convolution(convolution, normalized, edge_index, edge_attr)
+            normalized    = norm(node_features)
+            updated       = self._apply_convolution(convolution, normalized, edge_index, edge_attr)
             node_features = node_features + drop_path(self.dropout(self.activation(updated)), batch)
 
         return node_features
 
 
 class FiLMConditioner(nn.Module):
-    def __init__(self, condition_dim: int, feature_dim: int, hidden_dim: int = 64):
+    def __init__(self, condition_dim: int, feature_dim: int, hidden_dim: int):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(condition_dim, hidden_dim),
@@ -337,7 +324,7 @@ class FiLMConditioner(nn.Module):
 
 
 class CoordinateHead(nn.Module):
-    def __init__(self, input_dim: int, hidden_dims: tuple, dropout: float = 0.1):
+    def __init__(self, input_dim: int, hidden_dims: tuple, dropout: float):
         super().__init__()
         dimensions = [input_dim] + list(hidden_dims) + [1]
         layers     = []
@@ -348,14 +335,7 @@ class CoordinateHead(nn.Module):
         self._initialize_weights()
 
     def _initialize_weights(self):
-        for module in self.net.modules():
-            if isinstance(module, nn.Linear):
-                nn.init.kaiming_uniform_(module.weight, nonlinearity="relu")
-                if module.bias is not None:
-                    nn.init.zeros_(module.bias)
-            elif isinstance(module, nn.LayerNorm):
-                nn.init.constant_(module.weight, 1.0)
-                nn.init.constant_(module.bias, 0.0)
+        ModuleFactory.initialize(self.net)
 
         last_linear = self.net[-1]
         nn.init.xavier_uniform_(last_linear.weight, gain=0.01)
@@ -373,28 +353,19 @@ class HierarchicalRegressionHead(nn.Module):
         if config.output_dim != self.COORDINATE_COUNT:
             raise ValueError(f"head_type='hierarchical' predicts exactly {self.COORDINATE_COUNT} coordinates but output_dim={config.output_dim}; use head_type='mlp' for any other width.")
 
-        feature_dim     = config.hierarchical_feature_dim
-        hidden_dims     = config.regression_hidden_dims
-        dropout         = config.regression_dropout
+        feature_dim              = config.hierarchical_feature_dim
+        hidden_dims              = config.regression_hidden_dims
+        dropout                  = config.regression_dropout
         coordinate_embedding_dim = config.coord_embed_dim
 
         self.feature_proj = nn.Sequential(nn.Linear(input_dim, feature_dim), nn.LayerNorm(feature_dim), nn.GELU(), nn.Dropout(dropout))
-        self._initialize_projection()
+        ModuleFactory.initialize(self.feature_proj)
 
         self.x_head = CoordinateHead(feature_dim, hidden_dims, dropout)
         self.film_y = FiLMConditioner(1, feature_dim, coordinate_embedding_dim)
         self.y_head = CoordinateHead(feature_dim, hidden_dims, dropout)
         self.film_z = FiLMConditioner(2, feature_dim, coordinate_embedding_dim)
         self.z_head = CoordinateHead(feature_dim, hidden_dims, dropout)
-
-    def _initialize_projection(self):
-        for module in self.feature_proj.modules():
-            if isinstance(module, nn.Linear):
-                nn.init.kaiming_uniform_(module.weight, nonlinearity="relu")
-                nn.init.zeros_(module.bias)
-            elif isinstance(module, nn.LayerNorm):
-                nn.init.constant_(module.weight, 1.0)
-                nn.init.constant_(module.bias, 0.0)
 
     def forward(self, features: torch.Tensor) -> torch.Tensor:
         projected_features = self.feature_proj(features)
@@ -420,17 +391,7 @@ class MLPRegressionHead(nn.Module):
             layers += [nn.Linear(dimensions[index], dimensions[index + 1]), nn.LayerNorm(dimensions[index + 1]), nn.GELU(), nn.Dropout(config.regression_dropout)]
         layers.append(nn.Linear(dimensions[-1], config.output_dim))
         self.net = nn.Sequential(*layers)
-        self._initialize_weights()
-
-    def _initialize_weights(self):
-        for module in self.net.modules():
-            if isinstance(module, nn.Linear):
-                nn.init.kaiming_uniform_(module.weight, nonlinearity="relu")
-                if module.bias is not None:
-                    nn.init.zeros_(module.bias)
-            elif isinstance(module, nn.LayerNorm):
-                nn.init.constant_(module.weight, 1.0)
-                nn.init.constant_(module.bias, 0.0)
+        ModuleFactory.initialize(self.net)
 
     def forward(self, features: torch.Tensor) -> torch.Tensor:
         return self.net(features)
@@ -449,20 +410,11 @@ class CascadeRegressionHead(nn.Module):
         dropout     = config.regression_dropout
 
         self.feature_proj = nn.Sequential(nn.Linear(input_dim, feature_dim), nn.LayerNorm(feature_dim), nn.GELU(), nn.Dropout(dropout))
-        self._initialize_projection()
+        ModuleFactory.initialize(self.feature_proj)
 
         self.x_head = CoordinateHead(feature_dim,     hidden_dims, dropout)
         self.y_head = CoordinateHead(feature_dim + 1, hidden_dims, dropout)
         self.z_head = CoordinateHead(feature_dim + 2, hidden_dims, dropout)
-
-    def _initialize_projection(self):
-        for module in self.feature_proj.modules():
-            if isinstance(module, nn.Linear):
-                nn.init.kaiming_uniform_(module.weight, nonlinearity="relu")
-                nn.init.zeros_(module.bias)
-            elif isinstance(module, nn.LayerNorm):
-                nn.init.constant_(module.weight, 1.0)
-                nn.init.constant_(module.bias, 0.0)
 
     def forward(self, features: torch.Tensor) -> torch.Tensor:
         projected_features = self.feature_proj(features)
@@ -479,13 +431,7 @@ class GraphScalarEncoder(nn.Module):
         super().__init__()
         self.net     = nn.Sequential(nn.Linear(input_dim, output_dim), nn.GELU())
         self.out_dim = output_dim + input_dim
-        self._initialize_weights()
-
-    def _initialize_weights(self):
-        for module in self.net.modules():
-            if isinstance(module, nn.Linear):
-                nn.init.kaiming_uniform_(module.weight, nonlinearity="relu")
-                nn.init.zeros_(module.bias)
+        ModuleFactory.initialize(self.net)
 
     def forward(self, graph_attributes: torch.Tensor) -> torch.Tensor:
         return torch.cat([self.net(graph_attributes), graph_attributes], dim=-1)
@@ -547,9 +493,9 @@ class GraphRegressor(nn.Module):
         batch         = data.batch
         edge_attr     = self._prepare_edge_attributes(data, node_features)
 
-        node_embeddings  = self.encoder(node_features, edge_index, batch, edge_attr=edge_attr)
-        graph_embedding  = self.pool(node_embeddings, edge_index, batch, edge_attr=edge_attr)
-        graph_embedding  = self.norm(graph_embedding)
+        node_embeddings = self.encoder(node_features, edge_index, batch, edge_attr=edge_attr)
+        graph_embedding = self.pool(node_embeddings, edge_index, batch, edge_attr=edge_attr)
+        graph_embedding = self.norm(graph_embedding)
 
         if self.graph_scalars is not None:
             graph_embedding = torch.cat([graph_embedding, self.graph_scalars(self._graph_attributes(data))], dim=-1)
