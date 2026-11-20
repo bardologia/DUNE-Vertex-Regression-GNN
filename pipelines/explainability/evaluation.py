@@ -6,7 +6,7 @@ from torch_geometric.data   import Data
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
 from tools.monitoring.logger     import NullLogger
-from pipelines.inference.metrics import InferenceMetrics
+from pipelines.inference.scoring import InferenceMetrics
 
 
 class EvaluationGraphTensors:

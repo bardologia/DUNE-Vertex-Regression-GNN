@@ -18,8 +18,7 @@ from configuration.shared            import IoNames
 from models                          import get_model
 from tools.training.scheduling       import LearningRateScaler
 from pipelines.dataset.pipeline      import DatasetPipeline
-from pipelines.inference.metrics     import InferenceMetrics
-from pipelines.inference.predictor   import Predictor
+from pipelines.inference.scoring     import InferenceMetrics, Predictor
 from pipelines.shared.run_metadata   import LightweightRunContext, TrainingRunMetadata
 from pipelines.training.trainer      import OptimizerOverrideApplier, Trainer
 

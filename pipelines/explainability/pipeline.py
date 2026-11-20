@@ -17,8 +17,7 @@ from tools.runtime.config_cli             import ConfigCli
 from pipelines.dataset.graph              import FeatureLayout
 from pipelines.dataset.normalization      import NormalizationStats
 from pipelines.dataset.pipeline           import DatasetPipeline
-from pipelines.inference.metrics          import InferenceMetrics
-from pipelines.inference.predictor        import Predictor
+from pipelines.inference.scoring          import InferenceMetrics, Predictor
 from pipelines.shared.store_geometry      import StoreGeometryRecord
 
 from pipelines.explainability.evaluation import EvaluationGraphTensors, SplitMetricEvaluator

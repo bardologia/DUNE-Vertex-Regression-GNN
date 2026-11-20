@@ -16,10 +16,9 @@ from pipelines.dataset.pipeline      import DatasetPipeline
 from pipelines.dataset.normalization import NormalizationStats
 from pipelines.shared.store_geometry import StoreGeometryRecord
 
-from pipelines.inference.metrics   import InferenceMetrics
-from pipelines.inference.plots     import AnalysisAnimations, AnalysisPlots
-from pipelines.inference.predictor import Predictor
-from pipelines.inference.report    import AnalysisReport
+from pipelines.inference.plots   import AnalysisAnimations, AnalysisPlots
+from pipelines.inference.report  import AnalysisReport
+from pipelines.inference.scoring import InferenceMetrics, Predictor
 
 
 class InferencePipeline:
