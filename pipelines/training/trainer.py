@@ -9,7 +9,7 @@ import torch
 from configuration.shared              import IoNames
 from tools.monitoring.inspection       import ModelSummary
 from tools.monitoring.resource_monitor import ResourceMonitor
-from tools.runtime.completion          import CompletionMarker
+from tools.runtime.run_tag             import CompletionMarker
 from tools.training.checkpoint         import Checkpoint, TrainerState, WeightEma
 from tools.training.gradients          import GradientClipper
 from tools.training.optimization       import LearningRateScaler

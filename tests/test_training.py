@@ -6,7 +6,7 @@ import torch
 
 from configuration import TrainEntryConfig
 from tools.monitoring import Logger
-from tools.runtime.completion import CompletionMarker
+from tools.runtime.run_tag import CompletionMarker
 from pipelines.training import TrainingPipeline
 
 
