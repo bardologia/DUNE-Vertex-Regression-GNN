@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from configuration.data.general        import ApexModuleGeometry, ChannelBins, ChannelMappingChecks, StoreLayout
 from pipelines.dataset.detector_layout import ApexModuleLayout, ChannelMapping, CoordinateTransform, RawBinMapping
 
 
@@ -151,14 +152,14 @@ def test_bin_12_holds_the_far_wall_module_against_the_document(walls):
 
     assert (blocks[0], modules[0]) == ("wall", 1)
     assert _position(walls, 1) == pytest.approx((-6.0275, 6.673, -29.75))
-    assert _position(walls, 12 - RawBinMapping.WALL_OFFSET) == pytest.approx((-6.0275, -6.673, -29.75))
+    assert _position(walls, 12 - ChannelBins.wall_offset) == pytest.approx((-6.0275, -6.673, -29.75))
 
 
 def test_mapping_rebuilds_the_light_derived_geometry(raw_frame, light_derived, quiet_logger):
     """Verifies the mapping of a real raw file places every kept raw row where the light-derived rule of the sweep puts it: even rows at P(k), odd rows at P(k + 2)."""
     geometry = ChannelMapping(quiet_logger).build(raw_frame)
 
-    assert tuple(geometry.columns) == ChannelMapping.GEOMETRY_COLUMNS
+    assert tuple(geometry.columns) == StoreLayout.geometry_columns
     assert np.array_equal(geometry["channel_index"].to_numpy(), np.arange(6909))
     assert np.array_equal(geometry["raw_channel_index"].to_numpy(), light_derived.kept_rows)
     assert np.array_equal(geometry["bin"].to_numpy(), light_derived.bins)
@@ -178,7 +179,7 @@ def test_mapping_removes_the_face_totals_and_keeps_raw_order(raw_frame, quiet_lo
 def test_mapping_leaves_wall_modules_0_and_2_and_endcap_module_0_empty(raw_frame, layout, quiet_logger):
     """Verifies the modules without a channel are wall 0 and 2 and endcap 0, the positions P(1), P(3) and P(5761) of the 2024 table, and every channel sits on its own module."""
     geometry = ChannelMapping(quiet_logger).build(raw_frame)
-    on_wall  = geometry["face"].isin(ApexModuleLayout.WALL_FACES).to_numpy()
+    on_wall  = geometry["face"].isin(ApexModuleGeometry.wall_faces).to_numpy()
 
     assert sorted(set(range(5760)) - set(geometry.loc[on_wall, "module_index"].tolist())) == [0, 2]
     assert sorted(set(range(1152)) - set(geometry.loc[~on_wall, "module_index"].tolist())) == [0]
@@ -237,7 +238,7 @@ def test_mapping_refuses_raw_positions_outside_the_documented_set(raw_frame, qui
 
 def test_mapping_refuses_a_channel_count_other_than_6909(raw_frame, quiet_logger, monkeypatch):
     """Verifies the count check fires when the expected channel count disagrees with the mapping."""
-    monkeypatch.setattr(ChannelMapping, "CHANNEL_COUNT", 6910)
+    monkeypatch.setattr(ChannelMappingChecks, "channel_count", 6910)
 
     with pytest.raises(ValueError, match="keeps 6909 channels, expected 6910"):
         ChannelMapping(quiet_logger).build(raw_frame)
@@ -245,7 +246,7 @@ def test_mapping_refuses_a_channel_count_other_than_6909(raw_frame, quiet_logger
 
 def test_mapping_refuses_two_channels_on_one_position(raw_frame, quiet_logger, monkeypatch):
     """Verifies the distinct-position check fires when the lead bin is sent to wall module 3, which bin 15 already holds."""
-    monkeypatch.setattr(RawBinMapping, "LEAD_MODULE", 3)
+    monkeypatch.setattr(ChannelBins, "lead_module", 3)
 
     with pytest.raises(ValueError, match="only 6908 distinct positions"):
         ChannelMapping(quiet_logger).build(raw_frame)
@@ -253,7 +254,7 @@ def test_mapping_refuses_two_channels_on_one_position(raw_frame, quiet_logger, m
 
 def test_mapping_refuses_another_set_of_empty_modules(raw_frame, quiet_logger, monkeypatch):
     """Verifies the empty-module check fires when the expected empty modules disagree with the mapping."""
-    monkeypatch.setattr(RawBinMapping, "EMPTY_WALL_MODULES", (0,))
+    monkeypatch.setattr(ChannelBins, "empty_wall_modules", (0,))
 
     with pytest.raises(ValueError, match="modules without a channel are wall"):
         ChannelMapping(quiet_logger).build(raw_frame)

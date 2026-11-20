@@ -87,3 +87,56 @@ class DatasetConfig:
     physics      : PhysicsConfig      = field(default_factory=PhysicsConfig)
     split        : SplitConfig        = field(default_factory=SplitConfig)
     augmentation : AugmentationConfig = field(default_factory=AugmentationConfig)
+
+
+@dataclass(frozen=True)
+class ApexModuleGeometry:
+    batch_size       : int   = 48
+    half_slots       : int   = 12
+    drift_pitch      : float = 0.505
+    drift_edge       : float = 6.0275
+    wall_side        : float = 6.673
+    wall_first_z     : float = -29.75
+    wall_ring_pitch  : float = 0.5
+    wall_modules     : int   = 5760
+    endcap_face      : float = 29.9265
+    endcap_first_row : float = -5.8075
+    endcap_row_pitch : float = 0.505
+    endcap_modules   : int   = 1152
+    wall_faces       : tuple = ("right_wall", "left_wall")
+    endcap_faces     : tuple = ("front_endcap", "back_endcap")
+    blocks           : tuple = ("wall", "endcap")
+
+
+@dataclass(frozen=True)
+class ChannelBins:
+    raw_columns          : tuple = ("bin", "x", "y", "z")
+    lead_bin             : int   = 12
+    lead_module          : int   = 1
+    wall_bins            : tuple = (15, 5771)
+    wall_offset          : int   = 12
+    endcap_bins          : tuple = (5774, 6924)
+    endcap_offset        : int   = 5773
+    face_total_bins      : tuple = (13, 5772, 6925)
+    absent_bins          : tuple = (14, 5773)
+    empty_wall_modules   : tuple = (0, 2)
+    empty_endcap_modules : tuple = (0,)
+    face_total_block     : str   = "face_total"
+
+
+@dataclass(frozen=True)
+class ChannelMappingChecks:
+    channel_count      : int   = 6909
+    position_decimals  : int   = 6
+    position_tolerance : float = 1e-6
+    listed_bins        : int   = 10
+
+
+@dataclass(frozen=True)
+class StoreLayout:
+    geometry_columns    : tuple = ("channel_index", "raw_channel_index", "bin", "module_index", "face", "x", "y", "z")
+    geometry_types      : tuple = ("int32", "int32", "int32", "int32", "string", "float32", "float32", "float32")
+    octant_columns      : tuple = ("base_event_id", "octant", "sign_x", "sign_y", "sign_z", "target_x", "target_y", "target_z")
+    octant_signs        : tuple = (1, -1)
+    octant_symbols      : tuple = ((1, "p"), (-1, "n"))
+    reflection_decimals : int   = 6

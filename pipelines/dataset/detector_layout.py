@@ -3,6 +3,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from configuration.data.general import ApexModuleGeometry, ChannelBins, ChannelMappingChecks
+
 
 class CoordinateTransform:
     def apply_to_target(self, target_x: float, target_y: float, target_z: float) -> tuple[float, float, float]:
@@ -17,56 +19,40 @@ class CoordinateTransform:
 
 
 class ApexModuleLayout:
-    BATCH_SIZE       = 48
-    HALF_SLOTS       = 12
-    DRIFT_PITCH      = 0.505
-    DRIFT_EDGE       = 6.0275
-    WALL_SIDE        = 6.673
-    WALL_FIRST_Z     = -29.75
-    WALL_RING_PITCH  = 0.5
-    WALL_MODULES     = 5760
-    ENDCAP_FACE      = 29.9265
-    ENDCAP_FIRST_ROW = -5.8075
-    ENDCAP_ROW_PITCH = 0.505
-    ENDCAP_MODULES   = 1152
-    WALL_FACES       = ("right_wall", "left_wall")
-    ENDCAP_FACES     = ("front_endcap", "back_endcap")
-    BLOCKS           = ("wall", "endcap")
-
     def __init__(self) -> None:
         self.transform = CoordinateTransform()
 
     def wall_block(self) -> pd.DataFrame:
-        modules = np.arange(self.WALL_MODULES, dtype=np.int64)
-        rings   = modules // self.BATCH_SIZE
-        slots   = modules % self.BATCH_SIZE
+        modules = np.arange(ApexModuleGeometry.wall_modules, dtype=np.int64)
+        rings   = modules // ApexModuleGeometry.batch_size
+        slots   = modules % ApexModuleGeometry.batch_size
         second  = slots % 2
 
         simulation = np.column_stack([
-            np.where(second == 0, self.WALL_SIDE, -self.WALL_SIDE),
+            np.where(second == 0, ApexModuleGeometry.wall_side, -ApexModuleGeometry.wall_side),
             self.drift(slots // 2),
-            self.WALL_FIRST_Z + self.WALL_RING_PITCH * rings,
+            ApexModuleGeometry.wall_first_z + ApexModuleGeometry.wall_ring_pitch * rings,
         ])
-        return self._block_frame(self.BLOCKS[0], modules, np.asarray(self.WALL_FACES, dtype=object)[second], simulation)
+        return self._block_frame(ApexModuleGeometry.blocks[0], modules, np.asarray(ApexModuleGeometry.wall_faces, dtype=object)[second], simulation)
 
     def endcap_block(self) -> pd.DataFrame:
-        modules = np.arange(self.ENDCAP_MODULES, dtype=np.int64)
-        rows    = modules // self.BATCH_SIZE
-        slots   = modules % self.BATCH_SIZE
+        modules = np.arange(ApexModuleGeometry.endcap_modules, dtype=np.int64)
+        rows    = modules // ApexModuleGeometry.batch_size
+        slots   = modules % ApexModuleGeometry.batch_size
         second  = slots % 2
 
         simulation = np.column_stack([
-            self.ENDCAP_FIRST_ROW + self.ENDCAP_ROW_PITCH * rows,
+            ApexModuleGeometry.endcap_first_row + ApexModuleGeometry.endcap_row_pitch * rows,
             self.drift(slots // 2),
-            np.where(second == 0, self.ENDCAP_FACE, -self.ENDCAP_FACE),
+            np.where(second == 0, ApexModuleGeometry.endcap_face, -ApexModuleGeometry.endcap_face),
         ])
-        return self._block_frame(self.BLOCKS[1], modules, np.asarray(self.ENDCAP_FACES, dtype=object)[second], simulation)
+        return self._block_frame(ApexModuleGeometry.blocks[1], modules, np.asarray(ApexModuleGeometry.endcap_faces, dtype=object)[second], simulation)
 
     def drift(self, pair_slots: np.ndarray) -> np.ndarray:
         pair_slots = np.asarray(pair_slots, dtype=np.int64)
-        lower      = -self.DRIFT_EDGE + self.DRIFT_PITCH * pair_slots
-        upper      = self.DRIFT_EDGE - self.DRIFT_PITCH * (pair_slots - self.HALF_SLOTS)
-        return np.where(pair_slots < self.HALF_SLOTS, lower, upper)
+        lower      = -ApexModuleGeometry.drift_edge + ApexModuleGeometry.drift_pitch * pair_slots
+        upper      = ApexModuleGeometry.drift_edge - ApexModuleGeometry.drift_pitch * (pair_slots - ApexModuleGeometry.half_slots)
+        return np.where(pair_slots < ApexModuleGeometry.half_slots, lower, upper)
 
     def _block_frame(self, block: str, modules: np.ndarray, faces: np.ndarray, simulation: np.ndarray) -> pd.DataFrame:
         sensor = self.transform.apply_to_positions(simulation)
@@ -84,55 +70,37 @@ class ApexModuleLayout:
 
 
 class RawBinMapping:
-    LEAD_BIN             = 12
-    LEAD_MODULE          = 1
-    WALL_BINS            = (15, 5771)
-    WALL_OFFSET          = 12
-    ENDCAP_BINS          = (5774, 6924)
-    ENDCAP_OFFSET        = 5773
-    FACE_TOTAL_BINS      = (13, 5772, 6925)
-    ABSENT_BINS          = (14, 5773)
-    EMPTY_WALL_MODULES   = (0, 2)
-    EMPTY_ENDCAP_MODULES = (0,)
-    FACE_TOTAL_BLOCK     = "face_total"
-
     def raw_bins(self) -> np.ndarray:
-        first = self.LEAD_BIN
-        last  = self.FACE_TOTAL_BINS[-1]
+        first = ChannelBins.lead_bin
+        last  = ChannelBins.face_total_bins[-1]
         every = np.arange(first, last + 1, dtype=np.int64)
-        return every[~np.isin(every, self.ABSENT_BINS)]
+        return every[~np.isin(every, ChannelBins.absent_bins)]
 
     def assign(self, bins: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         bins    = np.asarray(bins, dtype=np.int64)
         blocks  = np.full(bins.shape[0], "", dtype=object)
         modules = np.full(bins.shape[0], -1, dtype=np.int64)
 
-        on_wall   = (bins >= self.WALL_BINS[0]) & (bins <= self.WALL_BINS[1])
-        on_endcap = (bins >= self.ENDCAP_BINS[0]) & (bins <= self.ENDCAP_BINS[1])
-        lead      = bins == self.LEAD_BIN
-        total     = np.isin(bins, self.FACE_TOTAL_BINS)
+        on_wall   = (bins >= ChannelBins.wall_bins[0]) & (bins <= ChannelBins.wall_bins[1])
+        on_endcap = (bins >= ChannelBins.endcap_bins[0]) & (bins <= ChannelBins.endcap_bins[1])
+        lead      = bins == ChannelBins.lead_bin
+        total     = np.isin(bins, ChannelBins.face_total_bins)
 
-        blocks[on_wall | lead] = ApexModuleLayout.BLOCKS[0]
-        blocks[on_endcap]      = ApexModuleLayout.BLOCKS[1]
-        blocks[total]          = self.FACE_TOTAL_BLOCK
-        modules[on_wall]       = bins[on_wall] - self.WALL_OFFSET
-        modules[on_endcap]     = bins[on_endcap] - self.ENDCAP_OFFSET
-        modules[lead]          = self.LEAD_MODULE
+        blocks[on_wall | lead] = ApexModuleGeometry.blocks[0]
+        blocks[on_endcap]      = ApexModuleGeometry.blocks[1]
+        blocks[total]          = ChannelBins.face_total_block
+        modules[on_wall]       = bins[on_wall] - ChannelBins.wall_offset
+        modules[on_endcap]     = bins[on_endcap] - ChannelBins.endcap_offset
+        modules[lead]          = ChannelBins.lead_module
 
         unknown = blocks == ""
         if unknown.any():
-            raise ValueError(f"Raw bins {bins[unknown][:10].tolist()} belong to no module block of the documented mapping.")
+            raise ValueError(f"Raw bins {bins[unknown][:ChannelMappingChecks.listed_bins].tolist()} belong to no module block of the documented mapping.")
 
         return blocks, modules
 
 
 class ChannelMapping:
-    RAW_COLUMNS        = ("bin", "x", "y", "z")
-    GEOMETRY_COLUMNS   = ("channel_index", "raw_channel_index", "bin", "module_index", "face", "x", "y", "z")
-    CHANNEL_COUNT      = 6909
-    POSITION_DECIMALS  = 6
-    POSITION_TOLERANCE = 1e-6
-
     def __init__(self, logger) -> None:
         self.logger      = logger
         self.layout      = ApexModuleLayout()
@@ -148,7 +116,7 @@ class ChannelMapping:
         if bins.shape != expected.shape or not np.array_equal(np.sort(bins), expected):
             missing = np.setdiff1d(expected, bins)
             extra   = np.setdiff1d(bins, expected)
-            raise ValueError(f"The raw bins are not exactly 12, 13, 15..5772 and 5774..6925: {bins.shape[0]} bins, missing {missing[:10].tolist()}, unexpected {extra[:10].tolist()}.")
+            raise ValueError(f"The raw bins are not exactly 12, 13, 15..5772 and 5774..6925: {bins.shape[0]} bins, missing {missing[:ChannelMappingChecks.listed_bins].tolist()}, unexpected {extra[:ChannelMappingChecks.listed_bins].tolist()}.")
 
         return bins
 
@@ -160,16 +128,16 @@ class ChannelMapping:
             raise ValueError(f"The raw files hold {raw.shape[0]} positions and the document {documented.shape[0]} modules; the layouts must match one to one.")
 
         deviation = float(np.abs(raw - documented).max())
-        if deviation > self.POSITION_TOLERANCE:
+        if deviation > ChannelMappingChecks.position_tolerance:
             raise ValueError(f"The set of raw positions differs from the set of documented module positions by up to {deviation:.3e} m; the raw files do not hold the documented layout.")
 
     def _sorted_positions(self, positions: np.ndarray) -> np.ndarray:
-        rounded = np.round(positions, self.POSITION_DECIMALS)
+        rounded = np.round(positions, ChannelMappingChecks.position_decimals)
         return positions[np.lexsort((rounded[:, 2], rounded[:, 1], rounded[:, 0]))]
 
     def _map_channels(self, bins: np.ndarray, modules: pd.DataFrame) -> pd.DataFrame:
         blocks, module_indices = self.bin_mapping.assign(bins)
-        kept_rows              = np.flatnonzero(blocks != self.bin_mapping.FACE_TOTAL_BLOCK)
+        kept_rows              = np.flatnonzero(blocks != ChannelBins.face_total_block)
 
         lookup  = modules.set_index(["block", "module_index"])
         located = lookup.loc[list(zip(blocks[kept_rows], module_indices[kept_rows]))]
@@ -186,23 +154,23 @@ class ChannelMapping:
         })
 
     def _check_channels(self, geometry: pd.DataFrame, modules: pd.DataFrame) -> None:
-        if len(geometry) != self.CHANNEL_COUNT:
-            raise ValueError(f"The mapping keeps {len(geometry)} channels, expected {self.CHANNEL_COUNT}.")
+        if len(geometry) != ChannelMappingChecks.channel_count:
+            raise ValueError(f"The mapping keeps {len(geometry)} channels, expected {ChannelMappingChecks.channel_count}.")
 
-        rounded  = np.round(geometry[["x", "y", "z"]].to_numpy(dtype=np.float64), self.POSITION_DECIMALS)
+        rounded  = np.round(geometry[["x", "y", "z"]].to_numpy(dtype=np.float64), ChannelMappingChecks.position_decimals)
         distinct = np.unique(rounded, axis=0).shape[0]
-        if distinct != self.CHANNEL_COUNT:
-            raise ValueError(f"The {self.CHANNEL_COUNT} kept channels sit at only {distinct} distinct positions.")
+        if distinct != ChannelMappingChecks.channel_count:
+            raise ValueError(f"The {ChannelMappingChecks.channel_count} kept channels sit at only {distinct} distinct positions.")
 
-        wall_block, endcap_block = ApexModuleLayout.BLOCKS
-        on_wall                  = geometry["face"].isin(ApexModuleLayout.WALL_FACES).to_numpy()
+        wall_block, endcap_block = ApexModuleGeometry.blocks
+        on_wall                  = geometry["face"].isin(ApexModuleGeometry.wall_faces).to_numpy()
         wall_modules             = modules.loc[modules["block"] == wall_block, "module_index"].to_numpy()
         endcap_modules           = modules.loc[modules["block"] == endcap_block, "module_index"].to_numpy()
 
         empty_wall   = np.setdiff1d(wall_modules, geometry.loc[on_wall, "module_index"].to_numpy()).tolist()
         empty_endcap = np.setdiff1d(endcap_modules, geometry.loc[~on_wall, "module_index"].to_numpy()).tolist()
-        if empty_wall != list(self.bin_mapping.EMPTY_WALL_MODULES) or empty_endcap != list(self.bin_mapping.EMPTY_ENDCAP_MODULES):
-            raise ValueError(f"The modules without a channel are wall {empty_wall} and endcap {empty_endcap}, expected wall {list(self.bin_mapping.EMPTY_WALL_MODULES)} and endcap {list(self.bin_mapping.EMPTY_ENDCAP_MODULES)}.")
+        if empty_wall != list(ChannelBins.empty_wall_modules) or empty_endcap != list(ChannelBins.empty_endcap_modules):
+            raise ValueError(f"The modules without a channel are wall {empty_wall} and endcap {empty_endcap}, expected wall {list(ChannelBins.empty_wall_modules)} and endcap {list(ChannelBins.empty_endcap_modules)}.")
 
     def build(self, raw_frame: pd.DataFrame) -> pd.DataFrame:
         modules = self.layout.module_table()
@@ -212,7 +180,7 @@ class ChannelMapping:
         geometry = self._map_channels(bins, modules)
         self._check_channels(geometry, modules)
 
-        self.logger.subsection(f"Documented channel mapping: {len(raw_frame)} raw bins to {len(geometry)} channels; face totals {list(self.bin_mapping.FACE_TOTAL_BINS)} removed; empty modules wall {list(self.bin_mapping.EMPTY_WALL_MODULES)}, endcap {list(self.bin_mapping.EMPTY_ENDCAP_MODULES)}")
+        self.logger.subsection(f"Documented channel mapping: {len(raw_frame)} raw bins to {len(geometry)} channels; face totals {list(ChannelBins.face_total_bins)} removed; empty modules wall {list(ChannelBins.empty_wall_modules)}, endcap {list(ChannelBins.empty_endcap_modules)}")
         return geometry
 
 

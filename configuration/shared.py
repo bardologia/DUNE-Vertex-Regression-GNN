@@ -31,6 +31,7 @@ class IoNames:
     geometry_table_file : str = "geometry.parquet"
     events_table_file   : str = "events.parquet"
     octants_table_file  : str = "octants.parquet"
+    parquet_compression : str = "zstd"
 
     run_dir                  : str = "{model}_{run}"
     tensorboard_dir          : str = "tensorboard"
@@ -167,8 +168,9 @@ class IoNames:
 
 @dataclass(frozen=True)
 class MeasurementUnits:
-    bytes_per_mib : int = 1024 ** 2
-    bytes_per_gib : int = 1024 ** 3
+    bytes_per_mib : int   = 1024 ** 2
+    bytes_per_gib : int   = 1024 ** 3
+    bytes_per_mb  : float = 1e6
 
 
 @dataclass(frozen=True)

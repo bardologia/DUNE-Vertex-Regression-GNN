@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import hashlib
 import itertools
 from pathlib            import Path
@@ -11,16 +10,14 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pa_parquet
 
-from configuration.shared              import IoNames
+from configuration.data.general        import ChannelBins, StoreLayout
+from configuration.shared              import IoNames, MeasurementUnits
 from tools.monitoring.logger           import Logger
 from pipelines.dataset.detector_layout import ChannelMapping, CoordinateTransform
 
 
 class ParquetDatasetWriter:
-    SIGN_COMBINATIONS = list(itertools.product((1, -1), repeat=3))
-    GEOMETRY_TYPES    = (pa.int32(), pa.int32(), pa.int32(), pa.int32(), pa.string(), pa.float32(), pa.float32(), pa.float32())
-
-    def __init__(self, input_directory: Path, output_directory: Path, worker_count: int = 10, logger: Logger = None) -> None:
+    def __init__(self, input_directory: Path, output_directory: Path, worker_count: int, logger: Logger) -> None:
         self.input_directory = Path(input_directory)
         self.store_directory = Path(output_directory) / IoNames.parquet_dir
         self.geometry_path   = self.store_directory / IoNames.geometry_table_file
@@ -39,7 +36,7 @@ class ParquetDatasetWriter:
 
     def build_canonical_geometry(self, reference_file: Path) -> tuple[pd.DataFrame, str]:
         reference_frame = pd.read_csv(reference_file)
-        raw_frame       = reference_frame[list(ChannelMapping.RAW_COLUMNS)].reset_index(drop=True)
+        raw_frame       = reference_frame[list(ChannelBins.raw_columns)].reset_index(drop=True)
 
         canonical_bytes = np.ascontiguousarray(raw_frame.values)
         geometry_hash   = hashlib.md5(canonical_bytes.tobytes()).hexdigest()
@@ -88,7 +85,7 @@ class ParquetDatasetWriter:
         sensor_x, sensor_y, sensor_z = transform.apply_to_target(target_x, target_y, target_z)
 
         event_frame    = pd.read_csv(source_path)
-        geometry_bytes = np.ascontiguousarray(event_frame[list(ChannelMapping.RAW_COLUMNS)].values)
+        geometry_bytes = np.ascontiguousarray(event_frame[list(ChannelBins.raw_columns)].values)
         event_hash     = hashlib.md5(geometry_bytes.tobytes()).hexdigest()
         if event_hash != geometry_hash:
             raise ValueError(f"Geometry mismatch in {source_path.name}; the store assumes one shared raw layout.")
@@ -102,16 +99,16 @@ class ParquetDatasetWriter:
 
     def build_octant_index(self, target_array: np.ndarray) -> list[tuple]:
         octant_rows = []
-        symbol      = {1: "p", -1: "n"}
+        symbol      = dict(StoreLayout.octant_symbols)
         for event_id in range(len(target_array)):
             base_x, base_y, base_z = target_array[event_id]
             emitted_targets        = set()
-            for sign_x, sign_y, sign_z in self.SIGN_COMBINATIONS:
+            for sign_x, sign_y, sign_z in itertools.product(StoreLayout.octant_signs, repeat=3):
                 reflected_x = float(sign_x * base_x) + 0.0
                 reflected_y = float(sign_y * base_y) + 0.0
                 reflected_z = float(sign_z * base_z) + 0.0
 
-                target_key = (round(reflected_x, 6), round(reflected_y, 6), round(reflected_z, 6))
+                target_key = tuple(round(value, StoreLayout.reflection_decimals) for value in (reflected_x, reflected_y, reflected_z))
                 if target_key in emitted_targets:
                     continue
                 emitted_targets.add(target_key)
@@ -123,9 +120,9 @@ class ParquetDatasetWriter:
         return octant_rows
 
     def write_parquet(self, geometry_frame: pd.DataFrame, source_names: list[str], target_array: np.ndarray, light_matrix: np.ndarray, octant_rows: list[tuple]) -> None:
-        os.makedirs(self.store_directory, exist_ok=True)
+        self.store_directory.mkdir(parents=True, exist_ok=True)
 
-        pa_parquet.write_table(self.geometry_table(geometry_frame), self.geometry_path, compression="zstd")
+        pa_parquet.write_table(self.geometry_table(geometry_frame), self.geometry_path, compression=IoNames.parquet_compression)
 
         channel_count = light_matrix.shape[1]
         light_values  = pa.array(light_matrix.reshape(-1), type=pa.int32())
@@ -138,13 +135,9 @@ class ParquetDatasetWriter:
             "target_z"        : pa.array(target_array[:, 2], type=pa.float32()),
             "light"           : light_list,
         })
-        pa_parquet.write_table(events_table, self.events_path, compression="zstd")
+        pa_parquet.write_table(events_table, self.events_path, compression=IoNames.parquet_compression)
 
-        octant_frame = pd.DataFrame(
-            octant_rows,
-            columns=["base_event_id", "octant", "sign_x", "sign_y", "sign_z", "target_x", "target_y", "target_z"],
-        )
-
+        octant_frame  = pd.DataFrame(octant_rows, columns=list(StoreLayout.octant_columns))
         octants_table = pa.table({
             "base_event_id" : pa.array(octant_frame["base_event_id"].values, type=pa.int32()),
             "octant"        : pa.array(octant_frame["octant"].values, type=pa.string()),
@@ -155,7 +148,7 @@ class ParquetDatasetWriter:
             "target_y"      : pa.array(octant_frame["target_y"].values, type=pa.float32()),
             "target_z"      : pa.array(octant_frame["target_z"].values, type=pa.float32()),
         })
-        pa_parquet.write_table(octants_table, self.octants_path, compression="zstd")
+        pa_parquet.write_table(octants_table, self.octants_path, compression=IoNames.parquet_compression)
 
         self.logger.subsection(f"Geometry written to {self.geometry_path}")
         self.logger.subsection(f"Events written to {self.events_path}")
@@ -164,7 +157,8 @@ class ParquetDatasetWriter:
     @classmethod
     def geometry_table(cls, geometry_frame: pd.DataFrame) -> pa.Table:
         columns = {}
-        for name, arrow_type in zip(ChannelMapping.GEOMETRY_COLUMNS, cls.GEOMETRY_TYPES):
+        for name, alias in zip(StoreLayout.geometry_columns, StoreLayout.geometry_types):
+            arrow_type    = pa.type_for_alias(alias)
             values        = geometry_frame[name].tolist() if pa.types.is_string(arrow_type) else geometry_frame[name].to_numpy()
             columns[name] = pa.array(values, type=arrow_type)
         return pa.table(columns)
@@ -176,10 +170,10 @@ class ParquetDatasetWriter:
         total_size    = geometry_size + events_size + octants_size
 
         self.logger.kv_table({
-            IoNames.geometry_table_file : f"{geometry_size / 1e6:.2f} MB",
-            IoNames.events_table_file   : f"{events_size / 1e6:.2f} MB",
-            IoNames.octants_table_file  : f"{octants_size / 1e6:.2f} MB",
-            "total"                     : f"{total_size / 1e6:.2f} MB",
+            IoNames.geometry_table_file : f"{geometry_size / MeasurementUnits.bytes_per_mb:.2f} MB",
+            IoNames.events_table_file   : f"{events_size / MeasurementUnits.bytes_per_mb:.2f} MB",
+            IoNames.octants_table_file  : f"{octants_size / MeasurementUnits.bytes_per_mb:.2f} MB",
+            "total"                     : f"{total_size / MeasurementUnits.bytes_per_mb:.2f} MB",
             "full-volume events"        : f"{len(octant_rows)}",
         }, title="Parquet Store Summary")
 
@@ -196,8 +190,6 @@ class ParquetDatasetWriter:
 
 
 class ParquetEventReader:
-    OCTANT_COLUMNS = ("base_event_id", "octant", "sign_x", "sign_y", "sign_z", "target_x", "target_y", "target_z")
-
     def __init__(self, store_directory: Path) -> None:
         self.store_directory = Path(store_directory)
         self.geometry_path   = self.store_directory / IoNames.geometry_table_file
@@ -213,8 +205,8 @@ class ParquetEventReader:
     def load_geometry(self) -> "ParquetEventReader":
         self.geometry_frame = pa_parquet.read_table(self.geometry_path).to_pandas()
 
-        if tuple(self.geometry_frame.columns) != ChannelMapping.GEOMETRY_COLUMNS:
-            raise ValueError(f"The store {self.store_directory} has the geometry columns {list(self.geometry_frame.columns)}, expected {list(ChannelMapping.GEOMETRY_COLUMNS)}. A store without raw_channel_index was built from the raw positions before the documented channel mapping, with misplaced sensors and the three face totals as channels; rebuild it with main/build_parquet_store.py.")
+        if tuple(self.geometry_frame.columns) != StoreLayout.geometry_columns:
+            raise ValueError(f"The store {self.store_directory} has the geometry columns {list(self.geometry_frame.columns)}, expected {list(StoreLayout.geometry_columns)}. A store without raw_channel_index was built from the raw positions before the documented channel mapping, with misplaced sensors and the three face totals as channels; rebuild it with main/build_parquet_store.py.")
 
         self.geometry_fingerprint = self.fingerprint(self.geometry_frame)
         return self
@@ -223,7 +215,7 @@ class ParquetEventReader:
     def fingerprint(cls, geometry_frame: pd.DataFrame) -> str:
         table  = ParquetDatasetWriter.geometry_table(geometry_frame)
         digest = hashlib.sha256()
-        for name in ChannelMapping.GEOMETRY_COLUMNS:
+        for name in StoreLayout.geometry_columns:
             column = table.column(name)
             digest.update(name.encode("utf-8"))
             if pa.types.is_string(column.type):
@@ -254,7 +246,7 @@ class ParquetEventReader:
         if "light" in schema.names:
             raise ValueError(f"{self.octants_path} still carries a per-octant light column from the previous store layout. Rebuild the store with data.build_store=true; octant light is now taken from events.parquet by base_event_id.")
 
-        return pa_parquet.read_table(self.octants_path, columns=list(self.OCTANT_COLUMNS)).to_pandas()
+        return pa_parquet.read_table(self.octants_path, columns=list(StoreLayout.octant_columns)).to_pandas()
 
     def iterate_corrected(self):
         for event_id in range(len(self.light_matrix)):

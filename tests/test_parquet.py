@@ -6,7 +6,8 @@ import pyarrow as pa
 import pyarrow.parquet as pa_parquet
 import pytest
 
-from pipelines.dataset import ChannelMapping, ParquetDatasetWriter, ParquetEventReader
+from configuration.data.general import StoreLayout
+from pipelines.dataset          import ChannelMapping, ParquetDatasetWriter, ParquetEventReader
 
 
 def test_parquet_reader_iterates_corrected(parquet_store):
@@ -38,7 +39,7 @@ def test_parquet_store_arrays(parquet_store):
 def test_store_geometry_is_the_light_derived_geometry(parquet_store, light_derived):
     frame = ParquetEventReader(parquet_store).load_geometry().geometry_frame
 
-    assert tuple(frame.columns) == ChannelMapping.GEOMETRY_COLUMNS
+    assert tuple(frame.columns) == StoreLayout.geometry_columns
     assert np.array_equal(frame["channel_index"].to_numpy(), np.arange(6909))
     assert np.array_equal(frame["raw_channel_index"].to_numpy(), light_derived.kept_rows)
     assert np.array_equal(frame["bin"].to_numpy(), light_derived.bins)
@@ -49,7 +50,7 @@ def test_store_geometry_is_the_light_derived_geometry(parquet_store, light_deriv
 
 def test_store_column_types(parquet_store):
     schema = pa_parquet.read_schema(parquet_store / "geometry.parquet")
-    assert [schema.field(name).type for name in ChannelMapping.GEOMETRY_COLUMNS] == [pa.int32(), pa.int32(), pa.int32(), pa.int32(), pa.string(), pa.float32(), pa.float32(), pa.float32()]
+    assert [schema.field(name).type for name in StoreLayout.geometry_columns] == [pa.int32(), pa.int32(), pa.int32(), pa.int32(), pa.string(), pa.float32(), pa.float32(), pa.float32()]
 
 
 def test_store_light_equals_the_raw_counts_of_the_kept_rows(parquet_store, sample_csv_dir):
