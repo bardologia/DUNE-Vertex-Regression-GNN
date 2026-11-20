@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 
 from configuration.data.general      import DatasetConfig
+from configuration.shared            import IoNames
 from pipelines.dataset.parquet_store import ParquetDatasetWriter, ParquetEventReader
 from pipelines.shared.store_geometry import CacheGeometryStamp
 from tools.monitoring.logger         import Logger
@@ -12,12 +13,10 @@ from tools.monitoring.logger         import Logger
 
 class RawLightExportPipeline:
 
-    FILENAME = "raw_light.npz"
-
     def __init__(self, raw_input_dir, cache_directory, logger=None, dataset_config=None):
         self.raw_input_dir   = Path(raw_input_dir)
         self.cache_directory = Path(cache_directory)
-        self.logger          = logger if logger is not None else Logger(log_dir="logs", name="raw_light")
+        self.logger          = logger if logger is not None else Logger(log_dir=IoNames.logs_dir, name=IoNames.raw_light_log)
         self.config          = dataset_config if dataset_config is not None else DatasetConfig()
 
         self.writer               = None
@@ -42,7 +41,7 @@ class RawLightExportPipeline:
 
     def _write(self):
         self.cache_directory.mkdir(parents=True, exist_ok=True)
-        path = self.cache_directory / self.FILENAME
+        path = self.cache_directory / IoNames.raw_light_cache_file
         np.savez_compressed(path, geometry_positions=self.geometry_positions, light_matrix=self.light_matrix, event_targets=self.event_targets, **CacheGeometryStamp.payload(self.geometry_fingerprint))
         self.logger.subsection(f"Raw-light cache written to {path} ({self.light_matrix.shape[0]} events x {self.light_matrix.shape[1]} channels, geometry {self.geometry_fingerprint})")
         return path

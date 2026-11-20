@@ -3,14 +3,13 @@ from __future__ import annotations
 import numpy as np
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
+from configuration.shared            import IoNames
 from pipelines.dataset.graph         import Graph
 from pipelines.inference.pipeline    import InferencePipeline
 from pipelines.shared.store_geometry import CacheGeometryStamp
 
 
 class EventExportPipeline:
-
-    FILENAME = "event_explorer.npz"
 
     def __init__(self, run_directory, device=None, splits=None, batch_size=None):
         self.inference          = InferencePipeline(run_directory, device=device, splits=splits, batch_size=batch_size)
@@ -99,7 +98,7 @@ class EventExportPipeline:
         directory = self.analysis_directory / split_name
         directory.mkdir(parents=True, exist_ok=True)
 
-        path = directory / self.FILENAME
+        path = directory / IoNames.event_explorer_cache_file
         np.savez_compressed(path, **payload)
         self.logger.subsection(f"Event explorer cache written to {path} ({len(payload['gt'])} events)")
 

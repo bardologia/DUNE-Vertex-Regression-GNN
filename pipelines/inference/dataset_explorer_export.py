@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 
 from configuration.data.general          import DatasetConfig
+from configuration.shared                import IoNames
 from pipelines.dataset.graph             import Graph
 from pipelines.dataset.graph_dataset     import GraphDataset
 from pipelines.dataset.parquet_store     import ParquetEventReader
@@ -16,15 +17,15 @@ class DatasetExplorerExportPipeline:
 
     RAW       = "raw"
     AUGMENTED = "augmented"
-    FILENAME  = {RAW: "raw.npz", AUGMENTED: "augmented.npz"}
+    KINDS     = (RAW, AUGMENTED)
 
     def __init__(self, kind, cache_directory, logger=None, dataset_config=None):
-        if kind not in self.FILENAME:
-            raise ValueError(f"unknown dataset source: {kind} (expected one of {list(self.FILENAME)})")
+        if kind not in self.KINDS:
+            raise ValueError(f"unknown dataset source: {kind} (expected one of {list(self.KINDS)})")
 
         self.kind            = kind
         self.cache_directory = Path(cache_directory)
-        self.logger          = logger if logger is not None else Logger(log_dir="logs", name="dataset_explorer")
+        self.logger          = logger if logger is not None else Logger(log_dir=IoNames.logs_dir, name=IoNames.dataset_explorer_log)
         self.config          = dataset_config if dataset_config is not None else DatasetConfig()
 
         self.geometry_positions   = None
@@ -101,7 +102,7 @@ class DatasetExplorerExportPipeline:
 
     def _write(self, payload):
         self.cache_directory.mkdir(parents=True, exist_ok=True)
-        path = self.cache_directory / self.FILENAME[self.kind]
+        path = self.cache_directory / f"{self.kind}{IoNames.npz_suffix}"
         np.savez_compressed(path, **payload)
         self.logger.subsection(f"Dataset explorer cache written to {path} ({len(payload['gt'])} events)")
         return path

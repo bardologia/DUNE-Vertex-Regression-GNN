@@ -8,6 +8,7 @@ import numpy as np
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
 from configuration.entry             import TrainEntryConfig
+from configuration.shared            import IoNames
 from models                          import get_model
 from tools.monitoring.logger         import Logger
 from tools.runtime.config_cli        import ConfigCli
@@ -29,7 +30,7 @@ class EnergyEfficiencySweepPipeline:
         self.config           = config
         self.run_directory    = Path(config.run_directory)
         self.geometry_record  = StoreGeometryRecord.for_run(self.run_directory)
-        self.logger           = logger if logger is not None else Logger(log_dir=str(self.run_directory / "logs"), name="sweep")
+        self.logger           = logger if logger is not None else Logger(log_dir=str(self.run_directory / IoNames.logs_dir), name=IoNames.sweep_log)
         self.device           = config.device
         self.split            = config.split
         self.batch_size       = config.batch_size
@@ -46,20 +47,20 @@ class EnergyEfficiencySweepPipeline:
         self.output_directory = None
 
     def _resolve_output_directory(self):
-        stamp     = datetime.now().strftime("%Y%m%d_%H%M%S")
-        label     = f"energy_efficiency_{self.config.run_name}_{stamp}" if self.config.run_name else f"energy_efficiency_{stamp}"
-        directory = self.run_directory / "sweeps" / label
+        stamp     = datetime.now().strftime(IoNames.run_tag_format)
+        label     = IoNames.named_energy_efficiency_dir.format(run=self.config.run_name, stamp=stamp) if self.config.run_name else IoNames.energy_efficiency_dir.format(stamp=stamp)
+        directory = self.run_directory / IoNames.sweeps_dir / label
         directory.mkdir(parents=True, exist_ok=True)
         self.output_directory = directory
 
     def _load_run(self):
-        resolved_path = self.run_directory / "metadata" / "resolved_config.json"
+        resolved_path = self.run_directory / IoNames.metadata_dir / IoNames.resolved_config_file
         if not resolved_path.exists():
             raise FileNotFoundError(f"No training run found at {self.run_directory}: expected {resolved_path}. Pass --run_directory pointing at a completed run (runs/<model>_<stamp>).")
 
         self.entry          = ConfigCli.load_resolved(TrainEntryConfig(), resolved_path)
-        self.stats          = NormalizationStats.load(self.run_directory / "metadata")
-        self.split_base_ids = json.loads((self.run_directory / "metadata" / "split_base_ids.json").read_text(encoding="utf-8"))
+        self.stats          = NormalizationStats.load(self.run_directory / IoNames.metadata_dir)
+        self.split_base_ids = json.loads((self.run_directory / IoNames.metadata_dir / IoNames.split_base_ids_file).read_text(encoding="utf-8"))
 
         self.baseline        = (self.entry.dataset.physics.scale_factor, self.entry.dataset.physics.detection_efficiency)
         self.efficiency_seed = self.entry.dataset.physics.efficiency_seed
@@ -75,7 +76,7 @@ class EnergyEfficiencySweepPipeline:
 
     def _build_predictor(self):
         model, _        = get_model(self.entry.model_name, **self.entry.model_overrides)
-        checkpoint_path = self.run_directory / "checkpoints" / self.entry.training.io.checkpoint_name
+        checkpoint_path = self.run_directory / IoNames.checkpoints_dir / self.entry.training.io.checkpoint_name
         self.predictor  = Predictor(model, checkpoint_path, self.stats, self.device, self.logger).prepare()
 
     def _prepare_dataset_pipeline(self):
@@ -120,7 +121,7 @@ class EnergyEfficiencySweepPipeline:
     def _build_outputs(self):
         metric_grids = self._metric_grids()
 
-        plots = SweepPlots(self.output_directory / "plots", self.logger).run(
+        plots = SweepPlots(self.output_directory / IoNames.plots_dir, self.logger).run(
             self.grid.scale_values(),
             self.grid.efficiency_values(),
             metric_grids,

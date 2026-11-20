@@ -8,6 +8,7 @@ import numpy as np
 from scipy.stats import rankdata
 
 from configuration.entry             import TrainEntryConfig
+from configuration.shared            import IoNames
 from models                          import get_model
 from tools.monitoring.logger         import Logger, NullLogger
 from tools.runtime.config_cli        import ConfigCli
@@ -55,7 +56,7 @@ class FeatureImportancePipeline:
         self.config           = config
         self.run_directory    = Path(config.run_directory)
         self.geometry_record  = StoreGeometryRecord.for_run(self.run_directory)
-        self.logger           = logger if logger is not None else Logger(log_dir=str(self.run_directory / "logs"), name="explain")
+        self.logger           = logger if logger is not None else Logger(log_dir=str(self.run_directory / IoNames.logs_dir), name=IoNames.explain_log)
         self.device           = config.device
         self.split            = config.split
         self.batch_size       = config.batch_size
@@ -87,20 +88,20 @@ class FeatureImportancePipeline:
         self.output_directory    = None
 
     def _resolve_output_directory(self):
-        stamp     = datetime.now().strftime("%Y%m%d_%H%M%S")
-        label     = f"feature_importance_{self.config.run_name}_{stamp}" if self.config.run_name else f"feature_importance_{stamp}"
-        directory = self.run_directory / "explainability" / label
+        stamp     = datetime.now().strftime(IoNames.run_tag_format)
+        label     = IoNames.named_feature_importance_dir.format(run=self.config.run_name, stamp=stamp) if self.config.run_name else IoNames.feature_importance_dir.format(stamp=stamp)
+        directory = self.run_directory / IoNames.explainability_dir / label
         directory.mkdir(parents=True, exist_ok=True)
         self.output_directory = directory
 
     def _load_run(self):
-        resolved_path = self.run_directory / "metadata" / "resolved_config.json"
+        resolved_path = self.run_directory / IoNames.metadata_dir / IoNames.resolved_config_file
         if not resolved_path.exists():
             raise FileNotFoundError(f"No training run found at {self.run_directory}: expected {resolved_path}. Pass --run_directory pointing at a completed run (runs/<model>_<stamp>).")
 
         self.entry          = ConfigCli.load_resolved(TrainEntryConfig(), resolved_path)
-        self.stats          = NormalizationStats.load(self.run_directory / "metadata")
-        self.split_base_ids = json.loads((self.run_directory / "metadata" / "split_base_ids.json").read_text(encoding="utf-8"))
+        self.stats          = NormalizationStats.load(self.run_directory / IoNames.metadata_dir)
+        self.split_base_ids = json.loads((self.run_directory / IoNames.metadata_dir / IoNames.split_base_ids_file).read_text(encoding="utf-8"))
 
         layout            = FeatureLayout(self.entry.dataset)
         self.node_layout  = layout.node_features()
@@ -128,7 +129,7 @@ class FeatureImportancePipeline:
 
     def _build_predictor(self):
         model, _        = get_model(self.entry.model_name, **self.entry.model_overrides)
-        checkpoint_path = self.run_directory / "checkpoints" / self.entry.training.io.checkpoint_name
+        checkpoint_path = self.run_directory / IoNames.checkpoints_dir / self.entry.training.io.checkpoint_name
         self.predictor  = Predictor(model, checkpoint_path, self.stats, self.device, self.logger).prepare()
         self.predictor.logger = NullLogger()
 
@@ -361,38 +362,38 @@ class FeatureImportancePipeline:
         figures    = []
 
         if self.permutation is not None:
-            figures.append(self._delta_figure(self.permutation["node_features"], "Permutation importance: node features", "permutation_node_features.png", node_color, True))
-            figures.append(self._delta_figure(self.permutation["edge_features"], "Permutation importance: edge features", "permutation_edge_features.png", edge_color, True))
+            figures.append(self._delta_figure(self.permutation["node_features"], "Permutation importance: node features", IoNames.permutation_figure.format(part="node_features"), node_color, True))
+            figures.append(self._delta_figure(self.permutation["edge_features"], "Permutation importance: edge features", IoNames.permutation_figure.format(part="edge_features"), edge_color, True))
             if self.permutation["node_groups"]:
-                figures.append(self._delta_figure(self.permutation["node_groups"], "Permutation importance: node feature groups", "permutation_node_groups.png", node_color, True))
+                figures.append(self._delta_figure(self.permutation["node_groups"], "Permutation importance: node feature groups", IoNames.permutation_figure.format(part="node_groups"), node_color, True))
             if self.permutation["edge_groups"]:
-                figures.append(self._delta_figure(self.permutation["edge_groups"], "Permutation importance: edge feature groups", "permutation_edge_groups.png", edge_color, True))
+                figures.append(self._delta_figure(self.permutation["edge_groups"], "Permutation importance: edge feature groups", IoNames.permutation_figure.format(part="edge_groups"), edge_color, True))
 
         if self.occlusion is not None:
-            figures.append(self._delta_figure(self.occlusion["node_features"], "Occlusion importance: node features", "occlusion_node_features.png", node_color, False))
-            figures.append(self._delta_figure(self.occlusion["edge_features"], "Occlusion importance: edge features", "occlusion_edge_features.png", edge_color, False))
+            figures.append(self._delta_figure(self.occlusion["node_features"], "Occlusion importance: node features", IoNames.occlusion_figure.format(part="node_features"), node_color, False))
+            figures.append(self._delta_figure(self.occlusion["edge_features"], "Occlusion importance: edge features", IoNames.occlusion_figure.format(part="edge_features"), edge_color, False))
 
         if self.gradient is not None:
-            figures.append(self._gradient_figure(self.gradient["node"], "saliency",         "Gradient saliency: node features",            "gradient_node_saliency.png",         node_color))
-            figures.append(self._gradient_figure(self.gradient["node"], "input_times_grad", "Gradient x input: node features",             "gradient_node_input_times_grad.png", node_color))
-            figures.append(self._gradient_figure(self.gradient["edge"], "saliency",         "Gradient saliency: edge features",            "gradient_edge_saliency.png",         edge_color))
-            figures.append(self._gradient_figure(self.gradient["edge"], "input_times_grad", "Gradient x input: edge features",             "gradient_edge_input_times_grad.png", edge_color))
+            figures.append(self._gradient_figure(self.gradient["node"], "saliency",         "Gradient saliency: node features", IoNames.gradient_figure.format(domain="node", method="saliency"),         node_color))
+            figures.append(self._gradient_figure(self.gradient["node"], "input_times_grad", "Gradient x input: node features",  IoNames.gradient_figure.format(domain="node", method="input_times_grad"), node_color))
+            figures.append(self._gradient_figure(self.gradient["edge"], "saliency",         "Gradient saliency: edge features", IoNames.gradient_figure.format(domain="edge", method="saliency"),         edge_color))
+            figures.append(self._gradient_figure(self.gradient["edge"], "input_times_grad", "Gradient x input: edge features",  IoNames.gradient_figure.format(domain="edge", method="input_times_grad"), edge_color))
 
         if self.expected_gradients is not None:
             eg_label = "Mean |expected gradient| (normalized prediction)"
-            figures.append(self._axis_figure(self.expected_gradients["node"], "overall", "Expected gradients: node features (all axes)", "expected_gradients_node_overall.png", node_color, eg_label))
-            figures.append(self._axis_figure(self.expected_gradients["edge"], "overall", "Expected gradients: edge features (all axes)", "expected_gradients_edge_overall.png", edge_color, eg_label))
+            figures.append(self._axis_figure(self.expected_gradients["node"], "overall", "Expected gradients: node features (all axes)", IoNames.expected_gradients_figure.format(domain="node", axis="overall"), node_color, eg_label))
+            figures.append(self._axis_figure(self.expected_gradients["edge"], "overall", "Expected gradients: edge features (all axes)", IoNames.expected_gradients_figure.format(domain="edge", axis="overall"), edge_color, eg_label))
             for axis in self.expected_gradients["coordinates"]:
-                figures.append(self._axis_figure(self.expected_gradients["node"], axis, f"Expected gradients: node features ({axis})", f"expected_gradients_node_{axis}.png", node_color, eg_label))
-                figures.append(self._axis_figure(self.expected_gradients["edge"], axis, f"Expected gradients: edge features ({axis})", f"expected_gradients_edge_{axis}.png", edge_color, eg_label))
+                figures.append(self._axis_figure(self.expected_gradients["node"], axis, f"Expected gradients: node features ({axis})", IoNames.expected_gradients_figure.format(domain="node", axis=axis), node_color, eg_label))
+                figures.append(self._axis_figure(self.expected_gradients["edge"], axis, f"Expected gradients: edge features ({axis})", IoNames.expected_gradients_figure.format(domain="edge", axis=axis), edge_color, eg_label))
 
         if self.kernel_shap is not None:
             shap_label = "Mean |SHAP value| (normalized prediction)"
-            figures.append(self._axis_figure(self.kernel_shap["node"], "overall", "Kernel SHAP: node features (all axes)", "kernel_shap_node_overall.png", node_color, shap_label))
-            figures.append(self._axis_figure(self.kernel_shap["edge"], "overall", "Kernel SHAP: edge features (all axes)", "kernel_shap_edge_overall.png", edge_color, shap_label))
+            figures.append(self._axis_figure(self.kernel_shap["node"], "overall", "Kernel SHAP: node features (all axes)", IoNames.kernel_shap_figure.format(domain="node", axis="overall"), node_color, shap_label))
+            figures.append(self._axis_figure(self.kernel_shap["edge"], "overall", "Kernel SHAP: edge features (all axes)", IoNames.kernel_shap_figure.format(domain="edge", axis="overall"), edge_color, shap_label))
             for axis in self.kernel_shap["coordinates"]:
-                figures.append(self._axis_figure(self.kernel_shap["node"], axis, f"Kernel SHAP: node features ({axis})", f"kernel_shap_node_{axis}.png", node_color, shap_label))
-                figures.append(self._axis_figure(self.kernel_shap["edge"], axis, f"Kernel SHAP: edge features ({axis})", f"kernel_shap_edge_{axis}.png", edge_color, shap_label))
+                figures.append(self._axis_figure(self.kernel_shap["node"], axis, f"Kernel SHAP: node features ({axis})", IoNames.kernel_shap_figure.format(domain="node", axis=axis), node_color, shap_label))
+                figures.append(self._axis_figure(self.kernel_shap["edge"], axis, f"Kernel SHAP: edge features ({axis})", IoNames.kernel_shap_figure.format(domain="edge", axis=axis), edge_color, shap_label))
 
         return figures
 
@@ -401,7 +402,7 @@ class FeatureImportancePipeline:
             return []
         node_names = [name for name, _ in self.node_layout]
         edge_names = [name for name, _ in self.edge_layout]
-        return ShapNativePlots(self.output_directory / "plots", self.logger).run(self.kernel_shap_samples, node_names, edge_names, self.kernel_shap_samples["coordinates"])
+        return ShapNativePlots(self.output_directory / IoNames.plots_dir, self.logger).run(self.kernel_shap_samples, node_names, edge_names, self.kernel_shap_samples["coordinates"])
 
     def _build_outputs(self):
         node_rows = self._merged_rows(self.node_layout, "node", "node_features")
@@ -410,7 +411,7 @@ class FeatureImportancePipeline:
         consensus_node = self._consensus(node_rows)
         consensus_edge = self._consensus(edge_rows)
 
-        plots         = FeatureImportancePlots(self.output_directory / "plots", self.logger).run(self._figure_specifications())
+        plots         = FeatureImportancePlots(self.output_directory / IoNames.plots_dir, self.logger).run(self._figure_specifications())
         plots        += self._native_shap_plots()
 
         context = {

@@ -9,6 +9,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
+from configuration.shared      import IoNames
 from pipelines.inference.plots import PublicationStyle
 
 
@@ -86,7 +87,7 @@ class SweepPlots:
         axis.set_ylabel("Mean euclidean error [m]")
         axis.set_title("Mean euclidean error versus light scale factor")
         axis.legend(title=self.EFFICIENCY_LABEL, fontsize=7, title_fontsize=7, ncol=2, loc="best")
-        self._save(figure, "euclidean_mean_vs_scale.png")
+        self._save(figure, IoNames.euclidean_vs_scale_figure)
 
     def _lines_vs_efficiency(self, grid):
         figure, axis = plt.subplots(figsize=(6, 4.5))
@@ -97,7 +98,7 @@ class SweepPlots:
         axis.set_ylabel("Mean euclidean error [m]")
         axis.set_title("Mean euclidean error versus detection efficiency")
         axis.legend(title=self.SCALE_LABEL, fontsize=7, title_fontsize=7, ncol=2, loc="best")
-        self._save(figure, "euclidean_mean_vs_efficiency.png")
+        self._save(figure, IoNames.euclidean_vs_efficiency_figure)
 
     def run(self, scale_values, efficiency_values, metric_grids, baseline, annotate):
         self.scale_values        = np.asarray(scale_values, dtype=np.float64)
@@ -109,7 +110,7 @@ class SweepPlots:
         for metric_key, metric_label, cmap in self.HEATMAP_METRICS:
             if metric_key not in metric_grids:
                 continue
-            self._heatmap(metric_grids[metric_key], metric_label, f"heatmap_{metric_key}.png", cmap)
+            self._heatmap(metric_grids[metric_key], metric_label, IoNames.heatmap_figure.format(metric=metric_key), cmap)
 
         self._lines_vs_scale(metric_grids["euclidean_mean"])
         self._lines_vs_efficiency(metric_grids["euclidean_mean"])

@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.animation import FuncAnimation, PillowWriter
 
+from configuration.shared      import IoNames
 from pipelines.inference.plots import PublicationStyle
 
 
@@ -55,7 +56,7 @@ class AnalysisAnimations:
             return []
 
         animation = FuncAnimation(figure, update, frames=self.NUMBER_OF_FRAMES, blit=False)
-        self._save(animation, "rotating_predicted_vs_true.gif")
+        self._save(animation, IoNames.rotating_prediction_animation)
         plt.close(figure)
 
     def _rotating_error(self, targets, distances):
@@ -73,7 +74,7 @@ class AnalysisAnimations:
             return []
 
         animation = FuncAnimation(figure, update, frames=self.NUMBER_OF_FRAMES, blit=False)
-        self._save(animation, "rotating_error_volume.gif")
+        self._save(animation, IoNames.rotating_error_animation)
         plt.close(figure)
 
     def run(self, predictions, targets):

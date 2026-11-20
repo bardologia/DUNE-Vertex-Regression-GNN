@@ -7,6 +7,7 @@ import torch
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
 from configuration.entry             import InferenceEntryConfig, TrainEntryConfig
+from configuration.shared            import IoNames
 from models                          import get_model
 from tools.monitoring.logger         import Logger
 from tools.runtime.config_cli        import ConfigCli
@@ -27,15 +28,15 @@ class InferencePipeline:
 
         self.run_directory   = Path(run_directory)
         self.geometry_record = StoreGeometryRecord.for_run(self.run_directory)
-        self.logger          = logger if logger is not None else Logger(log_dir=str(self.run_directory / "logs"), name="inference")
+        self.logger          = logger if logger is not None else Logger(log_dir=str(self.run_directory / IoNames.logs_dir), name=IoNames.inference_log)
         self.device          = device if device is not None else ("cuda" if torch.cuda.is_available() else "cpu")
         self.splits          = DatasetPipeline.validate_split_names(splits if splits is not None else defaults.splits)
         self.batch_size      = batch_size if batch_size is not None else defaults.batch_size
 
-        self.analysis_directory = self.run_directory / "analysis"
+        self.analysis_directory = self.run_directory / IoNames.analysis_dir
 
     def _load_run_config(self):
-        resolved_path = self.run_directory / "metadata" / "resolved_config.json"
+        resolved_path = self.run_directory / IoNames.metadata_dir / IoNames.resolved_config_file
         if not resolved_path.exists():
             raise FileNotFoundError(f"No training run found at {self.run_directory}: expected {resolved_path}. Pass --run_directory pointing at a completed run (runs/<model>_<stamp>).")
 
@@ -51,8 +52,8 @@ class InferencePipeline:
             "Splits"        : ", ".join(self.splits),
         })
 
-        self.stats          = NormalizationStats.load(self.run_directory / "metadata")
-        split_base_ids      = json.loads((self.run_directory / "metadata" / "split_base_ids.json").read_text(encoding="utf-8"))
+        self.stats          = NormalizationStats.load(self.run_directory / IoNames.metadata_dir)
+        split_base_ids      = json.loads((self.run_directory / IoNames.metadata_dir / IoNames.split_base_ids_file).read_text(encoding="utf-8"))
         dataset_pipeline    = DatasetPipeline(self.entry.dataset, self.logger, stats=self.stats, evaluation_mode=True)
 
         dataset_pipeline.prepare_samples()
@@ -62,7 +63,7 @@ class InferencePipeline:
         self.dataset_splits, _ = dataset_pipeline.run_with_base_ids(split_base_ids, split_names=self.splits)
 
         model, _        = get_model(self.entry.model_name, **self.entry.model_overrides)
-        checkpoint_path = self.run_directory / "checkpoints" / self.entry.training.io.checkpoint_name
+        checkpoint_path = self.run_directory / IoNames.checkpoints_dir / self.entry.training.io.checkpoint_name
         self.predictor  = Predictor(model, checkpoint_path, self.stats, self.device, self.logger).prepare()
 
     def _analyze_split(self, split_name):
@@ -85,9 +86,9 @@ class InferencePipeline:
             "unit"   : "m",
             "splits" : {split_name: payload["metrics"] for split_name, payload in per_split_results.items()},
         }
-        metrics_path = self.run_directory / "metadata" / "metrics.json"
+        metrics_path = self.run_directory / IoNames.metadata_dir / IoNames.metrics_file
         metrics_path.parent.mkdir(parents=True, exist_ok=True)
-        metrics_path.write_text(json.dumps(metrics_payload, indent=2), encoding="utf-8")
+        metrics_path.write_text(json.dumps(metrics_payload, indent=IoNames.json_indent), encoding="utf-8")
         self.logger.subsection(f"Metrics written to {metrics_path}")
 
     def run(self):

@@ -4,6 +4,7 @@ import csv
 import json
 from pathlib import Path
 
+from configuration.shared     import IoNames
 from tools.reporting.markdown import MarkdownDoc, MarkdownTable
 
 
@@ -28,8 +29,8 @@ class FeatureImportanceReport:
         self.output_directory.mkdir(parents=True, exist_ok=True)
 
     def _write_json(self, payload):
-        path = self.output_directory / "results.json"
-        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        path = self.output_directory / IoNames.results_file
+        path.write_text(json.dumps(payload, indent=IoNames.json_indent), encoding="utf-8")
         return path
 
     def _write_csv(self, name, rows):
@@ -171,12 +172,12 @@ class FeatureImportanceReport:
     def _figures(self, document, plot_filenames):
         document.heading("Figures", level=2)
         for filename in plot_filenames:
-            document.image(filename, f"plots/{filename}")
+            document.image(filename, f"{IoNames.plots_dir}/{filename}")
 
     def build(self, context, baseline, inventory, analysis, merged_csv, plot_filenames):
         json_path = self._write_json({"unit": self.metric.unit, "primary_metric": self.primary_metric, "run": context, "baseline": baseline, "feature_inventory": inventory, "analysis": analysis})
-        node_csv  = self._write_csv("node_importance.csv", merged_csv["node"])
-        edge_csv  = self._write_csv("edge_importance.csv", merged_csv["edge"])
+        node_csv  = self._write_csv(IoNames.node_importance_file, merged_csv["node"])
+        edge_csv  = self._write_csv(IoNames.edge_importance_file, merged_csv["edge"])
 
         document = MarkdownDoc("Graph Feature Importance")
         self._introduction(document)
@@ -197,7 +198,7 @@ class FeatureImportanceReport:
         self._consensus_section(document, analysis["consensus"])
         self._figures(document, plot_filenames)
 
-        report_path = self.output_directory / "report.md"
+        report_path = self.output_directory / IoNames.report_file
         document.save(report_path)
 
         self.logger.subsection(f"Feature importance report written to {report_path}")

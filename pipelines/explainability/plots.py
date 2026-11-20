@@ -9,6 +9,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
+from configuration.shared      import IoNames
 from pipelines.inference.plots import PublicationStyle
 
 
@@ -65,10 +66,8 @@ class FeatureImportancePlots:
 
 
 class ShapNativePlots:
-    SUBDIRECTORY = "shap"
-
     def __init__(self, output_directory, logger):
-        self.output_directory = Path(output_directory) / self.SUBDIRECTORY
+        self.output_directory = Path(output_directory) / IoNames.shap_plots_dir
         self.logger           = logger
         self.output_directory.mkdir(parents=True, exist_ok=True)
         self.generated        = []
@@ -81,7 +80,7 @@ class ShapNativePlots:
         figure.tight_layout()
         figure.savefig(self.output_directory / filename, bbox_inches="tight")
         plt.close(figure)
-        self.generated.append(f"{self.SUBDIRECTORY}/{filename}")
+        self.generated.append(f"{IoNames.shap_plots_dir}/{filename}")
 
     def _beeswarm(self, shap_module, shap_values, feature_values, names, title, filename):
         shap_module.summary_plot(shap_values, features=feature_values, feature_names=names, plot_type="dot", max_display=len(names), show=False)
@@ -96,11 +95,11 @@ class ShapNativePlots:
         self._save(title, filename)
 
     def _domain_plots(self, shap_module, domain, shap_matrix, feature_values, names, coordinates):
-        self._overall_bar(shap_module, [shap_matrix[:, :, index] for index in range(len(coordinates))], names, coordinates, f"SHAP {domain} features (all axes)", f"shap_bar_{domain}_overall.png")
+        self._overall_bar(shap_module, [shap_matrix[:, :, index] for index in range(len(coordinates))], names, coordinates, f"SHAP {domain} features (all axes)", IoNames.shap_bar_figure.format(domain=domain, axis="overall"))
 
         for index, axis in enumerate(coordinates):
-            self._beeswarm(shap_module, shap_matrix[:, :, index], feature_values, names, f"SHAP {domain} features ({axis})", f"shap_beeswarm_{domain}_{axis}.png")
-            self._bar(shap_module, shap_matrix[:, :, index], names, f"SHAP {domain} features ({axis})", f"shap_bar_{domain}_{axis}.png")
+            self._beeswarm(shap_module, shap_matrix[:, :, index], feature_values, names, f"SHAP {domain} features ({axis})", IoNames.shap_beeswarm_figure.format(domain=domain, axis=axis))
+            self._bar(shap_module, shap_matrix[:, :, index], names, f"SHAP {domain} features ({axis})", IoNames.shap_bar_figure.format(domain=domain, axis=axis))
 
     def run(self, samples, node_names, edge_names, coordinates):
         import shap

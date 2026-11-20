@@ -4,6 +4,7 @@ import csv
 import json
 from pathlib import Path
 
+from configuration.shared     import IoNames
 from tools.reporting.markdown import MarkdownDoc, MarkdownTable
 
 
@@ -25,12 +26,12 @@ class SweepReport:
             "run"     : context,
             "results" : records,
         }
-        path = self.output_directory / "results.json"
-        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        path = self.output_directory / IoNames.results_file
+        path.write_text(json.dumps(payload, indent=IoNames.json_indent), encoding="utf-8")
         return path
 
     def _write_csv(self, records):
-        path = self.output_directory / "results.csv"
+        path = self.output_directory / IoNames.sweep_results_table
         with open(path, "w", newline="", encoding="utf-8") as handle:
             writer = csv.writer(handle)
             writer.writerow(self.CSV_COLUMNS)
@@ -96,7 +97,7 @@ class SweepReport:
     def _plots(self, document, plot_filenames):
         document.heading("Figures", level=2)
         for filename in plot_filenames:
-            document.image(filename, f"plots/{filename}")
+            document.image(filename, f"{IoNames.plots_dir}/{filename}")
 
     def build(self, context, records, plot_filenames):
         json_path = self._write_json(context, records)
@@ -111,7 +112,7 @@ class SweepReport:
         self._results_table(document, records)
         self._plots(document, plot_filenames)
 
-        report_path = self.output_directory / "report.md"
+        report_path = self.output_directory / IoNames.report_file
         document.save(report_path)
 
         self.logger.subsection(f"Sweep report written to {report_path}")

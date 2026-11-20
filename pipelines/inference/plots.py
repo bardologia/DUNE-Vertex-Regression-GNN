@@ -9,6 +9,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
+from configuration.shared import IoNames
+
 
 class PublicationStyle:
     SETTINGS = {
@@ -59,7 +61,7 @@ class AnalysisPlots:
             axis.set_ylabel(f"Predicted {name} [{self.UNIT}]")
             axis.set_title(f"Predicted vs true {name}")
             axis.set_aspect("equal", adjustable="box")
-            self._save(figure, f"predicted_vs_true_{name}.png")
+            self._save(figure, IoNames.predicted_vs_true_figure.format(coordinate=name))
 
     def _residual_histograms(self, predictions, targets):
         for index, name in enumerate(self.COORDINATE_NAMES):
@@ -71,7 +73,7 @@ class AnalysisPlots:
             axis.set_xlabel(f"Residual {name} (predicted - true) [{self.UNIT}]")
             axis.set_ylabel("Count")
             axis.set_title(f"Residual distribution {name}")
-            self._save(figure, f"residual_histogram_{name}.png")
+            self._save(figure, IoNames.residual_histogram_figure.format(coordinate=name))
 
     def _error_vs_true(self, predictions, targets):
         for index, name in enumerate(self.COORDINATE_NAMES):
@@ -83,7 +85,7 @@ class AnalysisPlots:
             axis.set_xlabel(f"True {name} [{self.UNIT}]")
             axis.set_ylabel(f"Absolute error [{self.UNIT}]")
             axis.set_title(f"Absolute error versus true {name}")
-            self._save(figure, f"error_vs_true_{name}.png")
+            self._save(figure, IoNames.error_vs_true_figure.format(coordinate=name))
 
     def _euclidean_histogram(self, distances):
         figure, axis = plt.subplots(figsize=(5, 4))
@@ -92,7 +94,7 @@ class AnalysisPlots:
         axis.set_xlabel(f"Euclidean error [{self.UNIT}]")
         axis.set_ylabel("Count")
         axis.set_title("Euclidean error distribution")
-        self._save(figure, "euclidean_error_histogram.png")
+        self._save(figure, IoNames.euclidean_histogram_figure)
 
     def _euclidean_cumulative(self, distances):
         sorted_distances    = np.sort(distances)
@@ -104,7 +106,7 @@ class AnalysisPlots:
         axis.set_ylabel("Cumulative fraction")
         axis.set_title("Cumulative euclidean error")
         axis.set_ylim(0, 1)
-        self._save(figure, "euclidean_error_cumulative.png")
+        self._save(figure, IoNames.euclidean_cumulative_figure)
 
     def _error_three_dimensional(self, targets, distances):
         figure = plt.figure(figsize=(6, 5))
@@ -115,7 +117,7 @@ class AnalysisPlots:
         axis.set_zlabel(f"z [{self.UNIT}]")
         axis.set_title("Spatial distribution of euclidean error")
         figure.colorbar(scatter, ax=axis, shrink=0.6, label=f"Euclidean error [{self.UNIT}]")
-        self._save(figure, "error_three_dimensional.png")
+        self._save(figure, IoNames.error_volume_figure)
 
     def run(self, predictions, targets):
         predictions = predictions.detach().cpu().numpy()

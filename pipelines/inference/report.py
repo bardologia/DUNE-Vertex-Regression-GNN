@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from configuration.shared     import IoNames
 from tools.reporting.markdown import MarkdownDoc, MarkdownTable
 
 
@@ -37,7 +38,7 @@ class AnalysisReport:
             for filename in payload["plots"] + payload["animations"]:
                 document.image(filename, f"{split_name}/{filename}")
 
-        report_path = self.output_directory / "analysis_report.md"
+        report_path = self.output_directory / IoNames.analysis_report_file
         document.save(report_path)
         self.logger.subsection(f"Analysis report written to {report_path}")
         return report_path
