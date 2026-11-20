@@ -30,6 +30,18 @@ class SystemMonitor:
         except pynvml.NVMLError:
             self.nvml_ready = False
 
+    def _memory(self) -> dict:
+        virtual = psutil.virtual_memory()
+        swap    = psutil.swap_memory()
+        return {
+            "total"      : virtual.total,
+            "available"  : virtual.available,
+            "used"       : virtual.used,
+            "percent"    : virtual.percent,
+            "swap_total" : swap.total,
+            "swap_free"  : swap.free,
+        }
+
     def _uptime(self) -> float:
         return max(0.0, time.time() - self.boot_time)
 
@@ -44,18 +56,6 @@ class SystemMonitor:
             "per_core" : cores,
         }
 
-    def _memory(self) -> dict:
-        virtual = psutil.virtual_memory()
-        swap    = psutil.swap_memory()
-        return {
-            "total"      : virtual.total,
-            "available"  : virtual.available,
-            "used"       : virtual.used,
-            "percent"    : virtual.percent,
-            "swap_total" : swap.total,
-            "swap_free"  : swap.free,
-        }
-
     def _disk(self) -> dict:
         usage = psutil.disk_usage(str(self.paths.repo_root))
         return {
@@ -66,7 +66,7 @@ class SystemMonitor:
             "percent" : usage.percent,
         }
 
-    def _gpus(self) -> list[dict]:
+    def gpus(self) -> list[dict]:
         if not self.nvml_ready:
             return []
 
@@ -125,13 +125,13 @@ class SystemMonitor:
     def status(self) -> dict:
         memory = self._memory()
         return {
-            "host"    : self.host,
-            "user"    : self.user,
-            "uptime"  : self._uptime(),
-            "cpu"     : self._cpu(),
-            "mem"     : memory,
-            "ram"     : memory,
-            "disk"    : self._disk(),
-            "gpus"    : self._gpus(),
-            "procs"   : self._processes(),
+            "host"   : self.host,
+            "user"   : self.user,
+            "uptime" : self._uptime(),
+            "cpu"    : self._cpu(),
+            "mem"    : memory,
+            "ram"    : memory,
+            "disk"   : self._disk(),
+            "gpus"   : self.gpus(),
+            "procs"  : self._processes(),
         }

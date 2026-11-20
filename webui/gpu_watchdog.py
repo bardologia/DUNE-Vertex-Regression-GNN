@@ -32,7 +32,7 @@ class GpuWatchdog:
     def _poll(self) -> None:
         while True:
             try:
-                gpus = self.system._gpus()
+                gpus = self.system.gpus()
                 with self.lock:
                     self.snapshot = {"updated": datetime.now().isoformat(timespec="seconds"), "gpus": gpus}
             except Exception as error:
