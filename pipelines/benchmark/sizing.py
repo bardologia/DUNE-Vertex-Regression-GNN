@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 from configuration.architectures import ModelConfigRegistry
-from models import get_model
+from configuration.shared        import MeasurementUnits
+from models                      import get_model
 
 
 @dataclass
@@ -46,7 +48,7 @@ class ModelSizer:
         return max(1, int(heads))
 
     def _snap(self, width, alignment):
-        floor   = -(-self.config.minimum_width // alignment) * alignment
+        floor   = math.ceil(self.config.minimum_width / alignment) * alignment
         ceiling = (self.config.maximum_width // alignment) * alignment
         aligned = max(1, int(round(width / alignment))) * alignment
         return min(ceiling, max(floor, aligned))
@@ -88,13 +90,13 @@ class ModelSizer:
                 high_width = mid_width
 
         flags         = []
-        deviation_pct = 100.0 * (best_count - target) / target if target > 0 else 0.0
+        deviation_pct = MeasurementUnits.percent * (best_count - target) / target if target > 0 else 0.0
 
         if best_width <= self.config.minimum_width and best_count > target:
             flags.append("clamped at minimum width")
         if best_width >= self.config.maximum_width and best_count < target:
             flags.append("clamped at maximum width")
-        if abs(deviation_pct) > 100.0 * self.config.tolerance:
+        if abs(deviation_pct) > MeasurementUnits.percent * self.config.tolerance:
             flags.append("outside tolerance")
 
         return SizeMatchResult(

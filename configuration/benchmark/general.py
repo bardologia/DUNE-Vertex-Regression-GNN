@@ -63,3 +63,13 @@ class BenchmarkConfig:
 
     dataset  : DatasetConfig  = field(default_factory=DatasetConfig)
     training : TrainingConfig = field(default_factory=TrainingConfig)
+
+
+@dataclass(frozen=True)
+class BatchProbeSettings:
+    learning_rate : float = 1e-3
+
+
+@dataclass(frozen=True)
+class BenchmarkReportSettings:
+    leaderboard_metrics : tuple = ("euclidean_mean", "euclidean_median", "mae", "rmse", "median_error", "r2")

@@ -5,7 +5,8 @@ import traceback
 import torch
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
-from configuration.shared                   import MeasurementUnits
+from configuration.benchmark.general         import BatchProbeSettings
+from configuration.shared                    import MeasurementUnits
 from models                                  import get_model
 from tools.runtime.reproducibility           import Reproducibility
 from tools.training.pretraining.batch_finder import BatchSizeFinder
@@ -42,7 +43,7 @@ class MaxBatchProbe:
     def _build_components(self):
         model, _  = get_model(self.model_name, **self.overrides)
         model     = model.to(self.device)
-        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=BatchProbeSettings.learning_rate)
         criterion = Loss(self.config.training.loss, self.stats, self.logger)
         return model, optimizer, criterion
 

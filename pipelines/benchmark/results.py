@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from configuration.shared     import IoNames
-from tools.reporting.markdown import MarkdownDoc, MarkdownTable, ScalarFormatter
+from configuration.benchmark.general import BenchmarkReportSettings
+from configuration.shared            import IoNames
+from tools.reporting.markdown        import MarkdownDoc, MarkdownTable, ScalarFormatter
 
 
 class TrialCollector:
@@ -63,8 +64,6 @@ class TrialCollector:
 
 
 class ComparisonReport:
-    LEADERBOARD_METRICS = ("euclidean_mean", "euclidean_median", "mae", "rmse", "median_error", "r2")
-
     def __init__(self, records, output_directory, configuration, logger):
         self.records          = records
         self.output_directory = Path(output_directory)
@@ -109,9 +108,9 @@ class ComparisonReport:
         return sorted(scored, key=lambda record: record["metrics"][self.rank_metric], reverse=not ascending)
 
     def _leaderboard_table(self, ranked):
-        table = MarkdownTable(["Rank", "Model", *self.LEADERBOARD_METRICS], align=["right", "left"] + ["right"] * len(self.LEADERBOARD_METRICS))
+        table = MarkdownTable(["Rank", "Model", *BenchmarkReportSettings.leaderboard_metrics], align=["right", "left"] + ["right"] * len(BenchmarkReportSettings.leaderboard_metrics))
         for position, record in enumerate(ranked, start=1):
-            cells = [ScalarFormatter.format_scalar(record["metrics"].get(key)) for key in self.LEADERBOARD_METRICS]
+            cells = [ScalarFormatter.format_scalar(record["metrics"].get(key)) for key in BenchmarkReportSettings.leaderboard_metrics]
             table.add_row(position, record["model"], *cells)
         return table
 

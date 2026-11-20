@@ -19,8 +19,6 @@ from pipelines.benchmark.stages import ComparisonStage, MaxBatchStage, OverfitGa
 
 
 class BenchmarkPipeline:
-    RESUMABLE_STAGES = (SizeMatchStage, OverfitGateStage, MaxBatchStage, TrainingStage, ComparisonStage)
-
     def __init__(self, config, logger=None, explicit_paths=None):
         self.config          = config
         self.external_logger = logger
@@ -75,7 +73,8 @@ class BenchmarkPipeline:
         record.save(self.store_geometry)
 
     def _resumes_stage_results(self):
-        results = [self.pipeline_directory / stage.RESULT_FILE for stage in self.RESUMABLE_STAGES]
+        stages  = (SizeMatchStage, OverfitGateStage, MaxBatchStage, TrainingStage, ComparisonStage)
+        results = [self.pipeline_directory / stage.RESULT_FILE for stage in stages]
         return bool(self.config.resume) and any(path.is_file() for path in results)
 
     def _run_size_match(self):
