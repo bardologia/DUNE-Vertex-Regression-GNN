@@ -33,12 +33,12 @@ class OptimizerConfig:
     @classmethod
     def tunable_params(cls) -> dict:
         return {
-            "learning_rate_regression_head" : {"type": "float", "low": 5e-5, "high": 2e-3, "log": True},
-            "learning_rate_pool"            : {"type": "float", "low": 1e-5, "high": 1e-3, "log": True},
-            "learning_rate_encoder"         : {"type": "float", "low": 1e-5, "high": 1e-3, "log": True},
-            "weight_decay_regression_head"  : {"type": "float", "low": 1e-6, "high": 1e-4, "log": True},
-            "weight_decay_pool"             : {"type": "float", "low": 1e-6, "high": 1e-4, "log": True},
-            "weight_decay_encoder"          : {"type": "float", "low": 1e-6, "high": 5e-4, "log": True},
+            "learning_rate_regression_head" : {"type": "float", "low": OptimizerSearchSpace.head_learning_rate_low, "high": OptimizerSearchSpace.head_learning_rate_high, "log": True},
+            "learning_rate_pool"            : {"type": "float", "low": OptimizerSearchSpace.learning_rate_low,      "high": OptimizerSearchSpace.learning_rate_high,      "log": True},
+            "learning_rate_encoder"         : {"type": "float", "low": OptimizerSearchSpace.learning_rate_low,      "high": OptimizerSearchSpace.learning_rate_high,      "log": True},
+            "weight_decay_regression_head"  : {"type": "float", "low": OptimizerSearchSpace.weight_decay_low,       "high": OptimizerSearchSpace.weight_decay_high,       "log": True},
+            "weight_decay_pool"             : {"type": "float", "low": OptimizerSearchSpace.weight_decay_low,       "high": OptimizerSearchSpace.weight_decay_high,       "log": True},
+            "weight_decay_encoder"          : {"type": "float", "low": OptimizerSearchSpace.weight_decay_low,       "high": OptimizerSearchSpace.encoder_decay_high,      "log": True},
         }
 
 
@@ -184,3 +184,14 @@ class TrainingConfig:
     resources        : ResourceConfig        = field(default_factory=ResourceConfig)
     overfit_check    : OverfitCheckConfig    = field(default_factory=OverfitCheckConfig)
     pretrain         : PretrainConfig        = field(default_factory=PretrainConfig)
+
+
+@dataclass(frozen=True)
+class OptimizerSearchSpace:
+    head_learning_rate_low  : float = 5e-5
+    head_learning_rate_high : float = 2e-3
+    learning_rate_low       : float = 1e-5
+    learning_rate_high      : float = 1e-3
+    weight_decay_low        : float = 1e-6
+    weight_decay_high       : float = 1e-4
+    encoder_decay_high      : float = 5e-4
