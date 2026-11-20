@@ -65,7 +65,7 @@ class Warmup:
         self.current_step += 1
         factor             = self.factor()
 
-        if self.current_step >= self.warmup_steps and not self.warmup_finished:
+        if self.current_step >= self.warmup_steps:
             self.warmup_finished = True
             if not self._logged_completion:
                 self.logger.info(f"Warmup completed at step {self.current_step}.")

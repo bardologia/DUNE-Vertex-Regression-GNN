@@ -470,7 +470,7 @@ class GraphRegressor(nn.Module):
         return data.graph_attr
 
     def _prepare_edge_attributes(self, data, reference):
-        edge_attr = getattr(data, "edge_attr", None)
+        edge_attr = data.edge_attr
         if edge_attr is None:
             return None
         if edge_attr.dim() == 1:

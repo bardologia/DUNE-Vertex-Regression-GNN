@@ -74,7 +74,7 @@ class GpuUtilizationSampler:
             pynvml.nvmlInit()
             self._handle  = pynvml.nvmlDeviceGetHandleByIndex(self.gpu_index)
             self._nvml_ok = True
-        except Exception:
+        except pynvml.NVMLError:
             self._nvml_ok = False
             return
 
@@ -91,14 +91,11 @@ class GpuUtilizationSampler:
             self._stop_evt.wait(self.interval_s)
 
     def _sample(self) -> None:
-        try:
-            util = pynvml.nvmlDeviceGetUtilizationRates(self._handle)
-            mem  = pynvml.nvmlDeviceGetMemoryInfo(self._handle)
+        util = pynvml.nvmlDeviceGetUtilizationRates(self._handle)
+        mem  = pynvml.nvmlDeviceGetMemoryInfo(self._handle)
 
-            self._util_samples.append(float(util.gpu))
-            self._vram_samples.append(float(mem.used) / MeasurementUnits.bytes_per_gib)
-        except Exception:
-            pass
+        self._util_samples.append(float(util.gpu))
+        self._vram_samples.append(float(mem.used) / MeasurementUnits.bytes_per_gib)
 
     def stop(self) -> dict:
         if self._thread is not None:
@@ -107,10 +104,7 @@ class GpuUtilizationSampler:
             self._thread = None
 
         if self._nvml_ok:
-            try:
-                pynvml.nvmlShutdown()
-            except Exception:
-                pass
+            pynvml.nvmlShutdown()
             self._nvml_ok = False
 
         if not self._util_samples:
@@ -318,7 +312,7 @@ class DataLoaderSweep:
         self.specs     = list(specs)
         self.on_result = on_result
 
-    def _measure_spec(self, spec: LoaderSpec) -> Optional[dict]:
+    def _measure_spec(self, spec: LoaderSpec) -> dict:
         try:
             record = self.benchmark.measure(spec)
             record["status"] = "ok"
@@ -337,9 +331,6 @@ class DataLoaderSweep:
 
         for spec in self.specs:
             record = self._measure_spec(spec)
-            if record is None:
-                continue
-
             results.append(record)
             if self.on_result is not None:
                 self.on_result(record)

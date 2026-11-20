@@ -109,7 +109,7 @@ class LoaderTuner:
         main_results   = DataLoaderSweep(benchmark, self._worker_specs(batch_size)).run()
         recommendation = SweepReport(main_results, wait_threshold=self.data_wait_target).recommendation
 
-        if not recommendation.get("found"):
+        if not recommendation["found"]:
             self.logger.subsection("Loader tuner found no successful configuration; keeping current loader settings")
             return None
 

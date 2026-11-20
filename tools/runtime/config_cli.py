@@ -93,11 +93,11 @@ class ConfigCli:
 
         self._reject_unknown_options(leftover)
 
-        if getattr(args, "_help_config", False):
+        if args._help_config:
             self._log_config_help()
             raise SystemExit(0)
 
-        if getattr(args, "_detach", False):
+        if args._detach:
             Detacher().ensure()
 
         for path, current in list(self._leaves(self.config)):
@@ -115,7 +115,7 @@ class ConfigCli:
         offenders = []
 
         for token in leftover:
-            if not token.startswith("--") and not token.startswith("-"):
+            if not token.startswith("-"):
                 continue
 
             name = token.split("=", 1)[0]

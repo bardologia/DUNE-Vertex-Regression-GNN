@@ -58,15 +58,14 @@ class GradientClipper:
         if self.param_groups is None or len(self.param_groups) <= 1:
             return
 
-        for index, group in enumerate(self.param_groups):
+        for group in self.param_groups:
             gradients = [parameter.grad.detach() for parameter in group["params"] if parameter.grad is not None]
 
             if not gradients:
                 continue
 
             group_norm = torch.norm(torch.stack(torch._foreach_norm(gradients, 2)), 2).item()
-            name       = group.get("name", str(index))
-            self.tracker.log_scalar(f"train/grad_norm/{name}", group_norm, global_step)
+            self.tracker.log_scalar(f"train/grad_norm/{group['name']}", group_norm, global_step)
 
     def _clip(self, model: torch.nn.Module, norm: float, max_norm: float) -> tuple[float, float]:
         scale = min(1.0, max_norm / (norm + self.epsilon))
