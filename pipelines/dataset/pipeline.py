@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
+from configuration.shared                   import IoNames
 from tools.runtime.reproducibility          import Reproducibility
 
 from pipelines.dataset.augmentation         import Augmentation
@@ -41,7 +42,7 @@ class DatasetPipeline:
 
     def _ensure_store(self):
         store_directory = self.config.data.parquet_store_dir
-        if (store_directory / "events.parquet").exists():
+        if (store_directory / IoNames.events_table_file).exists():
             return
 
         if not self.config.data.build_store:

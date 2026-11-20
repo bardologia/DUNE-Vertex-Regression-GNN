@@ -23,6 +23,11 @@ class IoNames:
     run_stamp_format  : str = "%Y%m%d-%H%M%S"
     json_indent       : int = 2
 
+    raw_event_glob      : str = "*.csv"
+    geometry_table_file : str = "geometry.parquet"
+    events_table_file   : str = "events.parquet"
+    octants_table_file  : str = "octants.parquet"
+
     run_dir                  : str = "{model}_{run}"
     tensorboard_dir          : str = "tensorboard"
     metadata_dir             : str = "metadata"

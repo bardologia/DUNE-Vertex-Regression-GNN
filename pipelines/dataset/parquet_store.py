@@ -23,6 +23,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pa_parquet
 
+from configuration.shared              import IoNames
 from tools.monitoring.logger           import Logger
 from pipelines.dataset.detector_layout import ChannelMapping, CoordinateTransform
 
@@ -65,10 +66,10 @@ class ParquetDatasetWriter:
             logger           : Logger receiving the build report.
         """
         self.input_directory = Path(input_directory)
-        self.store_directory = Path(output_directory) / "parquet"
-        self.geometry_path   = self.store_directory / "geometry.parquet"
-        self.events_path     = self.store_directory / "events.parquet"
-        self.octants_path    = self.store_directory / "octants.parquet"
+        self.store_directory = Path(output_directory) / IoNames.parquet_dir
+        self.geometry_path   = self.store_directory / IoNames.geometry_table_file
+        self.events_path     = self.store_directory / IoNames.events_table_file
+        self.octants_path    = self.store_directory / IoNames.octants_table_file
 
         self.worker_count    = worker_count
         self.logger          = logger
@@ -77,7 +78,7 @@ class ParquetDatasetWriter:
     def discover_files(self) -> list[Path]:
         """Returns the raw CSV files of the input directory in sorted order."""
         self.logger.section("[Parquet Store]")
-        discovered_files = sorted(self.input_directory.glob("*.csv"))
+        discovered_files = sorted(self.input_directory.glob(IoNames.raw_event_glob))
         self.logger.subsection(f"Discovered {len(discovered_files)} raw CSV files in {self.input_directory}")
         return discovered_files
 
@@ -290,11 +291,11 @@ class ParquetDatasetWriter:
         total_size    = geometry_size + events_size + octants_size
 
         self.logger.kv_table({
-            "geometry.parquet"   : f"{geometry_size / 1e6:.2f} MB",
-            "events.parquet"     : f"{events_size / 1e6:.2f} MB",
-            "octants.parquet"    : f"{octants_size / 1e6:.2f} MB",
-            "total"              : f"{total_size / 1e6:.2f} MB",
-            "full-volume events" : f"{len(octant_rows)}",
+            IoNames.geometry_table_file : f"{geometry_size / 1e6:.2f} MB",
+            IoNames.events_table_file   : f"{events_size / 1e6:.2f} MB",
+            IoNames.octants_table_file  : f"{octants_size / 1e6:.2f} MB",
+            "total"                     : f"{total_size / 1e6:.2f} MB",
+            "full-volume events"        : f"{len(octant_rows)}",
         }, title="Parquet Store Summary")
 
     def run(self) -> Path:
@@ -342,9 +343,9 @@ class ParquetEventReader:
             store_directory : Directory holding the three Parquet tables.
         """
         self.store_directory = Path(store_directory)
-        self.geometry_path   = self.store_directory / "geometry.parquet"
-        self.events_path     = self.store_directory / "events.parquet"
-        self.octants_path    = self.store_directory / "octants.parquet"
+        self.geometry_path   = self.store_directory / IoNames.geometry_table_file
+        self.events_path     = self.store_directory / IoNames.events_table_file
+        self.octants_path    = self.store_directory / IoNames.octants_table_file
 
         self.geometry_frame       = None
         self.geometry_fingerprint = None
