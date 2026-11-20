@@ -17,8 +17,9 @@ import torch.nn as nn
 from torch.utils.data       import Dataset
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
-from configuration.shared import IoNames, MeasurementUnits
-from configuration.tools  import LoaderSweepPlotStyle, LoaderTuningSettings
+from configuration.shared          import IoNames, MeasurementUnits
+from configuration.tools           import LoaderSweepPlotStyle, LoaderTuningSettings
+from tools.runtime.reproducibility import Reproducibility
 
 
 @dataclass(frozen=True)
@@ -155,16 +156,13 @@ class GpuFeedBenchmark:
         torch.set_num_threads(1)
 
     def _build_loader(self, spec: LoaderSpec) -> GraphDataLoader:
-        generator = torch.Generator()
-        generator.manual_seed(self.seed)
-
         loader_kwargs = dict(
             batch_size  = spec.batch_size,
             num_workers = spec.num_workers,
             pin_memory  = spec.pin_memory,
             shuffle     = True,
             drop_last   = True,
-            generator   = generator,
+            generator   = Reproducibility.generator(self.seed),
         )
 
         if spec.num_workers > 0:
