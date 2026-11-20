@@ -23,7 +23,7 @@ from rich.table import Table
 from rich.text  import Text
 from rich.theme import Theme
 
-from configuration.shared     import IoNames, LogSettings
+from configuration.shared     import IoNames, LogSettings, MeasurementUnits
 from tools.reporting.markdown import MarkdownDoc, MarkdownTable
 from tools.runtime.run_tag    import RunTag
 
@@ -57,7 +57,7 @@ class LiveMonitor:
 
         for key, value in sorted(self._metrics.items()):
             if isinstance(value, float):
-                table.add_row(key, f"{value:.6f}" if abs(value) < 1000 else f"{value:.2f}")
+                table.add_row(key, f"{value:.6f}" if abs(value) < LogSettings.live_fixed_point_limit else f"{value:.2f}")
             else:
                 table.add_row(key, str(value))
 
@@ -187,11 +187,11 @@ class Logger:
 
     @staticmethod
     def _fmt_duration(seconds: float) -> str:
-        if seconds < 60:
+        if seconds < MeasurementUnits.seconds_per_minute:
             return f"{seconds:.1f}s"
 
-        minutes, secs    = divmod(int(seconds), 60)
-        hours,   minutes = divmod(minutes, 60)
+        minutes, secs    = divmod(int(seconds), MeasurementUnits.seconds_per_minute)
+        hours,   minutes = divmod(minutes, MeasurementUnits.minutes_per_hour)
         return f"{hours}h{minutes:02d}m{secs:02d}s" if hours else f"{minutes}m{secs:02d}s"
 
     def section(self, title: str) -> None:
@@ -343,8 +343,8 @@ class Logger:
 
     def close(self) -> None:
         elapsed          = datetime.now() - self.start_time
-        hours, remainder = divmod(int(elapsed.total_seconds()), 3600)
-        minutes, seconds = divmod(remainder, 60)
+        hours, remainder = divmod(int(elapsed.total_seconds()), MeasurementUnits.seconds_per_hour)
+        minutes, seconds = divmod(remainder, MeasurementUnits.seconds_per_minute)
 
         self.console.print()
         self.console.print(Rule(Text(f"END {self.name}", style="section"), style=LogSettings.accent_style))

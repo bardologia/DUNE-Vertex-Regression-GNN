@@ -173,6 +173,10 @@ class MeasurementUnits:
     bytes_per_mb  : float = 1e6
     percent       : float = 100.0
 
+    seconds_per_minute : int = 60
+    minutes_per_hour   : int = 60
+    seconds_per_hour   : int = seconds_per_minute * minutes_per_hour
+
 
 @dataclass(frozen=True)
 class LogSettings:
@@ -194,6 +198,7 @@ class LogSettings:
     progress_description_format : str   = "[progress.description]{task.description}"
     live_refresh_per_second     : int   = 4
     progress_refresh_per_second : int   = 8
+    live_fixed_point_limit      : int   = 1000
 
     terminal_columns  : int = 120
     terminal_lines    : str = "32"

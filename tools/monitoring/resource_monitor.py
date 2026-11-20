@@ -7,13 +7,11 @@ import time
 import psutil
 import pynvml
 
-from configuration.shared import IoNames, MeasurementUnits
+from configuration.monitoring.general import ResourceMonitorSettings
+from configuration.shared             import IoNames, MeasurementUnits
 
 
 class ResourceMonitor:
-    TB_SCALARS      = ("ram_pct", "proc_rss_gb", "swap_pct", "shm_pct", "cpu_pct", "proc_cpu_pct", "disk_read_mb_s", "disk_write_mb_s")
-    TB_GPU_SCALARS  = ("util_pct", "vram_pct", "temp_c", "power_w")
-
     def __init__(self, config, logger, tracker=None, step_getter=None):
         self.cfg         = config
         self.logger      = logger
@@ -159,7 +157,7 @@ class ResourceMonitor:
         now = time.time()
         try:
             io = psutil.disk_io_counters()
-            dt = max(now - self._last_disk_t, 1e-6)
+            dt = max(now - self._last_disk_t, ResourceMonitorSettings.min_disk_interval_s)
             if io is not None and self._last_disk_io is not None:
                 metrics["disk_read_mb_s"]  = (io.read_bytes - self._last_disk_io.read_bytes) / dt / MeasurementUnits.bytes_per_mib
                 metrics["disk_write_mb_s"] = (io.write_bytes - self._last_disk_io.write_bytes) / dt / MeasurementUnits.bytes_per_mib
@@ -182,7 +180,7 @@ class ResourceMonitor:
                     used_gb  = self._bytes_to_gb(mem.used)
                     total_gb = self._bytes_to_gb(mem.total)
                     free_gb  = self._bytes_to_gb(mem.free)
-                    pct      = 100.0 * mem.used / max(mem.total, 1)
+                    pct      = ResourceMonitorSettings.percent_scale * mem.used / max(mem.total, 1)
 
                     metrics[f"gpu{i}_vram_used_gb"]  = used_gb
                     metrics[f"gpu{i}_vram_free_gb"]  = free_gb
@@ -198,7 +196,7 @@ class ResourceMonitor:
                         pass
 
                     try:
-                        power = pynvml.nvmlDeviceGetPowerUsage(h) / 1000.0
+                        power = pynvml.nvmlDeviceGetPowerUsage(h) / ResourceMonitorSettings.milliwatts_per_watt
                         metrics[f"gpu{i}_power_w"] = float(power)
                     except Exception:
                         pass
@@ -226,7 +224,7 @@ class ResourceMonitor:
                 f"shm {metrics['shm_used_gb']:.2f} GB)",
             )
 
-        vram_pct = (100.0 * gpu_used / gpu_total) if gpu_total > 0 else 0.0
+        vram_pct = (ResourceMonitorSettings.percent_scale * gpu_used / gpu_total) if gpu_total > 0 else 0.0
         if vram_pct >= self.warn_vram_pct and gpu_total > 0:
             self._maybe_warn(
                 "vram",
@@ -265,7 +263,7 @@ class ResourceMonitor:
         gpu_used, gpu_total, gpu_index = self._sample_gpu_nvml_metrics(metrics)
 
         metrics["vram_used_gb"] = gpu_used
-        metrics["vram_pct"]     = (100.0 * gpu_used / gpu_total) if gpu_total > 0 else 0.0
+        metrics["vram_pct"]     = (ResourceMonitorSettings.percent_scale * gpu_used / gpu_total) if gpu_total > 0 else 0.0
 
         self._update_peak_metrics(metrics)
         self._check_warnings(metrics, gpu_used, gpu_total, gpu_index)
@@ -273,9 +271,9 @@ class ResourceMonitor:
         return metrics
 
     def _tb_metrics(self, metrics):
-        allowed = set(self.TB_SCALARS)
+        allowed = set(ResourceMonitorSettings.tensorboard_scalars)
         for i in range(len(self._gpu_handles)):
-            allowed.update(f"gpu{i}_{suffix}" for suffix in self.TB_GPU_SCALARS)
+            allowed.update(f"gpu{i}_{suffix}" for suffix in ResourceMonitorSettings.tensorboard_gpu_scalars)
 
         return {k: v for k, v in metrics.items() if k in allowed}
 
@@ -341,7 +339,7 @@ class ResourceMonitor:
             return
 
         self._stop_evt.set()
-        self._thread.join(timeout=max(self.interval * 2, 5.0))
+        self._thread.join(timeout=max(self.interval * ResourceMonitorSettings.join_interval_factor, ResourceMonitorSettings.min_join_timeout_s))
         self._thread = None
 
     def stop(self):
