@@ -118,6 +118,6 @@ class LoaderTuner:
 
         choice = {"num_workers": num_workers, "prefetch_factor": refined["prefetch_factor"], "pin_memory": refined["pin_memory"]}
 
-        self.logger.subsection(f"Loader tuner -> workers={choice['num_workers']} prefetch={choice['prefetch_factor']} pin={int(choice['pin_memory'])} (cpu_bound={recommendation['cpu_bound']})")
+        self.logger.subsection(f"Loader tuner chose workers={choice['num_workers']} prefetch={choice['prefetch_factor']} pin={int(choice['pin_memory'])} (cpu_bound={recommendation['cpu_bound']})")
 
         return choice

@@ -34,7 +34,7 @@ class Checkpoint:
             self.best_val_loss = float(val_loss)
             self.best_epoch    = int(epoch)
             self.save(trainer, self.save_path, epoch)
-            self.logger.subsection(f"Checkpoint : new best  val_loss={self.best_val_loss:.4f}  -> {self.save_path}")
+            self.logger.subsection(f"Checkpoint : new best  val_loss={self.best_val_loss:.4f}  saved to {self.save_path}")
             return True
         else:
             self.logger.subsection(f"Checkpoint : no improvement  (best={self.best_val_loss:.4f} @ epoch {self.best_epoch + 1})")

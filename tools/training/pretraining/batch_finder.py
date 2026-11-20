@@ -125,12 +125,12 @@ class BatchSizeFinder:
                 if self.on_oom is not None:
                     self.on_oom()
                 result["trials"].append(self._record(batch_size, None, "OOM"))
-                self.logger.subsection(f"batch {batch_size:>5} -> OOM")
+                self.logger.subsection(f"batch {batch_size:>5}: OOM")
                 break
 
             fits = peak_gb <= self.budget_gb
             result["trials"].append(self._record(batch_size, peak_gb, "FIT" if fits else "OVER"))
-            self.logger.subsection(f"batch {batch_size:>5} -> {peak_gb:.2f} GB {'FIT' if fits else 'OVER'}")
+            self.logger.subsection(f"batch {batch_size:>5}: {peak_gb:.2f} GB {'FIT' if fits else 'OVER'}")
 
             if not fits:
                 break
