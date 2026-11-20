@@ -56,7 +56,6 @@ class LoaderSweepPlotStyle:
     dpi             : int   = 300
     marker          : str   = "o"
     legend_anchor   : tuple = (1.02, 1.0)
-    percent         : float = 100.0
     threshold_color : str   = "black"
     threshold_style : str   = "--"
     threshold_width : float = 1.0

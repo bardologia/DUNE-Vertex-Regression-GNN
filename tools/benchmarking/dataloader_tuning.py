@@ -395,9 +395,9 @@ class SweepReport:
 
         for batch_size, group in self.ok_frame.groupby("batch_size"):
             ordered = group.sort_values("num_workers")
-            axes.plot(ordered["num_workers"], LoaderSweepPlotStyle.percent * ordered["data_wait_fraction"], marker=LoaderSweepPlotStyle.marker, label=f"batch {batch_size}")
+            axes.plot(ordered["num_workers"], MeasurementUnits.percent * ordered["data_wait_fraction"], marker=LoaderSweepPlotStyle.marker, label=f"batch {batch_size}")
 
-        axes.axhline(LoaderSweepPlotStyle.percent * self.wait_threshold, color=LoaderSweepPlotStyle.threshold_color, linestyle=LoaderSweepPlotStyle.threshold_style, linewidth=LoaderSweepPlotStyle.threshold_width, label=f"{LoaderSweepPlotStyle.percent * self.wait_threshold:.0f}% target")
+        axes.axhline(MeasurementUnits.percent * self.wait_threshold, color=LoaderSweepPlotStyle.threshold_color, linestyle=LoaderSweepPlotStyle.threshold_style, linewidth=LoaderSweepPlotStyle.threshold_width, label=f"{MeasurementUnits.percent * self.wait_threshold:.0f}% target")
         axes.set_xlabel("DataLoader workers")
         axes.set_ylabel("GPU idle waiting for data (%)")
         axes.set_title("Data-starvation share of step time vs worker count")

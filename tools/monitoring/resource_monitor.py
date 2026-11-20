@@ -121,7 +121,7 @@ class ResourceMonitor:
         gpu_used, gpu_total, gpu_index = self._sample_gpu_nvml_metrics(metrics)
 
         metrics["vram_used_gb"] = gpu_used
-        metrics["vram_pct"]     = (ResourceMonitorSettings.percent_scale * gpu_used / gpu_total) if gpu_total > 0 else 0.0
+        metrics["vram_pct"]     = (MeasurementUnits.percent * gpu_used / gpu_total) if gpu_total > 0 else 0.0
 
         self._update_peak_metrics(metrics)
         self._check_warnings(metrics, gpu_used, gpu_total, gpu_index)
@@ -230,7 +230,7 @@ class ResourceMonitor:
                     used_gb  = self._bytes_to_gb(mem.used)
                     total_gb = self._bytes_to_gb(mem.total)
                     free_gb  = self._bytes_to_gb(mem.free)
-                    pct      = ResourceMonitorSettings.percent_scale * mem.used / max(mem.total, 1)
+                    pct      = MeasurementUnits.percent * mem.used / max(mem.total, 1)
 
                     metrics[f"gpu{i}_vram_used_gb"]  = used_gb
                     metrics[f"gpu{i}_vram_free_gb"]  = free_gb
@@ -278,7 +278,7 @@ class ResourceMonitor:
                 f"shm {metrics['shm_used_gb']:.2f} GB)",
             )
 
-        vram_pct = (ResourceMonitorSettings.percent_scale * gpu_used / gpu_total) if gpu_total > 0 else 0.0
+        vram_pct = (MeasurementUnits.percent * gpu_used / gpu_total) if gpu_total > 0 else 0.0
         if vram_pct >= self.warn_vram_pct and gpu_total > 0:
             self._maybe_warn(
                 "vram",
