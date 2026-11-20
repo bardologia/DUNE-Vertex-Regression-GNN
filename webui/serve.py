@@ -4,23 +4,32 @@ import argparse
 import sys
 from pathlib import Path
 
-REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
-if str(REPOSITORY_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPOSITORY_ROOT))
+
+class RepositoryPath:
+
+    @staticmethod
+    def register() -> None:
+        repository_root = str(Path(__file__).resolve().parent.parent)
+        if repository_root not in sys.path:
+            sys.path.insert(0, repository_root)
+
+
+RepositoryPath.register()
 
 from tools.runtime.warnings_filter import ThirdPartyWarnings
 
 ThirdPartyWarnings.silence()
 
-from web_ui_server import WebUIServer
+from configuration.webui.general import ServerSettings
+from web_ui_server               import WebUIServer
 
 
 class ServeEntry:
 
     def __init__(self) -> None:
         self.parser = argparse.ArgumentParser(description="DUNE-GNN control console")
-        self.parser.add_argument("--host", default="127.0.0.1")
-        self.parser.add_argument("--port", type=int, default=8765)
+        self.parser.add_argument("--host", default=ServerSettings.host)
+        self.parser.add_argument("--port", type=int, default=ServerSettings.port)
 
     def run(self) -> None:
         arguments = self.parser.parse_args()

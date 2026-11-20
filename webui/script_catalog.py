@@ -1,63 +1,11 @@
 from __future__ import annotations
 
+from configuration.webui.general import ScriptRegistry
+
 from project_paths import ProjectPaths
 
 
 class ScriptCatalog:
-
-    METADATA = {
-        "train": {
-            "label"    : "Train",
-            "category" : "Training",
-            "purpose"  : "Train one GNN model end to end, logging checkpoints and metrics to runs/.",
-        },
-        "tune": {
-            "label"    : "Tune",
-            "category" : "Training",
-            "purpose"  : "Run the Optuna hyperparameter search over the model and training configuration.",
-        },
-        "cross_validate": {
-            "label"    : "Cross-Validate",
-            "category" : "Training",
-            "purpose"  : "Run stratified K-fold cross-validation, aggregating held-out test metrics across folds.",
-        },
-        "benchmark": {
-            "label"    : "Benchmark",
-            "category" : "Training",
-            "purpose"  : "Benchmark the whole model zoo: capacity matching, overfit gate, max-batch probe, training, and a ranked comparison report.",
-        },
-        "baseline": {
-            "label"    : "Baseline",
-            "category" : "Training",
-            "purpose"  : "Tune and train the LightGBM and XGBoost baselines on tabular summary features of the same splits, writing leaderboard-comparable runs.",
-        },
-        "build_parquet_store": {
-            "label"    : "Build Parquet Store",
-            "category" : "Data",
-            "purpose"  : "Materialise the raw events into the Parquet store: sensor positions from the documented module mapping of the raw bins, face totals dropped, and octant expansion.",
-        },
-        "infer": {
-            "label"    : "Infer",
-            "category" : "Analysis",
-            "purpose"  : "Run the full inference analysis (metrics, plots, animations, report) on a training run.",
-        },
-        "explain": {
-            "label"    : "Explain",
-            "category" : "Analysis",
-            "purpose"  : "Attribute the graph node and edge features of a trained run via permutation, occlusion, and gradient saliency, producing plots and a report.",
-        },
-    }
-
-    ORDER = [
-        "build_parquet_store",
-        "train",
-        "infer",
-        "explain",
-        "tune",
-        "cross_validate",
-        "benchmark",
-        "baseline",
-    ]
 
     def __init__(self, paths: ProjectPaths) -> None:
         self.paths = paths
@@ -67,7 +15,7 @@ class ScriptCatalog:
         if entry is None or not entry["path"].exists():
             return None
 
-        metadata = self.METADATA.get(key, {"label": key, "category": "Other", "purpose": ""})
+        metadata = dict(ScriptRegistry.metadata).get(key, {"label": key, "category": "Other", "purpose": ""})
 
         return {
             "key"          : key,
@@ -88,7 +36,7 @@ class ScriptCatalog:
 
     def list(self) -> list[dict]:
         scripts = []
-        for key in self.ORDER:
+        for key in ScriptRegistry.order:
             description = self.get(key)
             if description is not None:
                 scripts.append(description)

@@ -4,20 +4,14 @@ import json
 from datetime import datetime
 from pathlib  import Path
 
-from configuration.shared import IoNames
+from configuration.shared        import IoNames
+from configuration.webui.general import ResultsBrowsing
 
 from project_paths import ProjectPaths
 from server_logger import ServerLogger
 
 
 class ResultsBrowser:
-
-    MAX_DEPTH          = 6
-    NESTED_RUN_DEPTH   = 2
-    BEST_METRIC_SPLITS = ("test", "val", "train")
-    BEST_METRIC_NAME   = "euclidean_mean"
-    COORDINATE_NAMES   = ("x", "y", "z")
-    ERROR_METRIC_NAMES = ("mae", "rmse")
 
     def __init__(self, paths: ProjectPaths, logger: ServerLogger) -> None:
         self.paths  = paths
@@ -29,7 +23,7 @@ class ResultsBrowser:
     def _collect_runs(self, directory: Path, depth: int) -> list[Path]:
         if self._is_run(directory):
             return [directory]
-        if depth >= self.NESTED_RUN_DEPTH:
+        if depth >= ResultsBrowsing.nested_run_depth:
             return []
 
         try:
@@ -76,10 +70,10 @@ class ResultsBrowser:
             return None
 
         splits = metrics.get("splits", {})
-        for split_name in self.BEST_METRIC_SPLITS:
+        for split_name in ResultsBrowsing.best_metric_splits:
             split_metrics = splits.get(split_name, {})
-            if self.BEST_METRIC_NAME in split_metrics:
-                return {"name": f"{split_name}/{self.BEST_METRIC_NAME}", "value": split_metrics[self.BEST_METRIC_NAME], "unit": metrics.get("unit")}
+            if ResultsBrowsing.best_metric_name in split_metrics:
+                return {"name": f"{split_name}/{ResultsBrowsing.best_metric_name}", "value": split_metrics[ResultsBrowsing.best_metric_name], "unit": metrics.get("unit")}
         return None
 
     def _coordinate_errors(self, metrics):
@@ -87,14 +81,14 @@ class ResultsBrowser:
             return None
 
         splits        = metrics.get("splits", {})
-        required_keys = [f"{metric}_{name}" for metric in self.ERROR_METRIC_NAMES for name in self.COORDINATE_NAMES]
+        required_keys = [f"{metric}_{name}" for metric in ResultsBrowsing.error_metric_names for name in ResultsBrowsing.coordinate_names]
 
-        for split_name in self.BEST_METRIC_SPLITS:
+        for split_name in ResultsBrowsing.best_metric_splits:
             split_metrics = splits.get(split_name, {})
             if not all(key in split_metrics for key in required_keys):
                 continue
 
-            values = {metric: {name: split_metrics[f"{metric}_{name}"] for name in self.COORDINATE_NAMES} for metric in self.ERROR_METRIC_NAMES}
+            values = {metric: {name: split_metrics[f"{metric}_{name}"] for name in ResultsBrowsing.coordinate_names} for metric in ResultsBrowsing.error_metric_names}
             return {"split": split_name, "unit": metrics.get("unit"), "values": values}
         return None
 
@@ -114,7 +108,7 @@ class ResultsBrowser:
             if entry.is_dir():
                 if entry.name in IoNames.browser_skipped_dirs or entry.name.startswith("."):
                     continue
-                if depth < self.MAX_DEPTH:
+                if depth < ResultsBrowsing.max_depth:
                     children.append(self._tree(entry, depth + 1))
             elif entry.is_file():
                 try:

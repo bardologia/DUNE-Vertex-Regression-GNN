@@ -4,7 +4,8 @@ import json
 import subprocess
 import threading
 
-from configuration.shared import IoNames
+from configuration.shared        import IoNames
+from configuration.webui.general import LaunchSettings, ModelFamilies
 
 from project_paths import ProjectPaths
 
@@ -33,38 +34,6 @@ class ModelLibrary:
         "print(json.dumps({'models': models}))\n"
     )
 
-    FAMILIES = [
-        {
-            "family": "Attention and transformer",
-            "models": [
-                {"key": "gps",           "name": "GPS",               "blurb": "Local message passing plus global self-attention", "recommended": True},
-                {"key": "gps_lite",      "name": "GPS Lite",          "blurb": "Narrow GPS variant for fast iteration"},
-                {"key": "gps_cascade",   "name": "GPS Cascade",       "blurb": "GPS trunk with a cascade regression head"},
-                {"key": "gatv2",         "name": "GATv2",             "blurb": "Dynamic attention over neighbours"},
-                {"key": "gatv2_cascade", "name": "GATv2 Cascade",     "blurb": "GATv2 trunk with a cascade regression head"},
-                {"key": "transformer",   "name": "Graph Transformer", "blurb": "Full transformer convolution with edge features"},
-            ],
-        },
-        {
-            "family": "Message passing",
-            "models": [
-                {"key": "gcn",          "name": "GCN",          "blurb": "Spectral graph convolution baseline"},
-                {"key": "graphsage",    "name": "GraphSAGE",    "blurb": "Sampled neighbour aggregation"},
-                {"key": "gine",         "name": "GINE",         "blurb": "Isomorphism network with edge features"},
-                {"key": "gine_cascade", "name": "GINE Cascade", "blurb": "GINE trunk with a cascade regression head"},
-                {"key": "general_conv", "name": "GeneralConv",  "blurb": "Configurable general-purpose convolution"},
-                {"key": "res_gated",    "name": "ResGated",     "blurb": "Residual gated graph convolution"},
-            ],
-        },
-        {
-            "family": "Aggregation and dynamic graphs",
-            "models": [
-                {"key": "pna",      "name": "PNA",      "blurb": "Principal neighbourhood aggregation, multi-aggregator"},
-                {"key": "edgeconv", "name": "EdgeConv", "blurb": "Dynamic k-NN graph rebuilt in feature space"},
-            ],
-        },
-    ]
-
     def __init__(self, paths: ProjectPaths) -> None:
         self.paths = paths
         self.cache = None
@@ -86,12 +55,12 @@ class ModelLibrary:
         argv = [interpreter, "-c", self.BOOTSTRAP, str(self.paths.repo_root)]
 
         try:
-            completed = subprocess.run(argv, cwd=str(self.paths.repo_root), capture_output=True, text=True, timeout=180)
+            completed = subprocess.run(argv, cwd=str(self.paths.repo_root), capture_output=True, text=True, timeout=LaunchSettings.introspection_timeout_s)
         except (OSError, subprocess.TimeoutExpired) as error:
             return {"ok": False, "error": f"model introspection failed: {error}"}
 
         if completed.returncode != 0:
-            tail = "\n".join(completed.stderr.strip().splitlines()[-4:])
+            tail = "\n".join(completed.stderr.strip().splitlines()[-LaunchSettings.introspection_error_lines:])
             return {"ok": False, "error": f"model introspection failed:\n{tail}"}
 
         try:
@@ -110,7 +79,7 @@ class ModelLibrary:
 
     def _families(self, models: list[dict]) -> dict:
         defaults  = {model["name"]: model["config_defaults"] for model in models}
-        described = {entry["key"] for family in self.FAMILIES for entry in family["models"]}
+        described = {entry["key"] for family in ModelFamilies.families for entry in family["models"]}
 
         missing = sorted(set(defaults) - described)
         unknown = sorted(described - set(defaults))
@@ -123,7 +92,7 @@ class ModelLibrary:
             return {"ok": False, "error": "; ".join(problems)}
 
         families = []
-        for family in self.FAMILIES:
+        for family in ModelFamilies.families:
             entries = []
             for entry in family["models"]:
                 entries.append({

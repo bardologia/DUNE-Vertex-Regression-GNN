@@ -12,7 +12,8 @@ import time
 from datetime    import datetime
 from collections import deque
 
-from configuration.shared import IoNames, LogSettings
+from configuration.shared        import IoNames, LogSettings
+from configuration.webui.general import ProcessSettings
 
 from project_paths import ProjectPaths
 from server_logger import ServerLogger
@@ -49,9 +50,6 @@ class JobStream:
 
 
 class ProcessManager:
-
-    OVERRIDE_NAME    = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
-    FINISHED_HISTORY = 50
 
     def __init__(self, paths: ProjectPaths, logger: ServerLogger) -> None:
         self.paths          = paths
@@ -121,7 +119,7 @@ class ProcessManager:
     def _clean_overrides(self, overrides: dict | None) -> dict:
         cleaned = {}
         for path, value in (overrides or {}).items():
-            if not isinstance(path, str) or not self.OVERRIDE_NAME.match(path):
+            if not isinstance(path, str) or not re.match(ProcessSettings.override_name_pattern, path):
                 continue
             cleaned[path] = str(value)
         return cleaned
@@ -157,7 +155,7 @@ class ProcessManager:
         decoder    = codecs.getincrementaldecoder("utf-8")("replace")
 
         while True:
-            chunk = os.read(descriptor, 4096)
+            chunk = os.read(descriptor, ProcessSettings.pipe_read_bytes)
             if not chunk:
                 break
             text = decoder.decode(chunk)
@@ -190,11 +188,11 @@ class ProcessManager:
 
     def _prune_finished(self) -> None:
         finished = [record for record in self.processes.values() if record["status"] != "running"]
-        if len(finished) <= self.FINISHED_HISTORY:
+        if len(finished) <= ProcessSettings.finished_history:
             return
 
         finished.sort(key=lambda record: record["started"])
-        for record in finished[: len(finished) - self.FINISHED_HISTORY]:
+        for record in finished[: len(finished) - ProcessSettings.finished_history]:
             self.processes.pop(record["pid"], None)
             self.streams.pop(record["pid"], None)
 
@@ -244,7 +242,7 @@ class ProcessManager:
         except (ProcessLookupError, PermissionError):
             pass
 
-    def stop_all(self, grace: float = 6.0) -> None:
+    def stop_all(self) -> None:
         with self.lock:
             running = [record for record in self.processes.values() if record["status"] == "running"]
 
@@ -252,7 +250,7 @@ class ProcessManager:
             self._signal_group(record["pid"], signal.SIGTERM)
             self.logger.warning(f"shutdown stop for pid {record['pid']}")
 
-        deadline = time.monotonic() + grace
+        deadline = time.monotonic() + ProcessSettings.stop_grace_s
         for record in running:
             remaining = max(0.0, deadline - time.monotonic())
             process   = record["process"]

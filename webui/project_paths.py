@@ -3,47 +3,11 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from configuration.shared import IoNames
+from configuration.shared        import IoNames
+from configuration.webui.general import LaunchSettings, ScriptRegistry
 
 
 class ProjectPaths:
-
-    PREFERRED_ENVIRONMENT = "conda:Dune"
-
-    SCRIPTS = {
-        "train": {
-            "entry_config_module" : "configuration.entry.general",
-            "entry_config_class"  : "TrainEntryConfig",
-        },
-        "tune": {
-            "entry_config_module" : "configuration.entry.general",
-            "entry_config_class"  : "TuneEntryConfig",
-        },
-        "cross_validate": {
-            "entry_config_module" : "configuration.entry.general",
-            "entry_config_class"  : "CrossValidationEntryConfig",
-        },
-        "benchmark": {
-            "entry_config_module" : "configuration.benchmark.general",
-            "entry_config_class"  : "BenchmarkConfig",
-        },
-        "baseline": {
-            "entry_config_module" : "configuration.entry.general",
-            "entry_config_class"  : "BaselineEntryConfig",
-        },
-        "infer": {
-            "entry_config_module" : "configuration.entry.general",
-            "entry_config_class"  : "InferenceEntryConfig",
-        },
-        "explain": {
-            "entry_config_module" : "configuration.explainability.general",
-            "entry_config_class"  : "FeatureImportanceConfig",
-        },
-        "build_parquet_store": {
-            "entry_config_module" : "configuration.entry.general",
-            "entry_config_class"  : "DatasetEntryConfig",
-        },
-    }
 
     def __init__(self) -> None:
         self.repo_root          = IoNames.project_root
@@ -56,10 +20,10 @@ class ProjectPaths:
         self.explorer_cache_dir = self.repo_root / IoNames.data_frames_dir / IoNames.event_explorer_dir
 
     def script_keys(self) -> list[str]:
-        return list(self.SCRIPTS.keys())
+        return list(dict(ScriptRegistry.entry_configs).keys())
 
     def script_entry(self, key: str) -> dict | None:
-        specification = self.SCRIPTS.get(key)
+        specification = dict(ScriptRegistry.entry_configs).get(key)
         if specification is None:
             return None
 
@@ -105,7 +69,7 @@ class ProjectPaths:
         candidates = interpreters if interpreters is not None else self.discover_interpreters()
 
         for candidate in candidates:
-            if candidate["label"] == self.PREFERRED_ENVIRONMENT:
+            if candidate["label"] == LaunchSettings.preferred_environment:
                 return candidate["path"]
 
         return candidates[0]["path"] if candidates else sys.executable

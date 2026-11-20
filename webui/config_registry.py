@@ -4,10 +4,11 @@ import json
 import subprocess
 import threading
 
-from configuration.shared import IoNames
+from configuration.shared        import IoNames
+from configuration.webui.general import LaunchSettings
 
-from launch_layout  import LaunchLayout, LayoutError
-from project_paths  import ProjectPaths
+from launch_layout import LaunchLayout, LayoutError
+from project_paths import ProjectPaths
 
 
 class ConfigRegistry:
@@ -82,12 +83,12 @@ class ConfigRegistry:
         argv = [interpreter, "-c", self.BOOTSTRAP, str(self.paths.repo_root), entry["entry_config_module"], entry["entry_config_class"]]
 
         try:
-            completed = subprocess.run(argv, cwd=str(self.paths.repo_root), capture_output=True, text=True, timeout=180)
+            completed = subprocess.run(argv, cwd=str(self.paths.repo_root), capture_output=True, text=True, timeout=LaunchSettings.introspection_timeout_s)
         except (OSError, subprocess.TimeoutExpired) as error:
             return {"ok": False, "error": f"config introspection failed: {error}"}
 
         if completed.returncode != 0:
-            tail = "\n".join(completed.stderr.strip().splitlines()[-4:])
+            tail = "\n".join(completed.stderr.strip().splitlines()[-LaunchSettings.introspection_error_lines:])
             return {"ok": False, "error": f"config introspection failed:\n{tail}"}
 
         try:

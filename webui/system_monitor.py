@@ -7,6 +7,8 @@ import time
 
 import psutil
 
+from configuration.webui.general import SystemMonitorSettings
+
 try:
     import pynvml
     _PYNVML_AVAILABLE = True
@@ -15,8 +17,6 @@ except ImportError:
 
 
 class SystemMonitor:
-
-    PROCESS_LIMIT = 12
 
     def __init__(self, paths) -> None:
         self.paths      = paths
@@ -140,7 +140,7 @@ class SystemMonitor:
                 continue
 
         rows.sort(key=lambda row: (row["cpu"], row["rss"]), reverse=True)
-        return rows[: self.PROCESS_LIMIT]
+        return rows[:SystemMonitorSettings.process_limit]
 
     def status(self) -> dict:
         memory = self._memory()

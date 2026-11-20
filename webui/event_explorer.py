@@ -9,6 +9,7 @@ import numpy as np
 
 from configuration.data.general      import DatasetConfig
 from configuration.shared            import IoNames
+from configuration.webui.general     import EventExplorerSettings
 from pipelines.dataset.parquet_store import ParquetEventReader
 from pipelines.shared.store_geometry import CacheGeometryStamp, StoreGeometryRecord
 
@@ -18,9 +19,6 @@ from subprocess_runner import SubprocessRunner
 
 
 class EventExplorer:
-
-    SPLITS   = ("test", "val", "train")
-    DATASETS = ({"name": "raw", "label": "raw events"}, {"name": "augmented", "label": "octant-augmented"})
 
     def __init__(self, paths: ProjectPaths, logger: ServerLogger) -> None:
         self.paths  = paths
@@ -32,7 +30,7 @@ class EventExplorer:
 
     def list_sources(self) -> dict:
         datasets = []
-        for dataset in self.DATASETS:
+        for dataset in EventExplorerSettings.datasets:
             cached = (self.paths.explorer_cache_dir / f"{dataset['name']}{IoNames.npz_suffix}").is_file()
             datasets.append({"name": dataset["name"], "label": dataset["label"], "cached": cached})
 
@@ -51,18 +49,18 @@ class EventExplorer:
             if not (directory / IoNames.metadata_dir / IoNames.resolved_config_file).is_file():
                 continue
 
-            cached = [split for split in self.SPLITS if (directory / IoNames.analysis_dir / split / IoNames.event_explorer_cache_file).is_file()]
+            cached = [split for split in EventExplorerSettings.splits if (directory / IoNames.analysis_dir / split / IoNames.event_explorer_cache_file).is_file()]
             runs.append({"run": directory.name, "model": self._model_name(directory), "cached": cached})
 
         return runs
 
     def start_load(self, kind: str, name: str, split: str) -> dict:
         if kind == "dataset":
-            if name not in [dataset["name"] for dataset in self.DATASETS]:
+            if name not in [dataset["name"] for dataset in EventExplorerSettings.datasets]:
                 return {"ok": False, "error": f"unknown dataset: {name}"}
             split = "all"
         elif kind == "run":
-            if split not in self.SPLITS:
+            if split not in EventExplorerSettings.splits:
                 return {"ok": False, "error": f"unknown split: {split}"}
             if self._run_directory(name) is None:
                 return {"ok": False, "error": f"unknown run: {name}"}
@@ -265,7 +263,7 @@ class EventExplorer:
             "detector_max"   : positions.max(axis=0).tolist() if positions.size else [0.0, 0.0, 0.0],
             "error_mean"     : float(error.mean()) if error.size else 0.0,
             "error_median"   : float(np.median(error)) if error.size else 0.0,
-            "error_p90"      : float(np.percentile(error, 90.0)) if error.size else 0.0,
+            "error_p90"      : float(np.percentile(error, EventExplorerSettings.error_percentile)) if error.size else 0.0,
         }
         return data, meta
 

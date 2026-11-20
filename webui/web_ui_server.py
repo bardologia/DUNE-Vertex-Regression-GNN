@@ -2,24 +2,26 @@ from __future__ import annotations
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from config_registry     import ConfigRegistry
-from event_explorer      import EventExplorer
-from gpu_watchdog        import GpuWatchdog
-from model_library       import ModelLibrary
+from configuration.webui.general import ServerSettings
+
+from config_registry       import ConfigRegistry
+from event_explorer        import EventExplorer
+from gpu_watchdog          import GpuWatchdog
+from model_library         import ModelLibrary
 from preprocessing_preview import PreprocessingPreview
-from process_manager     import ProcessManager
-from project_paths       import ProjectPaths
-from request_router      import RequestRouter
-from results_browser     import ResultsBrowser
-from script_catalog      import ScriptCatalog
-from server_logger       import ServerLogger
-from system_monitor      import SystemMonitor
-from tensorboard_manager import TensorboardManager
+from process_manager       import ProcessManager
+from project_paths         import ProjectPaths
+from request_router        import RequestRouter
+from results_browser       import ResultsBrowser
+from script_catalog        import ScriptCatalog
+from server_logger         import ServerLogger
+from system_monitor        import SystemMonitor
+from tensorboard_manager   import TensorboardManager
 
 
 class _Handler(BaseHTTPRequestHandler):
 
-    protocol_version = "HTTP/1.1"
+    protocol_version = ServerSettings.protocol_version
 
     def do_GET(self) -> None:
         self.server.router.route(self)
@@ -33,7 +35,7 @@ class _Handler(BaseHTTPRequestHandler):
 
 class WebUIServer:
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 8765) -> None:
+    def __init__(self, host: str = ServerSettings.host, port: int = ServerSettings.port) -> None:
         self.host   = host
         self.port   = port
         self.logger = ServerLogger()
@@ -81,8 +83,8 @@ class WebUIServer:
         self._report_ready()
         self.gpu_watchdog.start()
 
-        server               = ThreadingHTTPServer((self.host, self.port), _Handler)
-        server.router        = self.router
+        server                = ThreadingHTTPServer((self.host, self.port), _Handler)
+        server.router         = self.router
         server.daemon_threads = True
 
         try:

@@ -12,6 +12,7 @@ from launch_layout import LaunchLayout
 from configuration.benchmark      import BenchmarkConfig
 from configuration.entry          import BaselineEntryConfig, CrossValidationEntryConfig, DatasetEntryConfig, InferenceEntryConfig, TrainEntryConfig, TuneEntryConfig
 from configuration.explainability import FeatureImportanceConfig
+from configuration.webui.general  import LaunchForms
 
 
 ENTRY_CONFIGS = {
@@ -47,7 +48,7 @@ def test_layout_claims_every_configuration_field(script_key):
 
 
 def test_every_registered_script_declares_a_layout():
-    assert set(LaunchLayout.LAYOUTS) == set(ENTRY_CONFIGS)
+    assert set(dict(LaunchForms.layouts)) == set(ENTRY_CONFIGS)
 
 
 def test_layout_widgets_only_reference_known_paths():

@@ -4,13 +4,13 @@ import threading
 import time
 from datetime import datetime
 
+from configuration.webui.general import SystemMonitorSettings
+
 from server_logger  import ServerLogger
 from system_monitor import SystemMonitor
 
 
 class GpuWatchdog:
-
-    INTERVAL_SECONDS = 4.0
 
     def __init__(self, system: SystemMonitor, logger: ServerLogger) -> None:
         self.system   = system
@@ -27,7 +27,7 @@ class GpuWatchdog:
         worker = threading.Thread(target=self._poll, daemon=True)
         worker.start()
         self.armed = True
-        self.logger.info(f"gpu watchdog armed at {self.INTERVAL_SECONDS:.0f}s interval")
+        self.logger.info(f"gpu watchdog armed at {SystemMonitorSettings.gpu_poll_interval_s:.0f}s interval")
 
     def _poll(self) -> None:
         while True:
@@ -37,7 +37,7 @@ class GpuWatchdog:
                     self.snapshot = {"updated": datetime.now().isoformat(timespec="seconds"), "gpus": gpus}
             except Exception as error:
                 self.logger.error(f"gpu watchdog error: {error}")
-            time.sleep(self.INTERVAL_SECONDS)
+            time.sleep(SystemMonitorSettings.gpu_poll_interval_s)
 
     def latest(self) -> dict:
         with self.lock:

@@ -19,8 +19,6 @@ from subprocess_runner import SubprocessRunner
 
 class PreprocessingPreview:
 
-    STAGE_NAMES = ("raw", "scaled", "detected", "augmented")
-
     def __init__(self, paths: ProjectPaths, logger: ServerLogger) -> None:
         self.paths  = paths
         self.logger = logger

@@ -10,18 +10,14 @@ import uuid
 from datetime import datetime
 from pathlib  import Path
 
-from configuration.shared import IoNames
+from configuration.shared        import IoNames
+from configuration.webui.general import TensorboardSettings
 
 from project_paths import ProjectPaths
 from server_logger import ServerLogger
 
 
 class TensorboardManager:
-
-    HOST              = "127.0.0.1"
-    STARTUP_TIMEOUT_S = 90.0
-    PROBE_INTERVAL_S  = 0.5
-    SHUTDOWN_GRACE_S  = 5.0
 
     def __init__(self, paths: ProjectPaths, logger: ServerLogger) -> None:
         self.paths     = paths
@@ -55,16 +51,16 @@ class TensorboardManager:
                     return {"ok": True, **self._view(record)}
 
         port  = self._free_port()
-        tb_id = uuid.uuid4().hex[:8]
+        tb_id = uuid.uuid4().hex[:TensorboardSettings.id_length]
 
         binary  = shutil.which(IoNames.tensorboard_executable)
         command = [binary] if binary else [self.paths.preferred_interpreter(), "-m", IoNames.tensorboard_module]
         argv    = command + [
             "--logdir",          logdir,
-            "--host",            self.HOST,
+            "--host",            TensorboardSettings.host,
             "--port",            str(port),
-            "--path_prefix",     f"/tb/{tb_id}",
-            "--reload_interval", "30",
+            "--path_prefix",     f"{TensorboardSettings.path_prefix}{tb_id}",
+            "--reload_interval", TensorboardSettings.reload_interval,
         ]
 
         log_path = self.paths.webui_logs_dir / IoNames.tensorboard_log.format(id=tb_id)
@@ -99,12 +95,12 @@ class TensorboardManager:
 
     def _free_port(self) -> int:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-            probe.bind((self.HOST, 0))
+            probe.bind((TensorboardSettings.host, 0))
             return probe.getsockname()[1]
 
     def _probe(self, record: dict) -> None:
-        url      = f"http://{self.HOST}:{record['port']}/tb/{record['id']}/"
-        deadline = time.monotonic() + self.STARTUP_TIMEOUT_S
+        url      = f"http://{TensorboardSettings.host}:{record['port']}{TensorboardSettings.path_prefix}{record['id']}/"
+        deadline = time.monotonic() + TensorboardSettings.startup_timeout_s
 
         while time.monotonic() < deadline:
             if record["process"].poll() is not None:
@@ -113,24 +109,24 @@ class TensorboardManager:
                 return
 
             try:
-                with urllib.request.urlopen(url, timeout=2):
+                with urllib.request.urlopen(url, timeout=TensorboardSettings.probe_timeout_s):
                     record["status"] = "running"
-                    self.logger.ok(f"tensorboard {record['id']} ready at /tb/{record['id']}/")
+                    self.logger.ok(f"tensorboard {record['id']} ready at {TensorboardSettings.path_prefix}{record['id']}/")
                     return
             except OSError:
-                time.sleep(self.PROBE_INTERVAL_S)
+                time.sleep(TensorboardSettings.probe_interval_s)
 
         record["status"] = "failed"
         if record["process"].poll() is None:
             record["process"].terminate()
-        self.logger.error(f"tensorboard {record['id']} failed to start within {self.STARTUP_TIMEOUT_S:.0f}s: {self._log_tail(record)}")
+        self.logger.error(f"tensorboard {record['id']} failed to start within {TensorboardSettings.startup_timeout_s:.0f}s: {self._log_tail(record)}")
 
-    def _log_tail(self, record: dict, max_chars: int = 500) -> str:
+    def _log_tail(self, record: dict) -> str:
         try:
             text = record["log_path"].read_text(errors="replace").strip()
         except OSError:
             return "no output captured"
-        return text[-max_chars:] if text else "no output captured"
+        return text[-TensorboardSettings.log_tail_chars:] if text else "no output captured"
 
     def get(self, tb_id: str) -> dict | None:
         with self.lock:
@@ -146,7 +142,7 @@ class TensorboardManager:
             "pid"     : record["pid"],
             "status"  : record["status"],
             "started" : record["started"],
-            "url"     : f"/tb/{record['id']}/",
+            "url"     : f"{TensorboardSettings.path_prefix}{record['id']}/",
         }
 
     def list_instances(self) -> list[dict]:
@@ -160,7 +156,7 @@ class TensorboardManager:
         if process.poll() is None:
             process.terminate()
             try:
-                process.wait(timeout=self.SHUTDOWN_GRACE_S)
+                process.wait(timeout=TensorboardSettings.shutdown_grace_s)
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
