@@ -53,7 +53,7 @@ class EnergyEfficiencySweepPipeline:
         self.output_directory = directory
 
     def _load_run(self):
-        resolved_path = self.run_directory / IoNames.metadata_dir / IoNames.resolved_config_file
+        resolved_path       = self.run_directory / IoNames.metadata_dir / IoNames.resolved_config_file
         self.entry          = ConfigCli.load_resolved(TrainEntryConfig(), resolved_path)
         self.stats          = NormalizationStats.load(self.run_directory / IoNames.metadata_dir)
         self.split_base_ids = json.loads((self.run_directory / IoNames.metadata_dir / IoNames.split_base_ids_file).read_text(encoding="utf-8"))
@@ -137,6 +137,7 @@ class EnergyEfficiencySweepPipeline:
             "grid_cells"          : len(self.records),
             "axes"                : self._axes_context(),
         }
+
         SweepReport(self.output_directory, self.logger).build(context, self.records, plots)
 
     def run(self):

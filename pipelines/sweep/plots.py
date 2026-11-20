@@ -52,27 +52,16 @@ class SweepPlots(FigureWriter):
         figure.colorbar(image, ax=axis, shrink=SweepPlotStyle.colorbar_shrink, label=metric_label)
         self._save(figure, filename)
 
-    def _lines_vs_scale(self, grid):
+    def _lines(self, x_values, series_values, curves, colormap, x_label, series_label, title, filename):
         figure, axis = plt.subplots(figsize=SweepPlotStyle.line_figure)
-        colours      = matplotlib.colormaps[SweepPlotStyle.lines_vs_scale_colormap](np.linspace(*SweepPlotStyle.colormap_range, len(self.efficiency_values)))
-        for row, efficiency in enumerate(self.efficiency_values):
-            axis.plot(self.scale_values, grid[row, :], marker="o", markersize=SweepPlotStyle.marker_size, linewidth=SweepPlotStyle.line_width, color=colours[row], label=f"{efficiency:g}")
-        axis.set_xlabel(SweepPlotStyle.scale_label)
+        colours      = matplotlib.colormaps[colormap](np.linspace(*SweepPlotStyle.colormap_range, len(series_values)))
+        for index, series_value in enumerate(series_values):
+            axis.plot(x_values, curves[index], marker="o", markersize=SweepPlotStyle.marker_size, linewidth=SweepPlotStyle.line_width, color=colours[index], label=f"{series_value:g}")
+        axis.set_xlabel(x_label)
         axis.set_ylabel("Mean euclidean error [m]")
-        axis.set_title("Mean euclidean error versus light scale factor")
-        axis.legend(title=SweepPlotStyle.efficiency_label, fontsize=SweepPlotStyle.legend_font_size, title_fontsize=SweepPlotStyle.legend_font_size, ncol=2, loc="best")
-        self._save(figure, IoNames.euclidean_vs_scale_figure)
-
-    def _lines_vs_efficiency(self, grid):
-        figure, axis = plt.subplots(figsize=SweepPlotStyle.line_figure)
-        colours      = matplotlib.colormaps[SweepPlotStyle.lines_vs_efficiency_colormap](np.linspace(*SweepPlotStyle.colormap_range, len(self.scale_values)))
-        for column, scale in enumerate(self.scale_values):
-            axis.plot(self.efficiency_values, grid[:, column], marker="o", markersize=SweepPlotStyle.marker_size, linewidth=SweepPlotStyle.line_width, color=colours[column], label=f"{scale:g}")
-        axis.set_xlabel(SweepPlotStyle.efficiency_label)
-        axis.set_ylabel("Mean euclidean error [m]")
-        axis.set_title("Mean euclidean error versus detection efficiency")
-        axis.legend(title=SweepPlotStyle.scale_label, fontsize=SweepPlotStyle.legend_font_size, title_fontsize=SweepPlotStyle.legend_font_size, ncol=2, loc="best")
-        self._save(figure, IoNames.euclidean_vs_efficiency_figure)
+        axis.set_title(title)
+        axis.legend(title=series_label, fontsize=SweepPlotStyle.legend_font_size, title_fontsize=SweepPlotStyle.legend_font_size, ncol=2, loc="best")
+        self._save(figure, filename)
 
     def run(self, scale_values, efficiency_values, metric_grids, baseline, annotate):
         self.scale_values        = np.asarray(scale_values, dtype=np.float64)
@@ -86,8 +75,9 @@ class SweepPlots(FigureWriter):
                 continue
             self._heatmap(metric_grids[metric_key], metric_label, IoNames.heatmap_figure.format(metric=metric_key), cmap)
 
-        self._lines_vs_scale(metric_grids["euclidean_mean"])
-        self._lines_vs_efficiency(metric_grids["euclidean_mean"])
+        euclidean = metric_grids["euclidean_mean"]
+        self._lines(self.scale_values, self.efficiency_values, euclidean, SweepPlotStyle.lines_vs_scale_colormap, SweepPlotStyle.scale_label, SweepPlotStyle.efficiency_label, "Mean euclidean error versus light scale factor", IoNames.euclidean_vs_scale_figure)
+        self._lines(self.efficiency_values, self.scale_values, euclidean.T, SweepPlotStyle.lines_vs_efficiency_colormap, SweepPlotStyle.efficiency_label, SweepPlotStyle.scale_label, "Mean euclidean error versus detection efficiency", IoNames.euclidean_vs_efficiency_figure)
 
         self.logger.subsection(f"Generated {len(self.generated)} sweep plots in {self.output_directory}")
         return self.generated
