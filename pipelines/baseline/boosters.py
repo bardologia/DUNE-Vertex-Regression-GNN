@@ -4,6 +4,8 @@ import lightgbm
 import numpy as np
 import xgboost
 
+from configuration.shared import IoNames
+
 
 class BoostedAxisEnsemble:
     AXES = ("x", "y", "z")
@@ -79,7 +81,7 @@ class LightGbmBaseline(BoostedAxisEnsemble):
     def save(self, directory):
         saved = []
         for axis, model in zip(self.AXES, self.models):
-            path = directory / f"lightgbm_{axis}.txt"
+            path = directory / IoNames.lightgbm_model_file.format(axis=axis)
             model.booster_.save_model(str(path))
             saved.append(path)
         return saved
@@ -124,7 +126,7 @@ class XgBoostBaseline(BoostedAxisEnsemble):
     def save(self, directory):
         saved = []
         for axis, model in zip(self.AXES, self.models):
-            path = directory / f"xgboost_{axis}.ubj"
+            path = directory / IoNames.xgboost_model_file.format(axis=axis)
             model.save_model(str(path))
             saved.append(path)
         return saved

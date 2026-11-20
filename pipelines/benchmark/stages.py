@@ -13,6 +13,7 @@ from torch.utils.data       import Subset
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
 from configuration.entry              import TrainEntryConfig
+from configuration.shared             import IoNames
 from models                          import get_model
 from tools.training.optimization      import LearningRateScaler
 from pipelines.dataset.pipeline       import DatasetPipeline
@@ -50,7 +51,7 @@ class BenchmarkStage:
         return {}
 
     def _save(self, records):
-        self._result_path().write_text(json.dumps(records, indent=2), encoding="utf-8")
+        self._result_path().write_text(json.dumps(records, indent=IoNames.json_indent), encoding="utf-8")
 
     def _overrides(self, model_name):
         return {**self.model_overrides[model_name], **self.size_records.get(model_name, {}).get("overrides", {})}
@@ -89,7 +90,7 @@ class BenchmarkStage:
 
 
 class SizeMatchStage(BenchmarkStage):
-    RESULT_FILE = "size_match.json"
+    RESULT_FILE = IoNames.size_match_file
 
     def _prepare(self):
         self.sizer  = ModelSizer(self.config, self.logger, self.model_overrides)
@@ -112,7 +113,7 @@ class SizeMatchStage(BenchmarkStage):
 
 
 class OverfitGateStage(BenchmarkStage):
-    RESULT_FILE = "overfit_results.json"
+    RESULT_FILE = IoNames.overfit_results_file
 
     def __init__(self, config, run_directory, pipeline_directory, logger, models, model_overrides, explicit_paths, dataset, stats, size_records):
         super().__init__(config, run_directory, pipeline_directory, logger, models, model_overrides, explicit_paths)
@@ -139,7 +140,7 @@ class OverfitGateStage(BenchmarkStage):
 
         LearningRateScaler(training_config.optimizer, training_config.loop).pin_to_effective_batch()
 
-        context = LightweightRunContext(self.logger, self.run_directory / "overfit" / model_name / "best_model.pt")
+        context = LightweightRunContext(self.logger, self.run_directory / IoNames.benchmark_overfit_dir / model_name / IoNames.best_model_file)
         trainer = self._build_trainer(model_name, training_config, context)
 
         final_loss = None
@@ -182,7 +183,7 @@ class OverfitGateStage(BenchmarkStage):
 
 
 class MaxBatchStage(BenchmarkStage):
-    RESULT_FILE = "max_batch.json"
+    RESULT_FILE = IoNames.max_batch_file
 
     def __init__(self, config, run_directory, pipeline_directory, logger, models, model_overrides, explicit_paths, dataset, stats, size_records):
         super().__init__(config, run_directory, pipeline_directory, logger, models, model_overrides, explicit_paths)
@@ -211,7 +212,7 @@ class MaxBatchStage(BenchmarkStage):
 
 
 class TrainingStage(BenchmarkStage):
-    RESULT_FILE = "training_results.json"
+    RESULT_FILE = IoNames.training_results_file
 
     def __init__(self, config, run_directory, pipeline_directory, logger, models, model_overrides, explicit_paths, datasets, stats, size_records, max_batch_records, split_base_ids, store_geometry):
         super().__init__(config, run_directory, pipeline_directory, logger, models, model_overrides, explicit_paths)
@@ -224,7 +225,7 @@ class TrainingStage(BenchmarkStage):
 
     def _prepare(self):
         self.logger.section("[Benchmark | Training]")
-        self.training_directory = self.run_directory / "training"
+        self.training_directory = self.run_directory / IoNames.benchmark_training_dir
         self.device             = self.config.training.loop.device if torch.cuda.is_available() else "cpu"
 
     def _reusable(self, record):
@@ -246,7 +247,7 @@ class TrainingStage(BenchmarkStage):
         return entry
 
     def _evaluate(self, model_name, run_directory):
-        checkpoint_path = Path(run_directory) / "checkpoints" / self.config.training.io.checkpoint_name
+        checkpoint_path = Path(run_directory) / IoNames.checkpoints_dir / self.config.training.io.checkpoint_name
 
         model, _    = get_model(model_name, **self._overrides(model_name))
         predictor   = Predictor(model, checkpoint_path, self.stats, self.device, self.logger).prepare()
@@ -256,9 +257,9 @@ class TrainingStage(BenchmarkStage):
         return InferenceMetrics(self.logger).compute(predictions, targets, stage=f"benchmark_{model_name}")
 
     def _write_metrics(self, run_directory, metrics):
-        metrics_path = Path(run_directory) / "metadata" / "metrics.json"
+        metrics_path = Path(run_directory) / IoNames.metadata_dir / IoNames.metrics_file
         metrics_path.parent.mkdir(parents=True, exist_ok=True)
-        metrics_path.write_text(json.dumps({"unit": "m", "splits": {"test": metrics}}, indent=2), encoding="utf-8")
+        metrics_path.write_text(json.dumps({"unit": "m", "splits": {"test": metrics}}, indent=IoNames.json_indent), encoding="utf-8")
         return metrics_path
 
     def _compute(self, model_name):
@@ -275,7 +276,7 @@ class TrainingStage(BenchmarkStage):
             loaders                          = DatasetPipeline.build_loaders(self.datasets, training_config.loop.batch_size, num_workers=training_config.loop.num_workers, pin_memory=training_config.loop.pin_memory, persistent_workers=training_config.loop.persistent_workers, logger=self.logger)
             train_loader, validation_loader, _ = loaders
 
-            run_metadata = TrainingRunMetadata(training_config, model_name, self.training_directory, run_name="run")
+            run_metadata = TrainingRunMetadata(training_config, model_name, self.training_directory, run_name=IoNames.benchmark_training_run)
             run_metadata.save_store_geometry(self.store_geometry)
             run_metadata.save_normalization_stats(self.stats)
             run_metadata.save_split(self.split_base_ids)
@@ -313,7 +314,7 @@ class TrainingStage(BenchmarkStage):
 
 
 class ComparisonStage(BenchmarkStage):
-    RESULT_FILE = "benchmark_summary.json"
+    RESULT_FILE = IoNames.benchmark_summary_file
 
     def run(self):
         self.logger.section("[Benchmark | Comparison]")
@@ -321,7 +322,7 @@ class ComparisonStage(BenchmarkStage):
         collector = TrialCollector(self.pipeline_directory, self.models, self.logger)
         records   = collector.collect()
 
-        output_directory = self.run_directory / "comparison"
+        output_directory = self.run_directory / IoNames.comparison_dir
         report           = ComparisonReport(records, output_directory, self.config, self.logger)
         written          = report.write_all()
 

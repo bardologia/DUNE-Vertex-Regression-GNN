@@ -9,6 +9,7 @@ import pandas as pd
 import torch
 
 from configuration.entry             import TrainEntryConfig
+from configuration.shared            import IoNames
 from models                          import get_model
 from tools.monitoring.logger         import Logger
 from tools.reporting.markdown        import MarkdownDoc, MarkdownTable, ScalarFormatter
@@ -60,8 +61,8 @@ class CrossValidationReport:
             "folds"               : fold_records,
             "aggregate"           : aggregate,
         }
-        metrics_path = self.output_directory / "cross_validation_metrics.json"
-        metrics_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        metrics_path = self.output_directory / IoNames.cv_metrics_file
+        metrics_path.write_text(json.dumps(payload, indent=IoNames.json_indent), encoding="utf-8")
         return metrics_path
 
     def _build_markdown(self, fold_records, aggregate):
@@ -94,7 +95,7 @@ class CrossValidationReport:
         document.heading("Aggregate across folds", level=2)
         document.table(aggregate_table)
 
-        report_path = self.output_directory / "cross_validation_report.md"
+        report_path = self.output_directory / IoNames.cv_report_file
         return document.save(report_path)
 
     def _log_summary(self, aggregate):
@@ -131,12 +132,12 @@ class CrossValidationPipeline:
     def _prepare_run(self):
         Reproducibility.seed_everything(self.entry.seed)
 
-        stamp              = datetime.now().strftime("%Y%m%d-%H%M%S")
+        stamp              = datetime.now().strftime(IoNames.run_stamp_format)
         resolved_name      = self.entry.run_name if self.entry.run_name else stamp
-        self.run_directory = Path(self.training_config.io.log_base_dir) / f"cv_{self.entry.model_name}_{resolved_name}"
+        self.run_directory = Path(self.training_config.io.log_base_dir) / IoNames.cv_run_dir.format(model=self.entry.model_name, run=resolved_name)
         self.run_directory.mkdir(parents=True, exist_ok=True)
 
-        self.logger = self.external_logger if self.external_logger is not None else Logger(log_dir=str(self.run_directory / "logs"), name=f"cv_{self.entry.model_name}")
+        self.logger = self.external_logger if self.external_logger is not None else Logger(log_dir=str(self.run_directory / IoNames.logs_dir), name=IoNames.cv_log.format(model=self.entry.model_name))
         self.logger.section("[Cross-Validation Pipeline]")
         self.logger.subsection(f"Model={self.entry.model_name} | folds={self.cross_validation.n_folds} | output={self.run_directory}")
 
@@ -179,7 +180,7 @@ class CrossValidationPipeline:
         if degree_histogram is not None:
             self.entry.model_overrides = {**self.entry.model_overrides, "degree_histogram": degree_histogram}
 
-        run_metadata = TrainingRunMetadata(self.training_config, self.entry.model_name, self.run_directory, run_name=f"fold_{fold_index}")
+        run_metadata = TrainingRunMetadata(self.training_config, self.entry.model_name, self.run_directory, run_name=IoNames.fold_run.format(index=fold_index))
         run_metadata.save_store_geometry(self.dataset_pipeline.store_geometry())
         run_metadata.save_normalization_stats(stats)
         run_metadata.save_split(self.dataset_pipeline.split_base_ids)

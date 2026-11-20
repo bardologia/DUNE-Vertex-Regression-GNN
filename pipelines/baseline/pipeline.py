@@ -12,6 +12,7 @@ import torch
 
 from optuna.samplers import TPESampler
 
+from configuration.shared          import IoNames
 from tools.reporting.markdown      import MarkdownDoc, MarkdownTable
 from tools.runtime.config_cli      import ConfigCli
 from tools.runtime.reproducibility import Reproducibility
@@ -60,9 +61,9 @@ class BaselineRunWriter:
 
     def __init__(self, run_directory, logger):
         self.run_directory      = Path(run_directory)
-        self.metadata_directory = self.run_directory / "metadata"
-        self.checkpoint_dir     = self.run_directory / "checkpoints"
-        self.analysis_directory = self.run_directory / "analysis"
+        self.metadata_directory = self.run_directory / IoNames.metadata_dir
+        self.checkpoint_dir     = self.run_directory / IoNames.checkpoints_dir
+        self.analysis_directory = self.run_directory / IoNames.analysis_dir
         self.logger             = logger
 
         if self.run_directory.exists() and any(self.run_directory.iterdir()):
@@ -72,24 +73,24 @@ class BaselineRunWriter:
             directory.mkdir(parents=True, exist_ok=True)
 
     def _write_json(self, path, payload):
-        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        path.write_text(json.dumps(payload, indent=IoNames.json_indent), encoding="utf-8")
         return path
 
     def write_resolved_config(self, model_name, entry_config):
-        return self._write_json(self.metadata_directory / "resolved_config.json", {"model_name": model_name, **ConfigCli.to_mapping(entry_config)})
+        return self._write_json(self.metadata_directory / IoNames.resolved_config_file, {"model_name": model_name, **ConfigCli.to_mapping(entry_config)})
 
     def write_store_geometry(self, store_geometry):
         """Records the store geometry the boosters were fitted on, the ``geometry_fingerprint`` and ``channel_count`` of ``DatasetPipeline.store_geometry``, and returns the record path."""
         return StoreGeometryRecord(self.metadata_directory).save(store_geometry)
 
     def write_split(self, split_base_ids):
-        return self._write_json(self.metadata_directory / "split_base_ids.json", split_base_ids)
+        return self._write_json(self.metadata_directory / IoNames.split_base_ids_file, split_base_ids)
 
     def write_best_trial(self, record):
-        return self._write_json(self.metadata_directory / "best_trial.json", record)
+        return self._write_json(self.metadata_directory / IoNames.best_trial_file, record)
 
     def write_metrics(self, per_split_metrics):
-        return self._write_json(self.metadata_directory / "metrics.json", {"unit": "m", "splits": per_split_metrics})
+        return self._write_json(self.metadata_directory / IoNames.metrics_file, {"unit": "m", "splits": per_split_metrics})
 
     def _plot_importances(self, label, ranked):
         PublicationStyle.apply()
@@ -103,12 +104,12 @@ class BaselineRunWriter:
         axes.set_title(f"{label} feature importance")
 
         figure.tight_layout()
-        figure.savefig(self.analysis_directory / "feature_importance.png", bbox_inches="tight")
+        figure.savefig(self.analysis_directory / IoNames.feature_importance_figure, bbox_inches="tight")
         plt.close(figure)
 
     def write_importances(self, label, importances):
         ranked = sorted(importances.items(), key=lambda item: item[1], reverse=True)
-        self._write_json(self.analysis_directory / "feature_importance.json", dict(ranked))
+        self._write_json(self.analysis_directory / IoNames.feature_importance_file, dict(ranked))
         self._plot_importances(label, ranked[: self.TOP_IMPORTANCES])
 
     def write_report(self, family, entry_config, study, model, per_split_metrics):
@@ -135,9 +136,9 @@ class BaselineRunWriter:
         document.table(table)
 
         document.heading("Feature importance", level=2)
-        document.image("feature importance", "feature_importance.png")
+        document.image("feature importance", IoNames.feature_importance_figure)
 
-        report_path = document.save(self.analysis_directory / "report.md")
+        report_path = document.save(self.analysis_directory / IoNames.report_file)
         self.logger.subsection(f"Baseline report written to {report_path}")
         return report_path
 
@@ -149,7 +150,7 @@ class BaselinePipeline:
         self.entry  = entry_config
         self.logger = logger
 
-        stamp              = datetime.now().strftime("%Y%m%d-%H%M%S")
+        stamp              = datetime.now().strftime(IoNames.run_stamp_format)
         self.resolved_name = entry_config.run_name if entry_config.run_name else stamp
 
         self.builder = None
@@ -191,7 +192,7 @@ class BaselinePipeline:
         return per_split_metrics
 
     def _write_run(self, family, study, model, per_split_metrics):
-        run_directory = Path(self.entry.baseline.io.log_base_dir) / f"baseline_{family.KEY}_{self.resolved_name}"
+        run_directory = Path(self.entry.baseline.io.log_base_dir) / IoNames.baseline_run_dir.format(family=family.KEY, run=self.resolved_name)
         writer        = BaselineRunWriter(run_directory, self.logger)
 
         writer.write_resolved_config(f"baseline_{family.KEY}", self.entry)

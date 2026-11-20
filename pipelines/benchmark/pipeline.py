@@ -8,7 +8,7 @@ import numpy as np
 import torch
 
 from configuration.architectures import MODEL_CONFIG_REGISTRY
-from configuration.shared        import LogSettings
+from configuration.shared        import IoNames, LogSettings
 from tools.monitoring.logger      import Logger
 from tools.runtime.config_cli     import ConfigCli
 
@@ -30,19 +30,19 @@ class BenchmarkPipeline:
         torch.manual_seed(self.config.seed)
         np.random.seed(self.config.seed)
 
-        stamp              = datetime.now().strftime("%Y%m%d-%H%M%S")
-        resolved_name      = self.config.run_name if self.config.run_name else stamp
-        self.run_directory = Path(self.config.training.io.log_base_dir) / f"benchmark_{resolved_name}"
-        self.pipeline_directory = self.run_directory / "pipeline"
+        stamp                   = datetime.now().strftime(IoNames.run_stamp_format)
+        resolved_name           = self.config.run_name if self.config.run_name else stamp
+        self.run_directory      = Path(self.config.training.io.log_base_dir) / IoNames.benchmark_run_dir.format(run=resolved_name)
+        self.pipeline_directory = self.run_directory / IoNames.benchmark_pipeline_dir
 
         if self._resumes_stage_results():
             StoreGeometryRecord(self.pipeline_directory).recorded()
         self.pipeline_directory.mkdir(parents=True, exist_ok=True)
 
-        self.logger = self.external_logger if self.external_logger is not None else Logger(log_dir=str(self.run_directory / "logs"), name="benchmark")
+        self.logger = self.external_logger if self.external_logger is not None else Logger(log_dir=str(self.run_directory / IoNames.logs_dir), name=IoNames.benchmark_log)
         self.state  = {"run_directory": str(self.run_directory), "stages": {}}
 
-        ConfigCli.save_resolved(self.config, self.pipeline_directory / "resolved_config.json")
+        ConfigCli.save_resolved(self.config, self.pipeline_directory / IoNames.resolved_config_file)
 
         self.models = [model_name for model_name in MODEL_CONFIG_REGISTRY if model_name not in set(self.config.skip_models)]
 
@@ -122,7 +122,7 @@ class BenchmarkPipeline:
 
     def _mark_stage(self, stage_name, status):
         self.state["stages"][stage_name] = {"status": status, "timestamp": datetime.now().strftime(LogSettings.timestamp_format)}
-        (self.pipeline_directory / "state.json").write_text(json.dumps(self.state, indent=2), encoding="utf-8")
+        (self.pipeline_directory / IoNames.benchmark_state_file).write_text(json.dumps(self.state, indent=IoNames.json_indent), encoding="utf-8")
 
     def run(self):
         self._prepare_run()

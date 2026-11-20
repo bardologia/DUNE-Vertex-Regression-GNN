@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from configuration.shared     import IoNames
 from tools.reporting.markdown import MarkdownDoc, MarkdownTable, ScalarFormatter
 
 
@@ -53,10 +54,10 @@ class TrialCollector:
         }
 
     def collect(self):
-        size_match  = self._as_model_map(self._load("size_match.json"))
-        overfit     = self._as_model_map(self._load("overfit_results.json"))
-        max_batch   = self._as_model_map(self._load("max_batch.json"))
-        training    = self._as_model_map(self._load("training_results.json"))
+        size_match  = self._as_model_map(self._load(IoNames.size_match_file))
+        overfit     = self._as_model_map(self._load(IoNames.overfit_results_file))
+        max_batch   = self._as_model_map(self._load(IoNames.max_batch_file))
+        training    = self._as_model_map(self._load(IoNames.training_results_file))
 
         return [self._record_for(model_name, size_match, overfit, max_batch, training) for model_name in self.models]
 
@@ -134,13 +135,13 @@ class ComparisonReport:
         document.heading("Training", level=2)
         document.table(self._training_table())
 
-        report_path = self.output_directory / "benchmark_report.md"
+        report_path = self.output_directory / IoNames.benchmark_report_file
         return document.save(report_path)
 
     def _write_json(self):
-        summary_path = self.output_directory / "benchmark_summary.json"
+        summary_path = self.output_directory / IoNames.benchmark_summary_file
         summary_path.parent.mkdir(parents=True, exist_ok=True)
-        summary_path.write_text(json.dumps({"records": self.records}, indent=2), encoding="utf-8")
+        summary_path.write_text(json.dumps({"records": self.records}, indent=IoNames.json_indent), encoding="utf-8")
         return summary_path
 
     def _log_leaderboard(self, ranked):
