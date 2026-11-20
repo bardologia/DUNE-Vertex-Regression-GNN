@@ -299,24 +299,23 @@ class DatasetPipeline:
         self._build_datasets(train_samples, validation_samples, test_samples, requested)
         return self.datasets, self.stats
 
-    def build_evaluation_split(self, split_base_ids, split_name):
-        if self.stats is None:
-            raise ValueError("build_evaluation_split requires normalization stats supplied to the pipeline; physics-only re-evaluation must reuse the training-split statistics.")
-
-        self.prepare_samples()
-
-        self.validate_split_names((split_name,))
-        partitions    = dict(zip(DatasetSplits.names, self._partition_by_base_ids(self.samples, split_base_ids)))
-        split_samples = partitions[split_name]
-        split_dataset = self._make_dataset(split_samples, self._augmentation(), self.stats)
-        return CachedGraphDataset(split_dataset, self.logger)
-
     @staticmethod
     def validate_split_names(split_names):
         unknown = tuple(name for name in split_names if name not in DatasetSplits.names)
         if unknown:
             raise KeyError(f"Unknown split name(s) {unknown}. Expected any of {DatasetSplits.names}.")
         return tuple(split_names)
+
+    def build_evaluation_split(self, split_base_ids, split_name):
+        if self.stats is None:
+            raise ValueError("build_evaluation_split requires normalization stats supplied to the pipeline; physics-only re-evaluation must reuse the training-split statistics.")
+
+        self.prepare_samples()
+
+        partitions    = dict(zip(DatasetSplits.names, self._partition_by_base_ids(self.samples, split_base_ids)))
+        split_samples = partitions[split_name]
+        split_dataset = self._make_dataset(split_samples, self._augmentation(), self.stats)
+        return CachedGraphDataset(split_dataset, self.logger)
 
     def run_split_samples(self):
         self.logger.section("[Dataset Pipeline | Split Samples]")
