@@ -12,12 +12,12 @@ import torch
 
 from optuna.samplers import TPESampler
 
-from configuration.baseline.general  import BaselineImportance, BaselineLabels
-from configuration.inference.general import VertexCoordinates
-from configuration.shared            import IoNames
-from tools.reporting.markdown        import MarkdownDoc, MarkdownTable
-from tools.runtime.config_cli        import ConfigCli
-from tools.runtime.reproducibility   import Reproducibility
+from configuration.baseline.general import BaselineImportance, BaselineLabels
+from configuration.data.general     import CoordinateAxes
+from configuration.shared           import IoNames
+from tools.reporting.markdown       import MarkdownDoc, MarkdownTable
+from tools.runtime.config_cli       import ConfigCli
+from tools.runtime.reproducibility  import Reproducibility
 
 from pipelines.inference.scoring     import InferenceMetrics
 from pipelines.inference.report      import PublicationStyle
@@ -85,7 +85,7 @@ class BaselineRunWriter:
         return self._write_json(self.metadata_directory / IoNames.best_trial_file, record)
 
     def write_metrics(self, per_split_metrics):
-        return self._write_json(self.metadata_directory / IoNames.metrics_file, {"unit": VertexCoordinates.unit, "splits": per_split_metrics})
+        return self._write_json(self.metadata_directory / IoNames.metrics_file, {"unit": CoordinateAxes.unit, "splits": per_split_metrics})
 
     def _plot_importances(self, label, ranked):
         PublicationStyle.apply()

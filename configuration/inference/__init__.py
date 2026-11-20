@@ -1,4 +1,4 @@
-from .general import AnalysisAnimationStyle, AnalysisPlotStyle, DatasetExplorerSources, ErrorQuantiles, PlotStyle, VertexCoordinates
+from .general import AnalysisAnimationStyle, AnalysisPlotStyle, DatasetExplorerSources, ErrorQuantiles, PlotStyle
 
 __all__ = [
     "AnalysisAnimationStyle",
@@ -6,5 +6,4 @@ __all__ = [
     "DatasetExplorerSources",
     "ErrorQuantiles",
     "PlotStyle",
-    "VertexCoordinates",
 ]

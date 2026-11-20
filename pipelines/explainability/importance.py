@@ -4,8 +4,8 @@ import numpy as np
 import torch
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
+from configuration.data.general           import CoordinateAxes
 from configuration.explainability.general import KernelShapSettings, PermutationSeeding
-from configuration.inference.general      import VertexCoordinates
 from configuration.shared                 import MeasurementUnits
 from tools.monitoring.logger              import NullLogger
 
@@ -212,7 +212,7 @@ class ExpectedGradients:
         self.seed       = seed
         self.logger     = logger
 
-        self.coordinate_count = len(VertexCoordinates.names)
+        self.coordinate_count = len(CoordinateAxes.names)
 
         self.subset          = None
         self.node_signed     = None
@@ -297,7 +297,7 @@ class ExpectedGradients:
         reference  = self.real_output - self.baseline_output
 
         ratios = {}
-        for index, name in enumerate(VertexCoordinates.names):
+        for index, name in enumerate(CoordinateAxes.names):
             ratios[name] = float(attributed[index] / reference[index]) if reference[index] != 0.0 else float("nan")
         return ratios
 
@@ -306,7 +306,7 @@ class ExpectedGradients:
         edge_phi = (self.edge_signed / self.samples).numpy()
 
         return {
-            "coordinates"  : VertexCoordinates.names,
+            "coordinates"  : CoordinateAxes.names,
             "node_overall" : np.abs(node_phi).sum(axis=2).mean(axis=0),
             "edge_overall" : np.abs(edge_phi).sum(axis=2).mean(axis=0),
             "node_per_axis": np.abs(node_phi).mean(axis=0).T,
@@ -345,7 +345,7 @@ class KernelShapImportance:
         self.seed       = seed
         self.logger     = logger
 
-        self.coordinate_count = len(VertexCoordinates.names)
+        self.coordinate_count = len(CoordinateAxes.names)
         self.node_features    = engine.node_feature_count()
         self.edge_features    = engine.edge_feature_count()
         self.total_features   = self.node_features + self.edge_features
@@ -370,7 +370,7 @@ class KernelShapImportance:
         self.edge_shap           = np.zeros((event_count, self.edge_features, self.coordinate_count), dtype=np.float64)
         self.node_feature_values = np.zeros((event_count, self.node_features), dtype=np.float64)
         self.edge_feature_values = np.zeros((event_count, self.edge_features), dtype=np.float64)
-        self.completeness        = {name: 0.0 for name in VertexCoordinates.names}
+        self.completeness        = {name: 0.0 for name in CoordinateAxes.names}
 
     def _per_coordinate(self, shap_values):
         values = np.squeeze(np.array(shap_values))
@@ -392,7 +392,7 @@ class KernelShapImportance:
         instance_output  = self._masked_outputs(graph, instance)[0]
         reference        = instance_output - np.asarray(explainer.expected_value, dtype=np.float64)
         attributed       = per_coord.sum(axis=1)
-        for index, name in enumerate(VertexCoordinates.names):
+        for index, name in enumerate(CoordinateAxes.names):
             self.completeness[name] += float(attributed[index] / reference[index]) / len(self.subset_graphs) if reference[index] != 0.0 else 0.0
 
     def _masked_outputs(self, graph, gates):
@@ -419,7 +419,7 @@ class KernelShapImportance:
     def _means(self):
         event_count = len(self.subset_graphs)
         return {
-            "coordinates"        : VertexCoordinates.names,
+            "coordinates"        : CoordinateAxes.names,
             "node_overall"       : np.abs(self.node_shap).sum(axis=2).mean(axis=0),
             "edge_overall"       : np.abs(self.edge_shap).sum(axis=2).mean(axis=0),
             "node_per_axis"      : np.abs(self.node_shap).mean(axis=0).T,

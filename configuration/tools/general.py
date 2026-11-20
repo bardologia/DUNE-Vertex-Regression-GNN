@@ -34,7 +34,6 @@ class MarkdownSettings:
 
 @dataclass(frozen=True)
 class LightCentroidSettings:
-    axes         : tuple = ("x", "y", "z")
     face_margin  : float = 0.5
     weight_floor : float = 1e-12
 

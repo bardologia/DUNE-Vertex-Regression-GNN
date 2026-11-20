@@ -5,8 +5,8 @@ from pathlib import Path
 import numpy as np
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
-from configuration.data.general      import DatasetConfig
-from configuration.inference.general import DatasetExplorerSources, VertexCoordinates
+from configuration.data.general      import CoordinateAxes, DatasetConfig
+from configuration.inference.general import DatasetExplorerSources
 from configuration.shared            import IoNames
 from pipelines.dataset.graph         import Graph
 from pipelines.dataset.graph_dataset import GraphDataset
@@ -128,7 +128,7 @@ class DatasetExplorerExportPipeline:
         if self.kind == DatasetExplorerSources.raw:
             count   = len(self.event_targets)
             base_id = np.arange(count, dtype=np.int32)
-            signs   = np.ones((count, len(VertexCoordinates.names)), dtype=np.int8)
+            signs   = np.ones((count, len(CoordinateAxes.names)), dtype=np.int8)
             targets = self.event_targets.astype(np.float32)
             octant  = np.array([DatasetExplorerSources.unreflected_octant] * count)
             return base_id, signs, targets, octant
@@ -206,7 +206,7 @@ class EventExportPipeline:
         dataset, predictions, targets = self._predict_split(split_name)
         base_dataset                  = dataset.base_dataset if hasattr(dataset, "base_dataset") else dataset
         count                         = len(base_dataset.samples)
-        axes                          = len(VertexCoordinates.names)
+        axes                          = len(CoordinateAxes.names)
 
         residual  = predictions - targets
         error_xyz = np.abs(residual).astype(np.float32)

@@ -12,15 +12,15 @@ import torch
 from torch.utils.data       import Subset
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
-from configuration.entry             import TrainEntryConfig
-from configuration.inference.general import VertexCoordinates
-from configuration.shared            import IoNames
-from models                          import get_model
-from tools.training.scheduling       import LearningRateScaler
-from pipelines.dataset.pipeline      import DatasetPipeline
-from pipelines.inference.scoring     import InferenceMetrics, Predictor
-from pipelines.shared.run_metadata   import LightweightRunContext, TrainingRunMetadata
-from pipelines.training.trainer      import OptimizerOverrideApplier, Trainer
+from configuration.data.general    import CoordinateAxes
+from configuration.entry           import TrainEntryConfig
+from configuration.shared          import IoNames
+from models                        import get_model
+from tools.training.scheduling     import LearningRateScaler
+from pipelines.dataset.pipeline    import DatasetPipeline
+from pipelines.inference.scoring   import InferenceMetrics, Predictor
+from pipelines.shared.run_metadata import LightweightRunContext, TrainingRunMetadata
+from pipelines.training.trainer    import OptimizerOverrideApplier, Trainer
 
 from pipelines.benchmark.results import ComparisonReport, TrialCollector
 from pipelines.benchmark.sizing  import MaxBatchProbe, ModelSizer
@@ -253,7 +253,7 @@ class TrainingStage(BenchmarkStage):
     def _write_metrics(self, run_directory, metrics):
         metrics_path = Path(run_directory) / IoNames.metadata_dir / IoNames.metrics_file
         metrics_path.parent.mkdir(parents=True, exist_ok=True)
-        metrics_path.write_text(json.dumps({"unit": VertexCoordinates.unit, "splits": {"test": metrics}}, indent=IoNames.json_indent), encoding="utf-8")
+        metrics_path.write_text(json.dumps({"unit": CoordinateAxes.unit, "splits": {"test": metrics}}, indent=IoNames.json_indent), encoding="utf-8")
         return metrics_path
 
     def _compute(self, model_name):

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import numpy as np
 
-from configuration.data.general      import DataConfig
+from configuration.data.general      import CoordinateAxes, DataConfig
 from configuration.shared            import IoNames
 from configuration.tools             import LightCentroidSettings
 from pipelines.dataset.parquet_store import ParquetEventReader
@@ -23,12 +23,12 @@ class LightCentroidCheck:
     def _load(self):
         reader = ParquetEventReader(self.store_directory).load_store()
 
-        self.positions = reader.geometry_frame[list(LightCentroidSettings.axes)].to_numpy(dtype=np.float64)
+        self.positions = reader.geometry_frame[list(CoordinateAxes.names)].to_numpy(dtype=np.float64)
         self.light     = reader.light_matrix.astype(np.float64)
         self.targets   = reader.event_targets.astype(np.float64)
 
     def _report_geometry(self):
-        ranges = {f"Range {axis}": f"[{self.positions[:, index].min():.2f}, {self.positions[:, index].max():.2f}]" for index, axis in enumerate(LightCentroidSettings.axes)}
+        ranges = {f"Range {axis}": f"[{self.positions[:, index].min():.2f}, {self.positions[:, index].max():.2f}]" for index, axis in enumerate(CoordinateAxes.names)}
 
         self.logger.section("[Light Centroid Check]")
         self.logger.kv_table({"Channels": self.positions.shape[0], "Events": self.light.shape[0], **ranges}, title="Store")
@@ -69,7 +69,7 @@ class LightCentroidCheck:
         lit_centroid = centroid[valid]
         lit_targets  = self.targets[valid]
 
-        rows = [self._axis_row(axis, lit_centroid[:, index], lit_targets[:, index]) for index, axis in enumerate(LightCentroidSettings.axes)]
+        rows = [self._axis_row(axis, lit_centroid[:, index], lit_targets[:, index]) for index, axis in enumerate(CoordinateAxes.names)]
 
         self.logger.subsection(f"{title}: {int(valid.sum())}/{len(valid)} events carry light")
         self.logger.metrics_table(rows, list(rows[0]), title=title)

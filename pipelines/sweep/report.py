@@ -11,7 +11,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from configuration.inference.general import PlotStyle, VertexCoordinates
+from configuration.data.general      import CoordinateAxes
+from configuration.inference.general import PlotStyle
 from configuration.shared            import IoNames
 from configuration.sweep.general     import SweepMetrics, SweepPlotStyle
 from pipelines.inference.report      import FigureWriter
@@ -96,7 +97,7 @@ class SweepReport:
 
     def _write_json(self, context, records):
         payload = {
-            "unit"    : VertexCoordinates.unit,
+            "unit"    : CoordinateAxes.unit,
             "run"     : context,
             "results" : records,
         }

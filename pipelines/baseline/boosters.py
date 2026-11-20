@@ -4,9 +4,9 @@ import lightgbm
 import numpy as np
 import xgboost
 
-from configuration.baseline.general  import BaselineImportance, BaselineLabels, LightGbmSearchSpace, XgBoostSearchSpace
-from configuration.inference.general import VertexCoordinates
-from configuration.shared            import IoNames
+from configuration.baseline.general import BaselineImportance, BaselineLabels, LightGbmSearchSpace, XgBoostSearchSpace
+from configuration.data.general     import CoordinateAxes
+from configuration.shared           import IoNames
 
 
 class BoostedAxisEnsemble:
@@ -80,7 +80,7 @@ class LightGbmBaseline(BoostedAxisEnsemble):
 
     def save(self, directory):
         saved = []
-        for axis, model in zip(VertexCoordinates.names, self.models):
+        for axis, model in zip(CoordinateAxes.names, self.models):
             path = directory / IoNames.lightgbm_model_file.format(axis=axis)
             model.booster_.save_model(str(path))
             saved.append(path)
@@ -125,7 +125,7 @@ class XgBoostBaseline(BoostedAxisEnsemble):
 
     def save(self, directory):
         saved = []
-        for axis, model in zip(VertexCoordinates.names, self.models):
+        for axis, model in zip(CoordinateAxes.names, self.models):
             path = directory / IoNames.xgboost_model_file.format(axis=axis)
             model.save_model(str(path))
             saved.append(path)

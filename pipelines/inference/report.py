@@ -10,7 +10,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.animation import FuncAnimation, PillowWriter
 
-from configuration.inference.general import AnalysisAnimationStyle, AnalysisPlotStyle, PlotStyle, VertexCoordinates
+from configuration.data.general      import CoordinateAxes
+from configuration.inference.general import AnalysisAnimationStyle, AnalysisPlotStyle, PlotStyle
 from configuration.shared            import IoNames
 from tools.reporting.markdown        import MarkdownDoc, MarkdownTable
 
@@ -40,7 +41,7 @@ class FigureWriter:
 
 class AnalysisPlots(FigureWriter):
     def _predicted_vs_true(self, predictions, targets):
-        for index, name in enumerate(VertexCoordinates.names):
+        for index, name in enumerate(CoordinateAxes.names):
             true_values      = targets[:, index]
             predicted_values = predictions[:, index]
             limits           = [min(true_values.min(), predicted_values.min()), max(true_values.max(), predicted_values.max())]
@@ -48,33 +49,33 @@ class AnalysisPlots(FigureWriter):
             figure, axis = plt.subplots(figsize=AnalysisPlotStyle.square_figure)
             axis.scatter(true_values, predicted_values, s=AnalysisPlotStyle.point_size, alpha=AnalysisPlotStyle.point_alpha, color=PlotStyle.primary_color, edgecolors="none")
             axis.plot(limits, limits, color=PlotStyle.accent_color, linewidth=AnalysisPlotStyle.line_width, linestyle="--")
-            axis.set_xlabel(f"True {name} [{VertexCoordinates.unit}]")
-            axis.set_ylabel(f"Predicted {name} [{VertexCoordinates.unit}]")
+            axis.set_xlabel(f"True {name} [{CoordinateAxes.unit}]")
+            axis.set_ylabel(f"Predicted {name} [{CoordinateAxes.unit}]")
             axis.set_title(f"Predicted vs true {name}")
             axis.set_aspect("equal", adjustable="box")
             self._save(figure, IoNames.predicted_vs_true_figure.format(coordinate=name))
 
     def _residual_histograms(self, predictions, targets):
-        for index, name in enumerate(VertexCoordinates.names):
+        for index, name in enumerate(CoordinateAxes.names):
             residuals = predictions[:, index] - targets[:, index]
 
             figure, axis = plt.subplots(figsize=AnalysisPlotStyle.panel_figure)
             axis.hist(residuals, bins=AnalysisPlotStyle.bins, color=PlotStyle.primary_color, alpha=AnalysisPlotStyle.bar_alpha)
             axis.axvline(0.0, color=PlotStyle.accent_color, linewidth=AnalysisPlotStyle.line_width, linestyle="--")
-            axis.set_xlabel(f"Residual {name} (predicted - true) [{VertexCoordinates.unit}]")
+            axis.set_xlabel(f"Residual {name} (predicted - true) [{CoordinateAxes.unit}]")
             axis.set_ylabel("Count")
             axis.set_title(f"Residual distribution {name}")
             self._save(figure, IoNames.residual_histogram_figure.format(coordinate=name))
 
     def _error_vs_true(self, predictions, targets):
-        for index, name in enumerate(VertexCoordinates.names):
+        for index, name in enumerate(CoordinateAxes.names):
             true_values     = targets[:, index]
             absolute_errors = np.abs(predictions[:, index] - targets[:, index])
 
             figure, axis = plt.subplots(figsize=AnalysisPlotStyle.panel_figure)
             axis.scatter(true_values, absolute_errors, s=AnalysisPlotStyle.point_size, alpha=AnalysisPlotStyle.point_alpha, color=PlotStyle.primary_color, edgecolors="none")
-            axis.set_xlabel(f"True {name} [{VertexCoordinates.unit}]")
-            axis.set_ylabel(f"Absolute error [{VertexCoordinates.unit}]")
+            axis.set_xlabel(f"True {name} [{CoordinateAxes.unit}]")
+            axis.set_ylabel(f"Absolute error [{CoordinateAxes.unit}]")
             axis.set_title(f"Absolute error versus true {name}")
             self._save(figure, IoNames.error_vs_true_figure.format(coordinate=name))
 
@@ -82,7 +83,7 @@ class AnalysisPlots(FigureWriter):
         figure, axis = plt.subplots(figsize=AnalysisPlotStyle.panel_figure)
         axis.hist(distances, bins=AnalysisPlotStyle.bins, color=PlotStyle.secondary_color, alpha=AnalysisPlotStyle.bar_alpha)
         axis.axvline(float(np.median(distances)), color=PlotStyle.accent_color, linewidth=AnalysisPlotStyle.line_width, linestyle="--")
-        axis.set_xlabel(f"Euclidean error [{VertexCoordinates.unit}]")
+        axis.set_xlabel(f"Euclidean error [{CoordinateAxes.unit}]")
         axis.set_ylabel("Count")
         axis.set_title("Euclidean error distribution")
         self._save(figure, IoNames.euclidean_histogram_figure)
@@ -93,7 +94,7 @@ class AnalysisPlots(FigureWriter):
 
         figure, axis = plt.subplots(figsize=AnalysisPlotStyle.panel_figure)
         axis.plot(sorted_distances, cumulative_fraction, color=PlotStyle.primary_color, linewidth=AnalysisPlotStyle.cumulative_width)
-        axis.set_xlabel(f"Euclidean error [{VertexCoordinates.unit}]")
+        axis.set_xlabel(f"Euclidean error [{CoordinateAxes.unit}]")
         axis.set_ylabel("Cumulative fraction")
         axis.set_title("Cumulative euclidean error")
         axis.set_ylim(0, 1)
@@ -103,11 +104,11 @@ class AnalysisPlots(FigureWriter):
         figure  = plt.figure(figsize=AnalysisPlotStyle.volume_figure)
         axis    = figure.add_subplot(projection="3d")
         scatter = axis.scatter(targets[:, 0], targets[:, 1], targets[:, 2], c=distances, cmap=AnalysisPlotStyle.colormap, s=AnalysisPlotStyle.volume_point_size, alpha=AnalysisPlotStyle.volume_alpha)
-        axis.set_xlabel(f"x [{VertexCoordinates.unit}]")
-        axis.set_ylabel(f"y [{VertexCoordinates.unit}]")
-        axis.set_zlabel(f"z [{VertexCoordinates.unit}]")
+        axis.set_xlabel(f"x [{CoordinateAxes.unit}]")
+        axis.set_ylabel(f"y [{CoordinateAxes.unit}]")
+        axis.set_zlabel(f"z [{CoordinateAxes.unit}]")
         axis.set_title("Spatial distribution of euclidean error")
-        figure.colorbar(scatter, ax=axis, shrink=AnalysisPlotStyle.colorbar_shrink, label=f"Euclidean error [{VertexCoordinates.unit}]")
+        figure.colorbar(scatter, ax=axis, shrink=AnalysisPlotStyle.colorbar_shrink, label=f"Euclidean error [{CoordinateAxes.unit}]")
         self._save(figure, IoNames.error_volume_figure)
 
     def run(self, predictions, targets):
@@ -150,14 +151,14 @@ class AnalysisAnimations(FigureWriter):
         axis    = figure.add_subplot(projection="3d")
         scatter = axis.scatter(targets[:, 0], targets[:, 1], targets[:, 2], c=distances, cmap=AnalysisPlotStyle.colormap, s=AnalysisAnimationStyle.error_point_size, alpha=AnalysisPlotStyle.volume_alpha)
         self._label_volume(axis, "Euclidean error over the detector volume")
-        figure.colorbar(scatter, ax=axis, shrink=AnalysisPlotStyle.colorbar_shrink, label=f"Euclidean error [{VertexCoordinates.unit}]")
+        figure.colorbar(scatter, ax=axis, shrink=AnalysisPlotStyle.colorbar_shrink, label=f"Euclidean error [{CoordinateAxes.unit}]")
 
         self._spin(figure, axis, IoNames.rotating_error_animation)
 
     def _label_volume(self, axis, title):
-        axis.set_xlabel(f"x [{VertexCoordinates.unit}]")
-        axis.set_ylabel(f"y [{VertexCoordinates.unit}]")
-        axis.set_zlabel(f"z [{VertexCoordinates.unit}]")
+        axis.set_xlabel(f"x [{CoordinateAxes.unit}]")
+        axis.set_ylabel(f"y [{CoordinateAxes.unit}]")
+        axis.set_zlabel(f"z [{CoordinateAxes.unit}]")
         axis.set_title(title)
 
     def _turn(self, axis, frame_index):
@@ -190,7 +191,7 @@ class AnalysisReport:
 
     def _metric_table(self, document, metrics):
         table = MarkdownTable(["Coord", "MAE [m]", "RMSE [m]", "Median [m]", "Bias [m]", "R2"], align=["left", "right", "right", "right", "right", "right"])
-        for name in VertexCoordinates.names:
+        for name in CoordinateAxes.names:
             table.add_row(name, f"{metrics[f'mae_{name}']:.4f}", f"{metrics[f'rmse_{name}']:.4f}", f"{metrics[f'median_{name}']:.4f}", f"{metrics[f'bias_{name}']:.4f}", f"{metrics[f'r2_{name}']:.4f}")
         table.add_row("overall", f"{metrics['mae']:.4f}", f"{metrics['rmse']:.4f}", f"{metrics['median_error']:.4f}", f"{metrics['bias']:.4f}", f"{metrics['r2']:.4f}")
         document.table(table)

@@ -6,8 +6,8 @@ from pathlib import Path
 import torch
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
+from configuration.data.general      import CoordinateAxes
 from configuration.entry             import InferenceEntryConfig, TrainEntryConfig
-from configuration.inference.general import VertexCoordinates
 from configuration.shared            import IoNames
 from models                          import get_model
 from tools.monitoring.logger         import Logger
@@ -79,7 +79,7 @@ class InferencePipeline:
 
     def _write_metrics(self, per_split_results):
         metrics_payload = {
-            "unit"   : VertexCoordinates.unit,
+            "unit"   : CoordinateAxes.unit,
             "splits" : {split_name: payload["metrics"] for split_name, payload in per_split_results.items()},
         }
         metrics_path = self.run_directory / IoNames.metadata_dir / IoNames.metrics_file

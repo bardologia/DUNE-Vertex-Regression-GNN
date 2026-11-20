@@ -3,7 +3,8 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from configuration.inference.general   import ErrorQuantiles, VertexCoordinates
+from configuration.data.general         import CoordinateAxes
+from configuration.inference.general    import ErrorQuantiles
 from pipelines.shared.coordinate_errors import CoordinateErrors
 
 
@@ -56,7 +57,7 @@ class InferenceMetrics:
     def _per_coordinate(self, difference, absolute_difference, targets):
         results = CoordinateErrors().update(difference).results()
 
-        for index, name in enumerate(VertexCoordinates.names):
+        for index, name in enumerate(CoordinateAxes.names):
             residual_sum_of_squares = torch.sum(difference[:, index] ** 2).item()
             total_sum_of_squares    = torch.sum((targets[:, index] - targets[:, index].mean()) ** 2).item()
             r_squared               = 1 - (residual_sum_of_squares / total_sum_of_squares) if total_sum_of_squares > 0 else float("nan")
@@ -83,7 +84,7 @@ class InferenceMetrics:
 
     def display(self, stage, results):
         rows = []
-        for name in VertexCoordinates.names:
+        for name in CoordinateAxes.names:
             rows.append({
                 "Coord"  : name,
                 "MAE"    : results[f"mae_{name}"],

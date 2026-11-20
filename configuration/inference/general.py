@@ -4,12 +4,6 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
-class VertexCoordinates:
-    names : tuple = ("x", "y", "z")
-    unit  : str   = "m"
-
-
-@dataclass(frozen=True)
 class ErrorQuantiles:
     p90 : float = 0.90
     p95 : float = 0.95

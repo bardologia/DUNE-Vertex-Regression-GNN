@@ -145,6 +145,7 @@ class StoreLayout:
 @dataclass(frozen=True)
 class CoordinateAxes:
     names : tuple = ("x", "y", "z")
+    unit  : str   = "m"
 
 
 @dataclass(frozen=True)
