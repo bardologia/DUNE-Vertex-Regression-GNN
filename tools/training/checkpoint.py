@@ -160,10 +160,6 @@ class TrainerState:
 
     @staticmethod
     def restore(trainer, path, loader_generator=None) -> int:
-        path = Path(path)
-        if not path.is_file():
-            raise FileNotFoundError(f"resume=True but no trainer state exists at {path}; start a fresh run or point run_name at a run that saved state")
-
         state = torch.load(str(path), map_location="cpu", weights_only=False)
 
         trainer.model.load_state_dict(state["model"])

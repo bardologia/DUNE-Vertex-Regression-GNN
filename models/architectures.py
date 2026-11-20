@@ -89,9 +89,6 @@ class ResGatedGNN(GraphRegressor):
 
 class PNA(GraphRegressor):
     def __init__(self, config):
-        if not config.degree_histogram:
-            raise ValueError("PNA requires a degree histogram computed from the training graphs; none was provided in the config.")
-
         super().__init__(config, MessagePassingEncoder(config, self.convolution, edge_mode="attr"))
 
     @staticmethod

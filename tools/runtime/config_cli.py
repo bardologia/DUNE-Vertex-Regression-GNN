@@ -218,10 +218,6 @@ class ConfigCli:
 
     @classmethod
     def load_resolved(cls, config, path: Path):
-        path = Path(path)
-        if not path.exists():
-            raise FileNotFoundError(f"Resolved config not found at {path}. The run directory is missing metadata/resolved_config.json and cannot be evaluated.")
-
         with open(path, "r", encoding="utf-8") as f:
             mapping = json.load(f)
 

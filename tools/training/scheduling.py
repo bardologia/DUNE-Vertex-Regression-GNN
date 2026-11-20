@@ -172,8 +172,6 @@ class Scheduler:
         if self.scheduler_type == "reduce_on_plateau":
             return list(self.current_lrs)
 
-        raise ValueError(f"Unknown scheduler type: {self.scheduler_type}")
-
     def step(self, epoch: int) -> list[float]:
         self.current_lrs = self._lrs_for(epoch - self._epoch_offset)
         return list(self.current_lrs)
