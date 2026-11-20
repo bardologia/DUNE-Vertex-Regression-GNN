@@ -373,9 +373,6 @@ class SweepReport:
         }
 
     def _saturated(self):
-        if self.ok_frame.empty:
-            return self.ok_frame
-
         return self.ok_frame[(self.ok_frame["data_wait_fraction"] <= self.wait_threshold) | (self.ok_frame["feed_ratio"] >= 1.0)]
 
     def plot_throughput_vs_batch(self, fig_dir: Path) -> Path:
