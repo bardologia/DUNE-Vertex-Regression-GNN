@@ -13,7 +13,7 @@ import torch
 from optuna.samplers import TPESampler
 
 from configuration.baseline.general import BaselineImportance, BaselineLabels
-from configuration.data.general     import CoordinateAxes
+from configuration.data.general     import CoordinateAxes, DatasetSplits
 from configuration.shared           import IoNames
 from tools.reporting.markdown       import MarkdownDoc, MarkdownTable
 from tools.runtime.config_cli       import ConfigCli
@@ -184,7 +184,7 @@ class BaselinePipeline:
 
     def _evaluate(self, family, model):
         per_split_metrics = {}
-        for split_name in BaselineLabels.split_order:
+        for split_name in DatasetSplits.names:
             features, targets             = self.splits[split_name]
             predictions                   = model.predict(features)
             per_split_metrics[split_name] = InferenceMetrics(self.logger).compute(torch.from_numpy(predictions), torch.from_numpy(targets), stage=f"{family.KEY}/{split_name}")

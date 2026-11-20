@@ -42,12 +42,11 @@ class BaselineConfig:
 
 @dataclass(frozen=True)
 class BaselineLabels:
-    model_name     : str   = "baseline_{family}"
-    lightgbm_key   : str   = "lightgbm"
-    lightgbm_label : str   = "LightGBM"
-    xgboost_key    : str   = "xgboost"
-    xgboost_label  : str   = "XGBoost"
-    split_order    : tuple = ("train", "val", "test")
+    model_name     : str = "baseline_{family}"
+    lightgbm_key   : str = "lightgbm"
+    lightgbm_label : str = "LightGBM"
+    xgboost_key    : str = "xgboost"
+    xgboost_label  : str = "XGBoost"
 
 
 @dataclass(frozen=True)
