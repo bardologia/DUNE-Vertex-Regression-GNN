@@ -9,7 +9,7 @@ import torch
 from torch_geometric.data import Data
 
 from configuration import DatasetConfig
-from tools import Logger
+from tools.monitoring import Logger
 from pipelines.dataset import ParquetDatasetWriter
 
 

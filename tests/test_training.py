@@ -5,7 +5,7 @@ import pytest
 import torch
 
 from configuration import TrainEntryConfig
-from tools import Logger
+from tools.monitoring import Logger
 from tools.runtime.completion import CompletionMarker
 from pipelines.training import TrainingPipeline
 

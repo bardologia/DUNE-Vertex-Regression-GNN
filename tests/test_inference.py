@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from configuration import TrainEntryConfig
-from tools import Logger
+from tools.monitoring import Logger
 from pipelines.training import TrainingPipeline
 from pipelines.inference import InferencePipeline
 

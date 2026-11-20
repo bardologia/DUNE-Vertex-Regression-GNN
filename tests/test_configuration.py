@@ -1,6 +1,6 @@
 from configuration import ModelConfigRegistry, TrainEntryConfig
 from configuration.architectures import GPSConfig
-from tools import ConfigCli
+from tools.runtime.config_cli import ConfigCli
 
 
 def test_model_config_registry_complete():

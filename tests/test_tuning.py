@@ -1,5 +1,5 @@
 from configuration import TuneEntryConfig
-from tools import Logger
+from tools.monitoring import Logger
 from pipelines.tuning import Tuner
 
 
