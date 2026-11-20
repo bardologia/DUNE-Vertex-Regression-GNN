@@ -74,7 +74,7 @@ class CrossValidationReport:
         per_fold_table = MarkdownTable(["Fold", *CrossValidationReportFields.summary_metrics], align=["right"] + ["right"] * len(CrossValidationReportFields.summary_metrics))
         for record in fold_records:
             metrics = record["metrics"]
-            cells   = [ScalarFormatter.format_scalar(metrics.get(key)) for key in CrossValidationReportFields.summary_metrics]
+            cells   = [ScalarFormatter.format_scalar(metrics[key]) for key in CrossValidationReportFields.summary_metrics]
             per_fold_table.add_row(record["fold"], *cells)
         document.heading("Held-out test metrics per fold", level=2)
         document.table(per_fold_table)

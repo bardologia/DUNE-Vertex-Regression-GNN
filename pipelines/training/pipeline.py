@@ -69,8 +69,8 @@ class TrainingPipeline:
         self.logger.section("[Model Architecture]")
         self.logger.kv_table({
             "Architecture" : self.entry.model_name,
-            "Input dim"    : self.entry.model_overrides.get("input_dim"),
-            "Edge dim"     : self.entry.model_overrides.get("edge_dim"),
+            "Input dim"    : self.entry.model_overrides["input_dim"],
+            "Edge dim"     : self.entry.model_overrides["edge_dim"],
             "Parameters"   : f"{total_params:,}",
         })
 
