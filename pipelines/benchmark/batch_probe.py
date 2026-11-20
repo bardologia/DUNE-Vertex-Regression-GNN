@@ -10,7 +10,7 @@ from models                                  import get_model
 from tools.runtime.reproducibility           import Reproducibility
 from tools.training.pretraining.batch_finder import BatchSizeFinder
 
-from pipelines.training.loss import Loss
+from pipelines.training.trainer import Loss
 
 
 class MaxBatchProbe:

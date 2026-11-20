@@ -9,8 +9,7 @@ from pipelines.dataset.pipeline     import DatasetPipeline
 from pipelines.shared.overfit_check import OverfitCheck
 from pipelines.shared.run_metadata  import LightweightRunContext, TrainingRunMetadata
 
-from pipelines.training.optimizer_overrides import OptimizerOverrideApplier
-from pipelines.training.trainer             import Trainer
+from pipelines.training.trainer import OptimizerOverrideApplier, Trainer
 
 
 class TrainingPipeline:

@@ -5,7 +5,7 @@ from torch_geometric.loader import DataLoader
 
 from configuration import LossConfig
 from pipelines.dataset.normalization import FeatureGroupNormalizer, NormalizationStats
-from pipelines.training.loss import Loss
+from pipelines.training.trainer import Loss
 from tools.monitoring import Logger
 
 

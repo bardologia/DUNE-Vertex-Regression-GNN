@@ -1,6 +1,5 @@
-from .loss     import Loss
 from .pipeline import TrainingPipeline
-from .trainer  import Trainer
+from .trainer  import Loss, Trainer
 
 __all__ = [
     "Loss",

@@ -20,8 +20,7 @@ from pipelines.dataset.pipeline       import DatasetPipeline
 from pipelines.inference.metrics      import InferenceMetrics
 from pipelines.inference.predictor    import Predictor
 from pipelines.shared.run_metadata    import LightweightRunContext, TrainingRunMetadata
-from pipelines.training.optimizer_overrides import OptimizerOverrideApplier
-from pipelines.training.trainer       import Trainer
+from pipelines.training.trainer       import OptimizerOverrideApplier, Trainer
 
 from pipelines.benchmark.batch_probe import MaxBatchProbe
 from pipelines.benchmark.results     import ComparisonReport, TrialCollector

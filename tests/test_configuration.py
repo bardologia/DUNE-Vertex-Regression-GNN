@@ -46,7 +46,7 @@ def test_gps_declares_lower_optimizer_overrides():
 
 
 def test_optimizer_overrides_applied_and_cli_wins():
-    from pipelines.training.optimizer_overrides import OptimizerOverrideApplier
+    from pipelines.training.trainer import OptimizerOverrideApplier
 
     class SilentLogger:
         def section(self, *args): pass
@@ -67,7 +67,7 @@ def test_optimizer_overrides_applied_and_cli_wins():
 def test_optimizer_overrides_reject_unknown_field():
     import pytest
     from dataclasses import dataclass, field
-    from pipelines.training.optimizer_overrides import OptimizerOverrideApplier
+    from pipelines.training.trainer import OptimizerOverrideApplier
 
     @dataclass
     class BadConfig(GPSConfig):
