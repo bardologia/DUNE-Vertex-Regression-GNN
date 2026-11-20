@@ -140,3 +140,8 @@ class StoreLayout:
     octant_signs        : tuple = (1, -1)
     octant_symbols      : tuple = ((1, "p"), (-1, "n"))
     reflection_decimals : int   = 6
+
+
+@dataclass(frozen=True)
+class CoordinateAxes:
+    names : tuple = ("x", "y", "z")

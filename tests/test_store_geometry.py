@@ -216,7 +216,7 @@ def test_dataset_explorer_cache_is_stamped_and_old_caches_are_refused(dataset_co
     assert meta["count"] == data["gt"].shape[0]
 
     archive = dict(np.load(path))
-    archive.pop(CacheGeometryStamp.KEY)
+    archive.pop("geometry_fingerprint")
     old = tmp_path / "old_raw.npz"
     np.savez_compressed(old, **archive)
 

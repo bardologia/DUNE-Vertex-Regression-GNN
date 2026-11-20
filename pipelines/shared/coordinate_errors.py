@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import torch
 
+from configuration.data.general import CoordinateAxes
+
 
 class CoordinateErrors:
-    COORDINATE_NAMES = ("x", "y", "z")
-    METRIC_NAMES     = ("mae", "rmse")
-
     def __init__(self):
-        self.absolute_sum = torch.zeros(len(self.COORDINATE_NAMES), dtype=torch.float64)
-        self.squared_sum  = torch.zeros(len(self.COORDINATE_NAMES), dtype=torch.float64)
+        self.absolute_sum = torch.zeros(len(CoordinateAxes.names), dtype=torch.float64)
+        self.squared_sum  = torch.zeros(len(CoordinateAxes.names), dtype=torch.float64)
         self.count        = 0
 
     def update(self, difference):
@@ -32,7 +31,7 @@ class CoordinateErrors:
         root_mean_squared = self.root_mean_squared()
 
         results = {}
-        for index, name in enumerate(self.COORDINATE_NAMES):
+        for index, name in enumerate(CoordinateAxes.names):
             results[f"mae_{name}"]  = float(mean_absolute[index].item())
             results[f"rmse_{name}"] = float(root_mean_squared[index].item())
 

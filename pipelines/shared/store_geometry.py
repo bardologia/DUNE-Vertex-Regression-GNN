@@ -37,18 +37,16 @@ class StoreGeometryRecord:
 
 
 class CacheGeometryStamp:
-    KEY = "geometry_fingerprint"
+    @staticmethod
+    def payload(fingerprint: str) -> dict:
+        return {"geometry_fingerprint": np.array(fingerprint)}
 
-    @classmethod
-    def payload(cls, fingerprint: str) -> dict:
-        return {cls.KEY: np.array(fingerprint)}
-
-    @classmethod
-    def require(cls, archive, cache_path: Path, fingerprint: str) -> None:
+    @staticmethod
+    def require(archive, cache_path: Path, fingerprint: str) -> None:
         keys = archive.files if hasattr(archive, "files") else list(archive)
-        if cls.KEY not in keys:
-            raise ValueError(f"{cache_path} carries no {cls.KEY}: it was built from a Parquet store before the documented channel mapping, with misplaced sensors and the three face totals as channels. Delete it and let the console rebuild it from the current store.")
+        if "geometry_fingerprint" not in keys:
+            raise ValueError(f"{cache_path} carries no geometry_fingerprint: it was built from a Parquet store before the documented channel mapping, with misplaced sensors and the three face totals as channels. Delete it and let the console rebuild it from the current store.")
 
-        stamped = str(archive[cls.KEY])
+        stamped = str(archive["geometry_fingerprint"])
         if stamped != fingerprint:
             raise ValueError(f"{cache_path} was built from store geometry {stamped} but the current store has {fingerprint}. Delete it and let the console rebuild it from the current store.")

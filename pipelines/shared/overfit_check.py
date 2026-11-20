@@ -9,9 +9,10 @@ from pathlib     import Path
 
 from torch_geometric.data import Batch
 
-from configuration.shared          import IoNames
-from tools.runtime.reproducibility import RngSnapshot
-from tools.training.scheduling     import LearningRateScaler
+from configuration.shared           import IoNames
+from configuration.training.general import OverfitCheckSettings
+from tools.runtime.reproducibility  import RngSnapshot
+from tools.training.scheduling      import LearningRateScaler
 
 
 class RepeatedBatchLoader:
@@ -34,9 +35,6 @@ class FixedEpochDataset:
 
 
 class OverfitCheck:
-
-    DROPOUT_SUFFIX = ("dropout", "drop_path_rate")
-
     def __init__(self, config, run_directory, metadata_directory, logger) -> None:
         self.config             = config
         self.run_directory      = Path(run_directory)
@@ -95,7 +93,7 @@ class OverfitCheck:
         overrides = dict(model_overrides)
 
         for field_definition in fields(model_config):
-            if not field_definition.name.endswith(self.DROPOUT_SUFFIX):
+            if not field_definition.name.endswith(OverfitCheckSettings.dropout_suffixes):
                 continue
 
             overrides[field_definition.name] = 0.0

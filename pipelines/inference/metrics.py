@@ -3,11 +3,12 @@ from __future__ import annotations
 import numpy as np
 import torch
 
+from configuration.data.general         import CoordinateAxes
 from pipelines.shared.coordinate_errors import CoordinateErrors
 
 
 class InferenceMetrics:
-    COORDINATE_NAMES = CoordinateErrors.COORDINATE_NAMES
+    COORDINATE_NAMES = CoordinateAxes.names
 
     def __init__(self, logger, tracker=None):
         self.logger  = logger

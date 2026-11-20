@@ -195,3 +195,19 @@ class OptimizerSearchSpace:
     weight_decay_low        : float = 1e-6
     weight_decay_high       : float = 1e-4
     encoder_decay_high      : float = 5e-4
+
+
+@dataclass(frozen=True)
+class TrainerSettings:
+    error_metrics   : tuple = ("mae", "rmse")
+    minimum_elapsed : float = 1e-9
+
+
+@dataclass(frozen=True)
+class LossSettings:
+    epsilon : float = 1e-12
+
+
+@dataclass(frozen=True)
+class OverfitCheckSettings:
+    dropout_suffixes : tuple = ("dropout", "drop_path_rate")

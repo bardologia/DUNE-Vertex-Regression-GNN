@@ -6,7 +6,9 @@ import time
 
 import torch
 
+from configuration.data.general        import CoordinateAxes
 from configuration.shared              import IoNames
+from configuration.training.general    import TrainerSettings
 from tools.monitoring.inspection       import ModelSummary
 from tools.monitoring.resource_monitor import ResourceMonitor
 from tools.runtime.run_tag             import CompletionMarker
@@ -214,7 +216,7 @@ class Trainer:
         self._apply_learning_rates()
 
     def _log_throughput(self, epoch_time: float, data_wait: float, graph_count: int, epoch: int) -> None:
-        elapsed = max(epoch_time, 1e-9)
+        elapsed = max(epoch_time, TrainerSettings.minimum_elapsed)
 
         self.tracker.log_scalar("throughput/graphs_per_s",   graph_count / elapsed, epoch)
         self.tracker.log_scalar("throughput/epoch_time_s",   epoch_time,            epoch)
@@ -289,8 +291,8 @@ class Trainer:
         if not coordinate_errors:
             return
 
-        for metric in CoordinateErrors.METRIC_NAMES:
-            for name in CoordinateErrors.COORDINATE_NAMES:
+        for metric in TrainerSettings.error_metrics:
+            for name in CoordinateAxes.names:
                 self.tracker.log_scalar(f"val_{metric}/{name}", coordinate_errors[f"{metric}_{name}"], epoch)
 
             self.logger.subsection(f"Epoch {epoch + 1} val {metric.upper():<4} x/y/z (m) = {self._coordinate_row(coordinate_errors, metric)}")
@@ -309,10 +311,10 @@ class Trainer:
         if not coordinate_errors:
             return {}
 
-        return {f"val_{metric} x/y/z (m)": self._coordinate_row(coordinate_errors, metric) for metric in CoordinateErrors.METRIC_NAMES}
+        return {f"val_{metric} x/y/z (m)": self._coordinate_row(coordinate_errors, metric) for metric in TrainerSettings.error_metrics}
 
     def _coordinate_row(self, coordinate_errors, metric):
-        return " / ".join(f"{coordinate_errors[f'{metric}_{name}']:.3f}" for name in CoordinateErrors.COORDINATE_NAMES)
+        return " / ".join(f"{coordinate_errors[f'{metric}_{name}']:.3f}" for name in CoordinateAxes.names)
 
     def train(self, train_loader, val_loader):
         self.logger.section("[Training Loop]")
