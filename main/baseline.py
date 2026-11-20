@@ -3,6 +3,7 @@ from _bootstrap import EnvironmentPinner
 EnvironmentPinner.pin()
 
 from configuration.entry      import BaselineEntryConfig
+from configuration.shared     import IoNames
 from tools.monitoring.logger  import Logger
 from tools.runtime.config_cli import ConfigCli
 from pipelines.baseline       import BaselinePipeline
@@ -15,7 +16,7 @@ class BaselineEntry:
     def run(self):
         self.config = ConfigCli(self.config, description="Tune and train the gradient-boosted baselines (LightGBM, XGBoost)").apply()
 
-        logger  = Logger(log_dir="logs", name="baseline")
+        logger  = Logger(log_dir=IoNames.logs_dir, name=IoNames.baseline_log)
         summary = BaselinePipeline(self.config, logger).run()
         logger.close()
         return summary

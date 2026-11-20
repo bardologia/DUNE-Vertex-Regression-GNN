@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 
 from configuration.data.general      import DataConfig
+from configuration.shared            import IoNames
 from pipelines.dataset.parquet_store import ParquetEventReader
 from tools.monitoring.logger         import Logger
 
@@ -84,6 +85,6 @@ class LightCentroidCheck:
 
 
 if __name__ == "__main__":
-    logger = Logger(log_dir="logs", name="light_centroid_check")
+    logger = Logger(log_dir=IoNames.logs_dir, name=IoNames.light_centroid_log)
     LightCentroidCheck(DataConfig().parquet_store_dir, logger).run()
     logger.close()

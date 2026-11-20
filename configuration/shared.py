@@ -22,6 +22,15 @@ class IoNames:
     run_tag_format    : str = "%Y%m%d_%H%M%S"
     run_stamp_format  : str = "%Y%m%d-%H%M%S"
     json_indent       : int = 2
+    shm_dir           : str = "/dev/shm"
+
+    parquet_store_log  : str = "parquet_store"
+    tune_log           : str = "tune_{model}"
+    light_centroid_log : str = "light_centroid_check"
+    throughput_figure  : str = "throughput_vs_batch_size.png"
+    data_wait_figure   : str = "data_wait_vs_workers.png"
+    gpu_util_figure    : str = "gpu_util_vs_throughput.png"
+    feed_ratio_figure  : str = "feed_ratio_vs_workers.png"
 
     raw_event_glob      : str = "*.csv"
     geometry_table_file : str = "geometry.parquet"

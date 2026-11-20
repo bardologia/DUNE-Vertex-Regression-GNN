@@ -7,6 +7,8 @@ import time
 import psutil
 import pynvml
 
+from configuration.shared import IoNames
+
 
 class ResourceMonitor:
     TB_SCALARS      = ("ram_pct", "proc_rss_gb", "swap_pct", "shm_pct", "cpu_pct", "proc_cpu_pct", "disk_read_mb_s", "disk_write_mb_s")
@@ -78,7 +80,7 @@ class ResourceMonitor:
 
     def _get_shm_usage(self):
         try:
-            usage = psutil.disk_usage("/dev/shm")
+            usage = psutil.disk_usage(IoNames.shm_dir)
             return self._bytes_to_gb(usage.used), float(usage.percent)
         except (FileNotFoundError, PermissionError, OSError):
             return 0.0, 0.0

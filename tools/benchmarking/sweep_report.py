@@ -5,6 +5,8 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import pandas             as pd
 
+from configuration.shared import IoNames
+
 
 class SweepReport:
     def __init__(self, results: list[dict], wait_threshold: float = 0.05) -> None:
@@ -75,7 +77,7 @@ class SweepReport:
         axes.set_title("End-to-end training throughput vs batch size")
         axes.legend(title="DataLoader workers", bbox_to_anchor=(1.02, 1.0), loc="upper left", borderaxespad=0.0)
 
-        return self._save(figure, axes, fig_dir, "throughput_vs_batch_size.png")
+        return self._save(figure, axes, fig_dir, IoNames.throughput_figure)
 
     def plot_data_wait_vs_workers(self, fig_dir: Path) -> Path:
         figure, axes = self._new_axes()
@@ -90,7 +92,7 @@ class SweepReport:
         axes.set_title("Data-starvation share of step time vs worker count")
         axes.legend(bbox_to_anchor=(1.02, 1.0), loc="upper left", borderaxespad=0.0)
 
-        return self._save(figure, axes, fig_dir, "data_wait_vs_workers.png")
+        return self._save(figure, axes, fig_dir, IoNames.data_wait_figure)
 
     def plot_gpu_util_vs_throughput(self, fig_dir: Path) -> Path:
         figure, axes = self._new_axes()
@@ -110,7 +112,7 @@ class SweepReport:
         colorbar = figure.colorbar(scatter, ax=axes)
         colorbar.set_label("DataLoader workers")
 
-        return self._save(figure, axes, fig_dir, "gpu_util_vs_throughput.png")
+        return self._save(figure, axes, fig_dir, IoNames.gpu_util_figure)
 
     def plot_feed_ratio_vs_workers(self, fig_dir: Path) -> Path:
         figure, axes = self._new_axes()
@@ -125,7 +127,7 @@ class SweepReport:
         axes.set_title("CPU feed capacity relative to the GPU compute ceiling")
         axes.legend(bbox_to_anchor=(1.02, 1.0), loc="upper left", borderaxespad=0.0)
 
-        return self._save(figure, axes, fig_dir, "feed_ratio_vs_workers.png")
+        return self._save(figure, axes, fig_dir, IoNames.feed_ratio_figure)
 
     def save_all(self, fig_dir: Path) -> list[Path]:
         return [

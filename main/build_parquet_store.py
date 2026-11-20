@@ -3,6 +3,7 @@ from _bootstrap import EnvironmentPinner
 EnvironmentPinner.pin()
 
 from configuration.entry      import DatasetEntryConfig
+from configuration.shared     import IoNames
 from tools.monitoring.logger  import Logger
 from tools.runtime.config_cli import ConfigCli
 from pipelines.dataset        import ParquetDatasetWriter
@@ -15,7 +16,7 @@ class ParquetStoreEntry:
     def run(self):
         self.config = ConfigCli(self.config, description="Build the Parquet store from raw CSVs").apply()
 
-        logger = Logger(log_dir="logs", name="parquet_store")
+        logger = Logger(log_dir=IoNames.logs_dir, name=IoNames.parquet_store_log)
         ParquetDatasetWriter(self.config.raw_input_dir, self.config.output_dir, worker_count=self.config.worker_count, logger=logger).run()
         logger.close()
 
