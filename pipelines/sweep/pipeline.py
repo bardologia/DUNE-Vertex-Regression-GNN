@@ -148,5 +148,5 @@ class EnergyEfficiencySweepPipeline:
         self._prepare_dataset_pipeline()
         self._run_grid()
         self._build_outputs()
-        self.logger.ok(f"Sweep complete: {len(self.records)} cells -> {self.output_directory}")
+        self.logger.ok(f"Sweep complete: {len(self.records)} cells in {self.output_directory}")
         return self.records

@@ -128,7 +128,7 @@ class BenchmarkPipeline:
             gate_passed = self._run_overfit_gate()
             if not gate_passed and self.config.overfit.abort_on_fail:
                 self._mark_stage("pipeline", "aborted")
-                self.logger.error("Overfit gate failed — benchmark aborted. Inspect the overfit results before retrying.")
+                self.logger.error("Overfit gate failed, benchmark aborted. Inspect the overfit results before retrying.")
                 raise SystemExit(1)
 
             self.max_batch_records = self._run_max_batch()

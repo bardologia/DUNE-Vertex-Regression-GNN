@@ -445,5 +445,5 @@ class FeatureImportancePipeline:
         self._run_expected_gradients()
         self._run_kernel_shap()
         self._build_outputs()
-        self.logger.ok(f"Feature importance complete -> {self.output_directory}")
+        self.logger.ok(f"Feature importance complete: {self.output_directory}")
         return self.output_directory

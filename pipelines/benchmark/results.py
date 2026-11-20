@@ -75,10 +75,10 @@ class ComparisonReport:
     def _capacity_table(self):
         table = MarkdownTable(["Model", "Parameters", "Width", "Deviation", "Flags"], align=["left", "right", "right", "right", "left"])
         for record in self.records:
-            deviation = f"{record['size_deviation_pct']:+.2f} %" if record.get("size_deviation_pct") is not None else "—"
-            flags     = "; ".join(record.get("size_flags") or []) or "—"
-            parameters = f"{record['parameters']:,}" if record.get("parameters") is not None else "—"
-            table.add_row(record["model"], parameters, record.get("width") or "—", deviation, flags)
+            deviation  = f"{record['size_deviation_pct']:+.2f} %" if record.get("size_deviation_pct") is not None else None
+            flags      = "; ".join(record.get("size_flags") or []) or None
+            parameters = f"{record['parameters']:,}" if record.get("parameters") is not None else None
+            table.add_row(record["model"], parameters, record.get("width"), deviation, flags)
         return table
 
     def _diagnostics_table(self):
@@ -86,18 +86,18 @@ class ComparisonReport:
         for record in self.records:
             overfit_loss = ScalarFormatter.format_scalar(record.get("overfit_loss"))
             peak         = ScalarFormatter.format_scalar(record.get("max_batch_peak_gb"))
-            table.add_row(record["model"], record.get("overfit_status") or "—", overfit_loss, record.get("max_batch") or "—", peak)
+            table.add_row(record["model"], record.get("overfit_status"), overfit_loss, record.get("max_batch"), peak)
         return table
 
     def _training_table(self):
         table = MarkdownTable(["Model", "Status", "Best val loss", "Batch", "LR scale", "Duration (s)"], align=["left", "left", "right", "right", "right", "right"])
         for record in self.records:
-            lr_scale = f"{record['lr_scale']:.4f}" if record.get("lr_scale") is not None else "—"
+            lr_scale = f"{record['lr_scale']:.4f}" if record.get("lr_scale") is not None else None
             table.add_row(
                 record["model"],
-                record.get("train_status") or "—",
+                record.get("train_status"),
                 ScalarFormatter.format_scalar(record.get("best_val_loss")),
-                record.get("train_batch_size") or "—",
+                record.get("train_batch_size"),
                 lr_scale,
                 ScalarFormatter.format_scalar(record.get("duration_s")),
             )
