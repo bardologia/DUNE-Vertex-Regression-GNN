@@ -85,17 +85,17 @@ class GpuUtilizationSampler:
         self._thread = threading.Thread(target=self._run, name="GpuUtilizationSampler", daemon=True)
         self._thread.start()
 
-    def _run(self) -> None:
-        while not self._stop_evt.is_set():
-            self._sample()
-            self._stop_evt.wait(self.interval_s)
-
     def _sample(self) -> None:
         util = pynvml.nvmlDeviceGetUtilizationRates(self._handle)
         mem  = pynvml.nvmlDeviceGetMemoryInfo(self._handle)
 
         self._util_samples.append(float(util.gpu))
         self._vram_samples.append(float(mem.used) / MeasurementUnits.bytes_per_gib)
+
+    def _run(self) -> None:
+        while not self._stop_evt.is_set():
+            self._sample()
+            self._stop_evt.wait(self.interval_s)
 
     def stop(self) -> dict:
         if self._thread is not None:
@@ -174,19 +174,6 @@ class GpuFeedBenchmark:
 
         return GraphDataLoader(self.dataset, **loader_kwargs)
 
-    @staticmethod
-    def _iterate(loader, n_batches: int):
-        if len(loader) == 0:
-            raise RuntimeError("DataLoader produced zero batches; dataset smaller than one batch with drop_last=True")
-
-        produced = 0
-        while produced < n_batches:
-            for batch in loader:
-                yield batch
-                produced += 1
-                if produced >= n_batches:
-                    return
-
     def _measure_loader_only(self, loader, spec: LoaderSpec) -> float:
         iterator = self._iterate(loader, self.warmup_batches + self.timed_batches)
 
@@ -205,21 +192,6 @@ class GpuFeedBenchmark:
     def _reference_batch(self, loader):
         batch = next(self._iterate(loader, 1))
         return self.to_model_input(batch, self.device)
-
-    def _train_step(self, model_input):
-        self.optimizer.zero_grad(set_to_none=True)
-
-        with torch.autocast(device_type=self.device.type, dtype=torch.bfloat16, enabled=self.use_amp):
-            loss = self.forward_loss(self.model, model_input)
-
-        loss.backward()
-        self.optimizer.step()
-
-        return loss
-
-    def _synchronize(self) -> None:
-        if self.device.type == "cuda":
-            torch.cuda.synchronize(self.device)
 
     def _measure_compute_ceiling(self, reference_input, spec: LoaderSpec) -> float:
         self.model.train()
@@ -276,6 +248,34 @@ class GpuFeedBenchmark:
             "data_wait_fraction"       : wait_fraction,
             **gpu_summary,
         }
+
+    @staticmethod
+    def _iterate(loader, n_batches: int):
+        if len(loader) == 0:
+            raise RuntimeError("DataLoader produced zero batches; dataset smaller than one batch with drop_last=True")
+
+        produced = 0
+        while produced < n_batches:
+            for batch in loader:
+                yield batch
+                produced += 1
+                if produced >= n_batches:
+                    return
+
+    def _train_step(self, model_input):
+        self.optimizer.zero_grad(set_to_none=True)
+
+        with torch.autocast(device_type=self.device.type, dtype=torch.bfloat16, enabled=self.use_amp):
+            loss = self.forward_loss(self.model, model_input)
+
+        loss.backward()
+        self.optimizer.step()
+
+        return loss
+
+    def _synchronize(self) -> None:
+        if self.device.type == "cuda":
+            torch.cuda.synchronize(self.device)
 
     def measure(self, spec: LoaderSpec) -> dict:
         loader = self._build_loader(spec)
@@ -348,12 +348,6 @@ class SweepReport:
     def dataframe(self):
         return self.frame
 
-    def _saturated(self):
-        if self.ok_frame.empty:
-            return self.ok_frame
-
-        return self.ok_frame[(self.ok_frame["data_wait_fraction"] <= self.wait_threshold) | (self.ok_frame["feed_ratio"] >= 1.0)]
-
     @property
     def recommendation(self) -> dict:
         if self.ok_frame.empty:
@@ -380,19 +374,11 @@ class SweepReport:
             "feed_ratio"               : float(best["feed_ratio"]),
         }
 
-    def _new_axes(self):
-        figure, axes = plt.subplots(figsize=LoaderSweepPlotStyle.figure_size)
-        return figure, axes
+    def _saturated(self):
+        if self.ok_frame.empty:
+            return self.ok_frame
 
-    def _save(self, figure, fig_dir: Path, name: str) -> Path:
-        fig_dir = Path(fig_dir)
-        fig_dir.mkdir(parents=True, exist_ok=True)
-
-        out_path = fig_dir / name
-        figure.savefig(out_path, dpi=LoaderSweepPlotStyle.dpi)
-        plt.close(figure)
-
-        return out_path
+        return self.ok_frame[(self.ok_frame["data_wait_fraction"] <= self.wait_threshold) | (self.ok_frame["feed_ratio"] >= 1.0)]
 
     def plot_throughput_vs_batch(self, fig_dir: Path) -> Path:
         figure, axes = self._new_axes()
@@ -458,6 +444,20 @@ class SweepReport:
         axes.legend(bbox_to_anchor=LoaderSweepPlotStyle.legend_anchor, loc="upper left", borderaxespad=0.0)
 
         return self._save(figure, fig_dir, IoNames.feed_ratio_figure)
+
+    def _new_axes(self):
+        figure, axes = plt.subplots(figsize=LoaderSweepPlotStyle.figure_size)
+        return figure, axes
+
+    def _save(self, figure, fig_dir: Path, name: str) -> Path:
+        fig_dir = Path(fig_dir)
+        fig_dir.mkdir(parents=True, exist_ok=True)
+
+        out_path = fig_dir / name
+        figure.savefig(out_path, dpi=LoaderSweepPlotStyle.dpi)
+        plt.close(figure)
+
+        return out_path
 
     def save_all(self, fig_dir: Path) -> list[Path]:
         return [

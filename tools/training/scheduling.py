@@ -27,6 +27,11 @@ class Warmup:
             "Start Factor" : self.warmup_start_factor,
         })
 
+    def reset(self) -> None:
+        self.current_step       = 0
+        self.warmup_finished    = False
+        self._logged_completion = False
+
     def factor(self) -> float:
         if not self.enabled or self.warmup_steps <= 0:
             return 1.0
@@ -74,11 +79,6 @@ class Warmup:
     def is_finished(self) -> bool:
         return self.warmup_finished or not self.enabled or self.warmup_steps <= 0
 
-    def reset(self) -> None:
-        self.current_step       = 0
-        self.warmup_finished    = False
-        self._logged_completion = False
-
     def state_dict(self) -> dict:
         return {
             "current_step"      : self.current_step,
@@ -112,13 +112,41 @@ class Scheduler:
         self.reset()
         self._log_scheduler_info()
 
-    def _progress(self, epoch: int) -> float:
-        maximum_epochs = max(1, int(self.config.loop.epochs))
-        return min(1.0, epoch / max(1, maximum_epochs - 1))
+    def reset(self, epoch_offset: int = 0) -> None:
+        self._epoch_offset    = int(epoch_offset)
+        self.current_lrs      = list(self.base_lrs)
+        self.best_metric      = math.inf if self.plateau_mode == "min" else -math.inf
+        self.num_bad_epochs   = 0
+        self.cooldown_counter = 0
 
-    def _decayed(self, factor: float) -> list[float]:
-        eta_min = float(self.config.scheduler.eta_min)
-        return [eta_min + (base_learning_rate - eta_min) * factor for base_learning_rate in self.base_lrs]
+    def _log_scheduler_info(self):
+        self.logger.section("[Learning Rate Scheduler]")
+        info = {
+            "Scheduler Type" : self.scheduler_type,
+            "Base LRs"       : self.base_lrs,
+        }
+
+        if self.scheduler_type in ("cosine_annealing", "linear", "polynomial", "exponential", "step"):
+            info["T_max"]   = max(1, int(self.config.loop.epochs))
+            info["Eta Min"] = self.config.scheduler.eta_min
+
+        if self.scheduler_type == "polynomial":
+            info["Power"] = self.config.scheduler.power
+
+        if self.scheduler_type == "step":
+            info["Step Size"] = self.config.scheduler.step_size
+            info["Gamma"]     = self.config.scheduler.gamma
+
+        if self.scheduler_type == "reduce_on_plateau":
+            info["Mode"]      = self.plateau_mode
+            info["Factor"]    = self.plateau_factor
+            info["Patience"]  = self.plateau_patience
+            info["Threshold"] = self.plateau_threshold
+            info["Cooldown"]  = self.plateau_cooldown
+            info["Min LR"]    = self.plateau_min_lr
+
+        info["Warmup Enabled"] = self.warmup.enabled if self.warmup else False
+        self.logger.kv_table(info)
 
     def _cosine_annealing(self, epoch: int) -> list[float]:
         return self._decayed(0.5 * (1.0 + math.cos(math.pi * self._progress(epoch))))
@@ -129,10 +157,18 @@ class Scheduler:
     def _polynomial(self, epoch: int) -> list[float]:
         return self._decayed((1.0 - self._progress(epoch)) ** float(self.config.scheduler.power))
 
+    def _decayed(self, factor: float) -> list[float]:
+        eta_min = float(self.config.scheduler.eta_min)
+        return [eta_min + (base_learning_rate - eta_min) * factor for base_learning_rate in self.base_lrs]
+
     def _exponential(self, epoch: int) -> list[float]:
         eta_min = float(self.config.scheduler.eta_min)
         ratio   = max(eta_min / max(self.base_lrs[0], SchedulerSettings.learning_rate_floor), SchedulerSettings.decay_ratio_floor)
         return [base_learning_rate * ratio ** self._progress(epoch) for base_learning_rate in self.base_lrs]
+
+    def _progress(self, epoch: int) -> float:
+        maximum_epochs = max(1, int(self.config.loop.epochs))
+        return min(1.0, epoch / max(1, maximum_epochs - 1))
 
     def _step_decay(self, epoch: int) -> list[float]:
         step_size = max(1, int(self.config.scheduler.step_size))
@@ -168,6 +204,20 @@ class Scheduler:
         self.current_lrs = self._lrs_for(epoch - self._epoch_offset)
         return list(self.current_lrs)
 
+    def _is_improvement(self, metric: float) -> bool:
+        if self.plateau_mode == "min":
+            return metric < self.best_metric * (1.0 - self.plateau_threshold)
+        return metric > self.best_metric * (1.0 + self.plateau_threshold)
+
+    def _reduce_lrs(self) -> None:
+        reduced_lrs = [max(learning_rate * self.plateau_factor, self.plateau_min_lr) for learning_rate in self.current_lrs]
+
+        if reduced_lrs == self.current_lrs:
+            return
+
+        self.current_lrs = reduced_lrs
+        self.logger.info(f"Plateau detected after {self.plateau_patience} stagnant epochs; reducing learning rates to {[round(learning_rate, 8) for learning_rate in reduced_lrs]}.")
+
     def step_metric(self, metric: float) -> list[float]:
         if self.scheduler_type != "reduce_on_plateau":
             return list(self.current_lrs)
@@ -189,33 +239,12 @@ class Scheduler:
 
         return list(self.current_lrs)
 
-    def _is_improvement(self, metric: float) -> bool:
-        if self.plateau_mode == "min":
-            return metric < self.best_metric * (1.0 - self.plateau_threshold)
-        return metric > self.best_metric * (1.0 + self.plateau_threshold)
-
-    def _reduce_lrs(self) -> None:
-        reduced_lrs = [max(learning_rate * self.plateau_factor, self.plateau_min_lr) for learning_rate in self.current_lrs]
-
-        if reduced_lrs == self.current_lrs:
-            return
-
-        self.current_lrs = reduced_lrs
-        self.logger.info(f"Plateau detected after {self.plateau_patience} stagnant epochs; reducing learning rates to {[round(learning_rate, 8) for learning_rate in reduced_lrs]}.")
-
     def effective_lrs(self) -> list[float]:
         if self.warmup is not None and not self.warmup.is_finished():
             warmup_factor = self.warmup.factor()
             return [learning_rate * warmup_factor for learning_rate in self.current_lrs]
 
         return list(self.current_lrs)
-
-    def reset(self, epoch_offset: int = 0) -> None:
-        self._epoch_offset    = int(epoch_offset)
-        self.current_lrs      = list(self.base_lrs)
-        self.best_metric      = math.inf if self.plateau_mode == "min" else -math.inf
-        self.num_bad_epochs   = 0
-        self.cooldown_counter = 0
 
     def state_dict(self) -> dict:
         return {
@@ -232,35 +261,6 @@ class Scheduler:
         self.best_metric      = float(state["best_metric"])
         self.num_bad_epochs   = int(state["num_bad_epochs"])
         self.cooldown_counter = int(state["cooldown_counter"])
-
-    def _log_scheduler_info(self):
-        self.logger.section("[Learning Rate Scheduler]")
-        info = {
-            "Scheduler Type" : self.scheduler_type,
-            "Base LRs"       : self.base_lrs,
-        }
-
-        if self.scheduler_type in ("cosine_annealing", "linear", "polynomial", "exponential", "step"):
-            info["T_max"]   = max(1, int(self.config.loop.epochs))
-            info["Eta Min"] = self.config.scheduler.eta_min
-
-        if self.scheduler_type == "polynomial":
-            info["Power"] = self.config.scheduler.power
-
-        if self.scheduler_type == "step":
-            info["Step Size"] = self.config.scheduler.step_size
-            info["Gamma"]     = self.config.scheduler.gamma
-
-        if self.scheduler_type == "reduce_on_plateau":
-            info["Mode"]      = self.plateau_mode
-            info["Factor"]    = self.plateau_factor
-            info["Patience"]  = self.plateau_patience
-            info["Threshold"] = self.plateau_threshold
-            info["Cooldown"]  = self.plateau_cooldown
-            info["Min LR"]    = self.plateau_min_lr
-
-        info["Warmup Enabled"] = self.warmup.enabled if self.warmup else False
-        self.logger.kv_table(info)
 
 
 class LearningRateScaler:

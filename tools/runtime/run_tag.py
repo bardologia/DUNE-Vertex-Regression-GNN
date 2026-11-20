@@ -21,10 +21,6 @@ class RunTag:
 class CompletionMarker:
 
     @staticmethod
-    def path(directory) -> Path:
-        return Path(directory) / IoNames.completion_file
-
-    @staticmethod
     def is_complete(directory) -> bool:
         return CompletionMarker.path(directory).is_file()
 
@@ -42,3 +38,7 @@ class CompletionMarker:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({"completed_at": RunTag.timestamp(), **payload}, indent=IoNames.json_indent), encoding="utf-8")
         return path
+
+    @staticmethod
+    def path(directory) -> Path:
+        return Path(directory) / IoNames.completion_file

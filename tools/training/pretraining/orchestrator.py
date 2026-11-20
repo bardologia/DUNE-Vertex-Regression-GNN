@@ -79,11 +79,6 @@ class PretrainOrchestrator:
 
         self.logger.subsection(f"Resolved batch size: {self.training.batch_size} (peak {result['peak_gb']:.2f} GB of the {result['budget_gb']:.2f} GB budget)")
 
-    def _release_cache(self) -> None:
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
     def _tune_loader(self, context: PretrainContext) -> None:
         tuner = LoaderTuner(
             dataset          = context.dataset,
@@ -112,6 +107,11 @@ class PretrainOrchestrator:
         self.report["loader"]         = choice
 
         self.logger.subsection(f"Resolved loader: workers={self.training.num_workers} prefetch={self.training.prefetch_factor} pin_memory={self.training.pin_memory}")
+
+    def _release_cache(self) -> None:
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     def _write_report(self) -> None:
         if self.result_dir is None:

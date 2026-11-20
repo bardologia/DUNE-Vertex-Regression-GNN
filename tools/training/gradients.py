@@ -42,6 +42,17 @@ class GradientClipper:
         self.logger.section("[Gradient Clipper]")
         self.logger.kv_table(fields)
 
+    def check_gradients(self, model: torch.nn.Module, global_step: int) -> bool:
+        has_invalid = False
+        for name, param in model.named_parameters():
+            if param.grad is not None:
+                if torch.isnan(param.grad).any() or torch.isinf(param.grad).any():
+                    self.logger.warning(f"NaN/Inf gradient detected in {name} at step {global_step}!")
+                    has_invalid = True
+                    break
+
+        return has_invalid
+
     @staticmethod
     def global_norm(model: torch.nn.Module) -> float:
         gradients = [parameter.grad.detach() for parameter in model.parameters() if parameter.grad is not None]
@@ -67,16 +78,6 @@ class GradientClipper:
             group_norm = torch.norm(torch.stack(torch._foreach_norm(gradients, 2)), 2).item()
             self.tracker.log_scalar(f"train/grad_norm/{group['name']}", group_norm, global_step)
 
-    def _clip(self, model: torch.nn.Module, norm: float, max_norm: float) -> tuple[float, float]:
-        scale = min(1.0, max_norm / (norm + self.epsilon))
-        if scale >= 1.0:
-            return norm, norm
-
-        gradients = [parameter.grad.detach() for parameter in model.parameters() if parameter.grad is not None]
-        torch._foreach_mul_(gradients, scale)
-
-        return norm, norm * scale
-
     def _compute_adaptive_threshold(self) -> float | None:
         if len(self.history) < self.window:
             return None
@@ -89,16 +90,15 @@ class GradientClipper:
         else:
             return float(window_data.mean() + self.adaptive_mean_std_k * window_data.std())
 
-    def check_gradients(self, model: torch.nn.Module, global_step: int) -> bool:
-        has_invalid = False
-        for name, param in model.named_parameters():
-            if param.grad is not None:
-                if torch.isnan(param.grad).any() or torch.isinf(param.grad).any():
-                    self.logger.warning(f"NaN/Inf gradient detected in {name} at step {global_step}!")
-                    has_invalid = True
-                    break
+    def _clip(self, model: torch.nn.Module, norm: float, max_norm: float) -> tuple[float, float]:
+        scale = min(1.0, max_norm / (norm + self.epsilon))
+        if scale >= 1.0:
+            return norm, norm
 
-        return has_invalid
+        gradients = [parameter.grad.detach() for parameter in model.parameters() if parameter.grad is not None]
+        torch._foreach_mul_(gradients, scale)
+
+        return norm, norm * scale
 
     def maybe_clip(self, model: torch.nn.Module, global_step: int):
         if self.tracker.debug:

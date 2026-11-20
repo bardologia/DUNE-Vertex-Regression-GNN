@@ -33,6 +33,18 @@ class LightCentroidCheck:
         self.logger.section("[Light Centroid Check]")
         self.logger.kv_table({"Channels": self.positions.shape[0], "Events": self.light.shape[0], **ranges}, title="Store")
 
+    def _report_full_detector(self):
+        full_mask         = np.ones(self.positions.shape[0], dtype=bool)
+        centroid, weight  = self._centroid(full_mask)
+        self._report_centroid("Full detector", centroid, weight > 0)
+
+    def _report_barrel_only(self):
+        extreme     = float(np.max(np.abs(self.positions[:, 2])))
+        barrel_mask = np.abs(self.positions[:, 2]) < (extreme - LightCentroidSettings.face_margin)
+
+        centroid, weight = self._centroid(barrel_mask)
+        self._report_centroid(f"Endcap faces excluded (|z| < {extreme - LightCentroidSettings.face_margin:.2f}, {int(barrel_mask.sum())} channels)", centroid, weight > 0)
+
     def _centroid(self, channel_mask):
         light     = self.light[:, channel_mask]
         positions = self.positions[channel_mask]
@@ -61,18 +73,6 @@ class LightCentroidCheck:
 
         self.logger.subsection(f"{title}: {int(valid.sum())}/{len(valid)} events carry light")
         self.logger.metrics_table(rows, list(rows[0]), title=title)
-
-    def _report_full_detector(self):
-        full_mask         = np.ones(self.positions.shape[0], dtype=bool)
-        centroid, weight  = self._centroid(full_mask)
-        self._report_centroid("Full detector", centroid, weight > 0)
-
-    def _report_barrel_only(self):
-        extreme     = float(np.max(np.abs(self.positions[:, 2])))
-        barrel_mask = np.abs(self.positions[:, 2]) < (extreme - LightCentroidSettings.face_margin)
-
-        centroid, weight = self._centroid(barrel_mask)
-        self._report_centroid(f"Endcap faces excluded (|z| < {extreme - LightCentroidSettings.face_margin:.2f}, {int(barrel_mask.sum())} channels)", centroid, weight > 0)
 
     def run(self):
         self._load()

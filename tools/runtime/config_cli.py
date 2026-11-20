@@ -21,12 +21,12 @@ class Detacher:
     def __init__(self, log_dir: str = IoNames.logs_dir) -> None:
         self.log_dir = Path(log_dir)
 
+    def active(self) -> bool:
+        return os.environ.get(CliSettings.detach_env_flag) == "1"
+
     def requested(self, argv: list[str] | None = None) -> bool:
         argv = sys.argv[1:] if argv is None else argv
         return any(flag in argv for flag in CliSettings.detach_flags)
-
-    def active(self) -> bool:
-        return os.environ.get(CliSettings.detach_env_flag) == "1"
 
     def ensure(self) -> None:
         if self.active():
@@ -88,29 +88,6 @@ class ConfigCli:
 
             self.parser.add_argument(*options, dest=path, type=str, default=None)
 
-    def apply(self, argv: list[str] | None = None):
-        args, leftover = self.parser.parse_known_args(argv)
-
-        self._reject_unknown_options(leftover)
-
-        if args._help_config:
-            self._log_config_help()
-            raise SystemExit(0)
-
-        if args._detach:
-            Detacher().ensure()
-
-        for path, current in list(self._leaves(self.config)):
-            raw = getattr(args, path, None)
-            if raw is None:
-                continue
-
-            value = self._coerce(raw, current)
-            self.set_path(self.config, path, value)
-            self.overrides[path] = value
-
-        return self.config
-
     def _reject_unknown_options(self, leftover: list[str]) -> None:
         offenders = []
 
@@ -128,16 +105,12 @@ class ConfigCli:
             keys = ", ".join(sorted(set(offenders)))
             raise ValueError(f"Unrecognized override option(s): {keys}. Known overrides: --<path> from {type(self.config).__name__}; bootstrap flags: {', '.join(CliSettings.bootstrap_flags)}")
 
-    @classmethod
-    def _leaves(cls, config, prefix: str = ""):
-        for f in fields(config):
-            value = getattr(config, f.name)
-            path  = f"{prefix}{f.name}"
+    def _log_config_help(self) -> None:
+        rows   = [{"Option": f"--{path}", "Type": type(value).__name__ if value is not None else "any", "Default": repr(value)} for path, value in self._leaves(self.config)]
+        logger = Logger(log_dir="", name=Path(sys.argv[0]).stem)
 
-            if is_dataclass(value):
-                yield from cls._leaves(value, prefix=f"{path}.")
-            else:
-                yield path, value
+        logger.metrics_table(rows, list(rows[0]), title=f"Configuration overrides for {type(self.config).__name__} (pass as --<path> <value>)")
+        logger.kv_table({"--detach (alias --nohup)": "relaunch detached from the terminal, output to logs/<script>_<stamp>.out"}, title="Execution flags", key_header="Flag", value_header="Effect")
 
     def _coerce(self, raw: str, current):
         if isinstance(current, bool):
@@ -176,26 +149,47 @@ class ConfigCli:
 
         return raw
 
-    def _log_config_help(self) -> None:
-        rows   = [{"Option": f"--{path}", "Type": type(value).__name__ if value is not None else "any", "Default": repr(value)} for path, value in self._leaves(self.config)]
-        logger = Logger(log_dir="", name=Path(sys.argv[0]).stem)
+    def apply(self, argv: list[str] | None = None):
+        args, leftover = self.parser.parse_known_args(argv)
 
-        logger.metrics_table(rows, list(rows[0]), title=f"Configuration overrides for {type(self.config).__name__} (pass as --<path> <value>)")
-        logger.kv_table({"--detach (alias --nohup)": "relaunch detached from the terminal, output to logs/<script>_<stamp>.out"}, title="Execution flags", key_header="Flag", value_header="Effect")
+        self._reject_unknown_options(leftover)
 
-    @staticmethod
-    def set_path(config, path: str, value) -> None:
-        parts  = path.split(".")
-        target = config
-        for part in parts[:-1]:
-            target = getattr(target, part)
-        setattr(target, parts[-1], value)
+        if args._help_config:
+            self._log_config_help()
+            raise SystemExit(0)
+
+        if args._detach:
+            Detacher().ensure()
+
+        for path, current in list(self._leaves(self.config)):
+            raw = getattr(args, path, None)
+            if raw is None:
+                continue
+
+            value = self._coerce(raw, current)
+            self.set_path(self.config, path, value)
+            self.overrides[path] = value
+
+        return self.config
 
     @classmethod
     def apply_overrides(cls, config, overrides: dict):
         for path, value in overrides.items():
             cls.set_path(config, path, value)
         return config
+
+    @staticmethod
+    def to_argv(overrides: dict) -> list[str]:
+        argv = []
+        for path, value in overrides.items():
+            if isinstance(value, bool):
+                rendered = "true" if value else "false"
+            elif isinstance(value, tuple):
+                rendered = str(list(value))
+            else:
+                rendered = str(value)
+            argv += [f"--{path}", rendered]
+        return argv
 
     @classmethod
     def to_mapping(cls, config) -> dict:
@@ -242,14 +236,20 @@ class ConfigCli:
         return config
 
     @staticmethod
-    def to_argv(overrides: dict) -> list[str]:
-        argv = []
-        for path, value in overrides.items():
-            if isinstance(value, bool):
-                rendered = "true" if value else "false"
-            elif isinstance(value, tuple):
-                rendered = str(list(value))
+    def set_path(config, path: str, value) -> None:
+        parts  = path.split(".")
+        target = config
+        for part in parts[:-1]:
+            target = getattr(target, part)
+        setattr(target, parts[-1], value)
+
+    @classmethod
+    def _leaves(cls, config, prefix: str = ""):
+        for f in fields(config):
+            value = getattr(config, f.name)
+            path  = f"{prefix}{f.name}"
+
+            if is_dataclass(value):
+                yield from cls._leaves(value, prefix=f"{path}.")
             else:
-                rendered = str(value)
-            argv += [f"--{path}", rendered]
-        return argv
+                yield path, value

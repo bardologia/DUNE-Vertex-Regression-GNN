@@ -18,6 +18,12 @@ class EarlyStopping:
 
         self.reset()
 
+    def reset(self) -> None:
+        self.best_loss  = None
+        self.counter    = 0
+        self.best_epoch = -1
+        self.triggered  = False
+
     def __call__(self, val_loss: float, epoch: int) -> bool:
         if self.best_loss is None or val_loss < self.best_loss - self.min_delta:
             self.best_loss  = float(val_loss)
@@ -37,12 +43,6 @@ class EarlyStopping:
             self.logger.warning(f"Early stopping triggered at epoch {epoch + 1}. Best epoch was {self.best_epoch + 1}.")
 
         return stop
-
-    def reset(self) -> None:
-        self.best_loss  = None
-        self.counter    = 0
-        self.best_epoch = -1
-        self.triggered  = False
 
     def state_dict(self) -> dict:
         return {

@@ -110,6 +110,11 @@ class MarkdownDoc:
         self.lines.append(f"**{key}:** `{value}`")
         return self
 
+    def table(self, table: MarkdownTable) -> "MarkdownDoc":
+        self.lines.extend(table.render())
+        self.lines.append("")
+        return self
+
     def kv_table(self, items: Mapping[str, Any] | Iterable[tuple], header: Sequence[str] = ("Key", "Value"), code_keys: bool = True) -> "MarkdownDoc":
         table = MarkdownTable(header)
         pairs = items.items() if isinstance(items, Mapping) else items
@@ -119,11 +124,6 @@ class MarkdownDoc:
             table.add_row(key, v)
 
         return self.table(table)
-
-    def table(self, table: MarkdownTable) -> "MarkdownDoc":
-        self.lines.extend(table.render())
-        self.lines.append("")
-        return self
 
     def image(self, alt: str, path: Any) -> "MarkdownDoc":
         self.lines.append(f"![{alt}]({path})")

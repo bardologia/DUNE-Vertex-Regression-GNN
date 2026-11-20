@@ -464,11 +464,6 @@ class GraphRegressor(nn.Module):
             return self.pool.out_dim
         return self.pool.out_dim + self.graph_scalars.out_dim
 
-    def _graph_attributes(self, data):
-        if "graph_attr" not in data:
-            raise ValueError(f"Model expects {self.config.graph_dim} graph-level scalars but the batch carries no graph_attr. Rebuild the dataset with graph.graph_scalar_features=true, or build the model with graph_dim=0.")
-        return data.graph_attr
-
     def _prepare_edge_attributes(self, data, reference):
         edge_attr = data.edge_attr
         if edge_attr is None:
@@ -476,6 +471,11 @@ class GraphRegressor(nn.Module):
         if edge_attr.dim() == 1:
             edge_attr = edge_attr.view(-1, 1)
         return edge_attr.to(dtype=reference.dtype)
+
+    def _graph_attributes(self, data):
+        if "graph_attr" not in data:
+            raise ValueError(f"Model expects {self.config.graph_dim} graph-level scalars but the batch carries no graph_attr. Rebuild the dataset with graph.graph_scalar_features=true, or build the model with graph_dim=0.")
+        return data.graph_attr
 
     def forward(self, data, return_features: bool = False):
         node_features = data.x
