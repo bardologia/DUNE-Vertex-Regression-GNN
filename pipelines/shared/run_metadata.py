@@ -61,18 +61,6 @@ class TrainingRunMetadata:
         })
 
     def save_store_geometry(self, store_geometry: dict) -> Path:
-        """Records the store geometry of the run, after checking that a resumed run was trained on the same one.
-
-        Args:
-            store_geometry : Mapping with the store ``geometry_fingerprint`` and ``channel_count``, from ``DatasetPipeline.store_geometry``.
-
-        Returns:
-            The record path.
-
-        Raises:
-            FileNotFoundError : If an existing run directory being resumed holds no record, as every run trained before the documented channel mapping.
-            ValueError        : If an existing run directory being resumed was trained on another store geometry.
-        """
         record = StoreGeometryRecord(self.metadata_directory)
         if self.resuming:
             record.require(store_geometry)

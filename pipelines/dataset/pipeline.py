@@ -81,14 +81,6 @@ class DatasetPipeline:
         return self.samples
 
     def store_geometry(self):
-        """Returns the identity of the loaded store geometry, the record a run or cache keeps of the store it was built from.
-
-        Returns:
-            A mapping with the ``geometry_fingerprint`` of ``ParquetEventReader.fingerprint`` and the ``channel_count`` of the store.
-
-        Raises:
-            ValueError : If the store has not been loaded yet.
-        """
         if self.geometry_fingerprint is None:
             raise ValueError("store_geometry needs the loaded store; call prepare_samples first.")
         return {"geometry_fingerprint": self.geometry_fingerprint, "channel_count": int(self.geometry_positions.shape[0])}
