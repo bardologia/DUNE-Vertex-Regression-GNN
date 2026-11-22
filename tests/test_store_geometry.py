@@ -186,7 +186,7 @@ def test_benchmark_resume_refuses_old_stage_results_before_writing(tmp_path, qui
     config.training.io.log_base_dir = tmp_path
     pipeline_directory              = tmp_path / "benchmark_old" / "pipeline"
     pipeline_directory.mkdir(parents=True)
-    (pipeline_directory / "training_results.json").write_text(json.dumps({"graphsage": {"status": "DONE", "metrics": {"euclidean_mean": 0.1}}}), encoding="utf-8")
+    (pipeline_directory / "training_results.json").write_text(json.dumps({"graphsage": {"status": "DONE", "metrics": {"rms_3d": 0.1}}}), encoding="utf-8")
 
     with pytest.raises(FileNotFoundError, match="before the documented channel mapping"):
         BenchmarkPipeline(config, logger=quiet_logger).run()
@@ -197,7 +197,7 @@ def test_benchmark_resume_refuses_stage_results_of_another_geometry(tmp_path, qu
     pipeline                    = BenchmarkPipeline(BenchmarkConfig(), logger=quiet_logger)
     pipeline.pipeline_directory = tmp_path
     pipeline.store_geometry     = STORE_GEOMETRY
-    (tmp_path / "training_results.json").write_text(json.dumps({"graphsage": {"status": "DONE", "metrics": {"euclidean_mean": 0.1}}}), encoding="utf-8")
+    (tmp_path / "training_results.json").write_text(json.dumps({"graphsage": {"status": "DONE", "metrics": {"rms_3d": 0.1}}}), encoding="utf-8")
 
     StoreGeometryRecord(tmp_path).save(OTHER_GEOMETRY)
     with pytest.raises(ValueError, match="store geometry"):

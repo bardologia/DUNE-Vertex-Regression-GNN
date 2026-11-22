@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from torch_geometric.loader import DataLoader as GraphDataLoader
 
-from configuration.data.general             import DatasetSplits
+from configuration.data.general             import CoordinateAxes, DatasetSplits
 from configuration.shared                   import IoNames
 from tools.runtime.reproducibility          import Reproducibility
 
@@ -12,7 +12,7 @@ from pipelines.dataset.augmentation         import Augmentation
 from pipelines.dataset.graph                import FeatureSchema, Graph
 from pipelines.dataset.graph_dataset        import CachedGraphDataset, DegreeHistogramEstimator, GraphDataset, GraphNormalizer, StatsEstimator
 from pipelines.dataset.parquet_store        import ParquetDatasetWriter, ParquetEventReader
-from pipelines.dataset.splitting            import TargetBalancer
+from pipelines.dataset.splitting            import LatticePlanes, PlaneSplitter
 
 
 class DatasetPipeline:
@@ -55,10 +55,17 @@ class DatasetPipeline:
         count    = len(self.light_matrix)
         base_ids = np.arange(count, dtype=np.float32)
         ones     = np.ones(count, dtype=np.float32)
-        samples  = np.column_stack([base_ids, ones, ones, ones, self.event_targets, base_ids]).astype(np.float32)
+        samples  = np.column_stack([base_ids, ones, ones, ones, self.event_targets, base_ids, np.ones((count, len(CoordinateAxes.names)), dtype=np.float32)]).astype(np.float32)
 
         self.logger.subsection(f"Built {len(samples)} base-event samples")
         return samples
+
+    def refresh_scored(self):
+        split   = self.config.split
+        scored  = LatticePlanes.scored(self.event_targets, split.plane_stride, split.plane_offset)
+        indices = self.samples[:, 7].astype(np.int64)
+
+        self.samples[:, 8:11] = scored[indices]
 
     def prepare_samples(self):
         if self.samples is not None:
@@ -67,15 +74,16 @@ class DatasetPipeline:
         self._ensure_store()
         self._load_store()
         self.samples = self._build_samples()
+        self.refresh_scored()
         return self.samples
 
     def store_geometry(self):
         return {"geometry_fingerprint": self.geometry_fingerprint, "channel_count": int(self.geometry_positions.shape[0])}
 
     def _split_samples(self, samples):
-        present_base_ids, target_dataframe        = self.base_event_targets(samples)
-        balancer                                  = TargetBalancer(self.logger, self.config.data.coordinate_columns, self.config.split)
-        train_rows, validation_rows, test_rows, _ = balancer.balance(target_dataframe)
+        present_base_ids, target_dataframe     = self.base_event_targets(samples)
+        split                                  = self.config.split
+        train_rows, validation_rows, test_rows = PlaneSplitter(self.logger, split.plane_stride, split.plane_offset, split.val_share, split.random_state).split(target_dataframe.to_numpy(dtype=np.float32))
 
         self.split_base_ids = {
             "train" : present_base_ids[train_rows].tolist(),
@@ -120,7 +128,7 @@ class DatasetPipeline:
         signs       = member_rows[["sign_x", "sign_y", "sign_z"]].values.astype(np.float32)
         targets     = member_rows[["target_x", "target_y", "target_z"]].values.astype(np.float32)
         base_ids    = member_rows["base_event_id"].values.astype(np.float32)
-        return np.column_stack([light_index, signs, targets, base_ids]).astype(np.float32)
+        return np.column_stack([light_index, signs, targets, base_ids, np.ones((len(member_rows), len(CoordinateAxes.names)), dtype=np.float32)]).astype(np.float32)
 
     def _warn_on_budget_cuts(self, available_count, selected_count, row_count):
         if selected_count < available_count:
@@ -273,6 +281,7 @@ class DatasetPipeline:
     def run_with_indices(self, train_indices, validation_indices, test_indices):
         self.logger.section("[Dataset Pipeline | Fold]")
         self.prepare_samples()
+        self.refresh_scored()
 
         train_base         = self.samples[train_indices]
         validation_samples = self.samples[validation_indices]

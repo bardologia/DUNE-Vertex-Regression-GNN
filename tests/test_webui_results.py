@@ -49,8 +49,8 @@ def test_run_listing_exposes_per_coordinate_errors(browser):
     _run_directory(runs_dir, "graphsage_case", {
         "unit"   : "m",
         "splits" : {
-            "test" : {"euclidean_mean": 4.5, "mae_x": 2.1, "mae_y": 2.0, "mae_z": 3.4, "rmse_x": 2.9, "rmse_y": 2.8, "rmse_z": 4.5},
-            "val"  : {"euclidean_mean": 4.9, "mae_x": 2.3, "mae_y": 2.2, "mae_z": 3.6, "rmse_x": 3.1, "rmse_y": 3.0, "rmse_z": 4.7},
+            "test" : {"rms_3d": 4.5, "mae_x": 2.1, "mae_y": 2.0, "mae_z": 3.4, "rmse_x": 2.9, "rmse_y": 2.8, "rmse_z": 4.5},
+            "val"  : {"rms_3d": 4.9, "mae_x": 2.3, "mae_y": 2.2, "mae_z": 3.6, "rmse_x": 3.1, "rmse_y": 3.0, "rmse_z": 4.7},
         },
     })
 
@@ -66,7 +66,7 @@ def test_run_listing_falls_back_to_the_next_split(browser):
     results, runs_dir = browser
     _run_directory(runs_dir, "graphsage_val_only", {
         "unit"   : "m",
-        "splits" : {"val": {"euclidean_mean": 4.9, "mae_x": 2.3, "mae_y": 2.2, "mae_z": 3.6, "rmse_x": 3.1, "rmse_y": 3.0, "rmse_z": 4.7}},
+        "splits" : {"val": {"rms_3d": 4.9, "mae_x": 2.3, "mae_y": 2.2, "mae_z": 3.6, "rmse_x": 3.1, "rmse_y": 3.0, "rmse_z": 4.7}},
     })
 
     run = results.list_runs()["runs"][0]
@@ -89,7 +89,7 @@ def test_benchmark_sub_runs_are_listed(browser):
     results, runs_dir = browser
     _run_directory(runs_dir, "benchmark_case/training/edgeconv_run", {
         "unit"   : "m",
-        "splits" : {"test": {"euclidean_mean": 3.7, "mae_x": 1.8, "mae_y": 1.7, "mae_z": 2.6, "rmse_x": 2.4, "rmse_y": 2.3, "rmse_z": 3.5}},
+        "splits" : {"test": {"rms_3d": 3.7, "mae_x": 1.8, "mae_y": 1.7, "mae_z": 2.6, "rmse_x": 2.4, "rmse_y": 2.3, "rmse_z": 3.5}},
     })
 
     runs = results.list_runs()["runs"]

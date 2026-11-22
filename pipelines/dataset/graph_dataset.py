@@ -88,8 +88,9 @@ class GraphDataset(Dataset):
         positions = self.geometry_positions * signs[None, :]
         light     = self._light_for_sample(light_row, base_event_id)
 
-        data   = self.graph_builder.build_from_arrays(positions, light)
-        data.y = torch.tensor(target, dtype=torch.float32).unsqueeze(0)
+        data        = self.graph_builder.build_from_arrays(positions, light)
+        data.y      = torch.tensor(target, dtype=torch.float32).unsqueeze(0)
+        data.scored = torch.tensor(sample[8:11], dtype=torch.float32).unsqueeze(0)
 
         if self.normalizer is not None:
             data = self.normalizer.apply(data)

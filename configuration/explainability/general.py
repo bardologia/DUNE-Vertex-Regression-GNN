@@ -35,14 +35,14 @@ class FeatureImportanceConfig:
     shap_events         : int  = 16
     shap_seed           : int  = 0
 
-    primary_metric      : str  = "euclidean_mean"
+    primary_metric      : str  = "rms_3d"
     top_k               : int  = 15
 
 
 @dataclass(frozen=True)
 class ImportanceMetrics:
-    keys        : tuple = ("euclidean_mean", "euclidean_median", "mae", "rmse", "r2")
-    descriptors : tuple = (("euclidean_mean", ("m", False)), ("euclidean_median", ("m", False)), ("mae", ("m", False)), ("rmse", ("m", False)), ("r2", ("", True)))
+    keys        : tuple = ("rms_3d", "mae", "rmse", "r2")
+    descriptors : tuple = (("rms_3d", ("m", False)), ("mae", ("m", False)), ("rmse", ("m", False)), ("r2", ("", True)))
 
 
 @dataclass(frozen=True)

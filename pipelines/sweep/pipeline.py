@@ -86,9 +86,9 @@ class EnergyEfficiencySweepPipeline:
 
         dataset              = self.dataset_pipeline.build_evaluation_split(self.split_base_ids, self.split)
         loader               = GraphDataLoader(dataset, batch_size=self.batch_size, shuffle=False)
-        predictions, targets = self.predictor.predict(loader)
+        predictions, targets, scored = self.predictor.predict(loader)
 
-        metrics = InferenceMetrics(self.logger).compute(predictions, targets, stage=f"scale={scale_factor:g} eff={detection_efficiency:g}")
+        metrics = InferenceMetrics(self.logger).compute(predictions, targets, scored, stage=f"scale={scale_factor:g} eff={detection_efficiency:g}")
         return {"scale_factor": float(scale_factor), "detection_efficiency": float(detection_efficiency), "metrics": metrics}
 
     def _run_grid(self):

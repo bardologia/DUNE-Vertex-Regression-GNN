@@ -313,3 +313,12 @@ def test_missing_store_raises(quiet_logger, tmp_path):
     except FileNotFoundError:
         raised = True
     assert raised
+
+
+def test_split_graphs_carry_scored_flags(dataset_config, quiet_logger):
+    datasets, _ = DatasetPipeline(dataset_config, quiet_logger).run()
+    val_scored  = torch.cat([graph.scored for graph in datasets["val"]])
+
+    assert all(bool(graph.scored.bool().all()) for graph in datasets["train"])
+    assert (val_scored.sum(dim=1) >= 1).all()
+    assert val_scored.sum() < val_scored.numel()

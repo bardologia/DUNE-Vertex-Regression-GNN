@@ -45,7 +45,7 @@ class BenchmarkTrainingConfig:
 
 @dataclass
 class ComparisonConfig:
-    rank_metric : str = "euclidean_mean"
+    rank_metric : str = "rms_3d"
 
 
 @dataclass
@@ -72,4 +72,4 @@ class BatchProbeSettings:
 
 @dataclass(frozen=True)
 class BenchmarkReportSettings:
-    leaderboard_metrics : tuple = ("euclidean_mean", "euclidean_median", "mae", "rmse", "median_error", "r2")
+    leaderboard_metrics : tuple = ("rms_3d", "mae", "rmse", "median_error", "r2")

@@ -18,15 +18,16 @@ def _stats():
     return NormalizationStats(node, edge, graph, target)
 
 
-def _batch():
+def _batch(scored=None):
     graphs = []
-    for _ in range(3):
+    for index in range(3):
         node_count = 20
         graphs.append(Data(
             x          = torch.randn(node_count, 8),
             edge_index = torch.randint(0, node_count, (2, node_count * 4)),
             edge_attr  = torch.randn(node_count * 4, 7),
             y          = torch.randn(1, 3),
+            scored     = torch.ones(1, 3) if scored is None else scored[index:index + 1],
         ))
     return next(iter(DataLoader(graphs, batch_size=3)))
 
@@ -53,4 +54,13 @@ def test_data_only_loss_matches_mse():
     predictions = torch.randn(3, 3)
     result      = _loss(LossConfig())(predictions, batch)
     expected    = torch.nn.functional.mse_loss(predictions, batch.y)
+    assert abs(result["total_loss"].item() - expected.item()) < 1e-5
+
+
+def test_data_loss_averages_only_scored_coordinates():
+    scored      = torch.tensor([[1.0, 0.0, 0.0], [0.0, 1.0, 1.0], [1.0, 1.0, 0.0]])
+    batch       = _batch(scored)
+    predictions = torch.randn(3, 3)
+    result      = _loss(LossConfig())(predictions, batch)
+    expected    = (((predictions - batch.y) ** 2)[scored.bool()]).mean()
     assert abs(result["total_loss"].item() - expected.item()) < 1e-5

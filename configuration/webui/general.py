@@ -112,7 +112,7 @@ class ResultsBrowsing:
     max_depth          : int   = 6
     nested_run_depth   : int   = 2
     best_metric_splits : tuple = ("test", "val", "train")
-    best_metric_name   : str   = "euclidean_mean"
+    best_metric_name   : str   = "rms_3d"
 
 
 @dataclass(frozen=True)
@@ -138,7 +138,7 @@ class ScriptRegistry:
     metadata : tuple = (
         ("train",               {"label": "Train",               "category": "Training", "purpose": "Train one GNN model end to end, logging checkpoints and metrics to runs/."}),
         ("tune",                {"label": "Tune",                "category": "Training", "purpose": "Run the Optuna hyperparameter search over the model and training configuration."}),
-        ("cross_validate",      {"label": "Cross-Validate",      "category": "Training", "purpose": "Run stratified K-fold cross-validation, aggregating held-out test metrics across folds."}),
+        ("cross_validate",      {"label": "Cross-Validate",      "category": "Training", "purpose": "Run lattice-plane cross-validation, aggregating held-out test metrics across folds."}),
         ("benchmark",           {"label": "Benchmark",           "category": "Training", "purpose": "Benchmark the whole model zoo: capacity matching, overfit gate, max-batch probe, training, and a ranked comparison report."}),
         ("baseline",            {"label": "Baseline",            "category": "Training", "purpose": "Tune and train the LightGBM and XGBoost baselines on tabular summary features of the same splits, writing leaderboard-comparable runs."}),
         ("build_parquet_store", {"label": "Build Parquet Store", "category": "Data",     "purpose": "Materialise the raw events into the Parquet store: sensor positions from the documented module mapping of the raw bins, face totals dropped, and octant expansion."}),
@@ -262,8 +262,9 @@ class LaunchForms:
                 "physics.efficiency_seed",
             ]},
             {"title": "Split", "fields": [
-                "split.test_size",
-                "split.val_ratio",
+                "split.plane_stride",
+                "split.plane_offset",
+                "split.val_share",
                 "split.random_state",
             ]},
             {"title": "Augmentation", "fields": [
@@ -527,7 +528,7 @@ class LaunchForms:
                 ]},
                 {"key": "folds", "title": "Folds", "panels": [
                     {"kind": "fields", "title": "Fold plan", "groups": [
-                        {"title": "Partitioning", "fields": ["cross_validation.validation_fraction", "cross_validation.stratified", "cross_validation.shuffle", "cross_validation.random_state"]},
+                        {"title": "Partitioning", "fields": ["cross_validation.val_share", "cross_validation.random_state"]},
                     ]},
                 ]},
                 *training_sections,

@@ -6,7 +6,6 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class ErrorQuantiles:
     p90 : float = 0.90
-    p95 : float = 0.95
 
 
 @dataclass(frozen=True)
@@ -29,7 +28,6 @@ class AnalysisPlotStyle:
     bins              : int   = 60
     bar_alpha         : float = 0.85
     line_width        : float = 1.2
-    cumulative_width  : float = 1.5
     colorbar_shrink   : float = 0.6
     colormap          : str   = "viridis"
 

@@ -138,8 +138,8 @@ class FeatureImportancePipeline:
 
         self.evaluator = SplitMetricEvaluator(self.predictor, ImportanceMetrics.keys)
 
-        predictions, targets = self.predictor.predict(self.engine.loader())
-        self.baseline        = InferenceMetrics(self.logger).compute(predictions, targets, stage="baseline")
+        predictions, targets, scored = self.predictor.predict(self.engine.loader())
+        self.baseline                = InferenceMetrics(self.logger).compute(predictions, targets, scored, stage="baseline")
 
     def _run_permutation(self):
         if not self.config.permutation:

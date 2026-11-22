@@ -95,6 +95,7 @@ class TabularSplitBuilder:
     def _features_for_split(self, split_name, samples, geometry_positions, realizer, augmentation):
         features = np.empty((len(samples), len(self.feature_names)), dtype=np.float32)
         targets  = samples[:, 4:7].astype(np.float32).copy()
+        scored   = samples[:, 8:11] > 0.5
 
         with self.logger.track() as progress:
             task_id = progress.add_task(f"Extracting {split_name} features", total=len(samples))
@@ -104,7 +105,7 @@ class TabularSplitBuilder:
                 features[index] = self.extractor.extract(positions, light)
                 progress.advance(task_id)
 
-        return features, targets
+        return features, targets, scored
 
     def run(self):
         self.logger.section("[Tabular Feature Extraction]")

@@ -75,7 +75,7 @@ class EvaluationGraphTensors:
         return int(self.graphs[0].graph_attr.shape[1])
 
     def rebuild(self, graph, node_features, edge_features):
-        attributes = {"x": node_features, "edge_index": graph.edge_index, "edge_attr": edge_features, "y": graph.y}
+        attributes = {"x": node_features, "edge_index": graph.edge_index, "edge_attr": edge_features, "y": graph.y, "scored": graph.scored}
         if "graph_attr" in graph:
             attributes["graph_attr"] = graph.graph_attr
         return Data(**attributes)
@@ -105,6 +105,6 @@ class SplitMetricEvaluator:
         self.metrics     = InferenceMetrics(NullLogger())
 
     def evaluate(self, loader):
-        predictions, targets = self.predictor.predict(loader)
-        results              = self.metrics.compute(predictions, targets, stage="perturbation")
+        predictions, targets, scored = self.predictor.predict(loader)
+        results                      = self.metrics.compute(predictions, targets, scored, stage="perturbation")
         return {key: float(results[key]) for key in self.metric_keys}

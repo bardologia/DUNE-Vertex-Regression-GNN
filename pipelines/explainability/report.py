@@ -136,8 +136,7 @@ class FeatureImportanceReport:
 
         document.heading("Baseline performance", level=2)
         document.kv_table({
-            "Mean euclidean error [m]"     : f"{baseline['euclidean_mean']:.4f}",
-            "Median euclidean error [m]"   : f"{baseline['euclidean_median']:.4f}",
+            "3D RMS error [m]"             : f"{baseline['rms_3d']:.4f}",
             "Mean absolute error [m]"      : f"{baseline['mae']:.4f}",
             "Root-mean-square error [m]"   : f"{baseline['rmse']:.4f}",
             "Coefficient of determination" : f"{baseline['r2']:.4f}",

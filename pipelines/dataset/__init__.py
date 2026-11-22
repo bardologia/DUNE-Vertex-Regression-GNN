@@ -5,7 +5,7 @@ from .graph_dataset   import GraphDataset, StatsEstimator
 from .normalization   import ChannelStrategySelector, FeatureGroupNormalizer, NormalizationStats
 from .parquet_store   import ParquetDatasetWriter, ParquetEventReader
 from .pipeline        import DatasetPipeline
-from .splitting       import CrossValidationSplitter, StratificationLabeller, TargetBalancer
+from .splitting       import LatticePlanes, PlaneSplitter
 
 __all__ = [
     "Augmentation",
@@ -28,7 +28,6 @@ __all__ = [
     "NormalizationStats",
     "ParquetDatasetWriter",
     "ParquetEventReader",
-    "CrossValidationSplitter",
-    "StratificationLabeller",
-    "TargetBalancer",
+    "LatticePlanes",
+    "PlaneSplitter",
 ]

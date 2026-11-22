@@ -21,7 +21,7 @@ def _synthetic_splits(seed=0, rows=240, features=12):
     def make(count):
         X = generator.normal(size=(count, features)).astype(np.float32)
         y = np.column_stack([X[:, 0] * 2.0, X[:, 1] - X[:, 2], X[:, 3]]).astype(np.float32)
-        return X, y + 0.01 * generator.normal(size=(count, 3)).astype(np.float32)
+        return X, y + 0.01 * generator.normal(size=(count, 3)).astype(np.float32), np.ones((count, 3), dtype=bool)
 
     return {"train": make(rows), "val": make(60), "test": make(60)}
 
@@ -72,8 +72,8 @@ def test_tabular_split_builder_expands_train_octants(parquet_store, quiet_logger
     builder = TabularSplitBuilder(config, BaselineFeatureConfig(), quiet_logger)
     splits  = builder.run()
 
-    train_features, train_targets = splits["train"]
-    val_features, val_targets     = splits["val"]
+    train_features, train_targets, train_scored = splits["train"]
+    val_features, val_targets, val_scored       = splits["val"]
 
     reader        = ParquetEventReader(parquet_store).load_store()
     octant_frame  = reader.octant_frame
@@ -86,6 +86,8 @@ def test_tabular_split_builder_expands_train_octants(parquet_store, quiet_logger
     assert train_features.shape[0] > len(builder.split_base_ids["train"])
     assert val_features.shape[0]   == len(builder.split_base_ids["val"])
     assert train_targets.shape[1]  == 3
+    assert train_scored.all()
+    assert val_scored.any(axis=1).all()
     assert np.isfinite(train_features).all() and np.isfinite(val_features).all()
 
 
@@ -95,7 +97,7 @@ def test_booster_families_fit_and_predict(family_key):
     splits  = _synthetic_splits()
     family  = BaselineFamilies.by_key()[family_key]
 
-    model = family(booster, seed=0).fit(splits["train"][0], splits["train"][1], splits["val"][0], splits["val"][1], {"learning_rate": 0.1})
+    model = family(booster, seed=0).fit(splits["train"][0], splits["train"][1], splits["val"][0], splits["val"][1], splits["val"][2], {"learning_rate": 0.1})
 
     predictions = model.predict(splits["test"][0])
     assert predictions.shape == (60, 3)

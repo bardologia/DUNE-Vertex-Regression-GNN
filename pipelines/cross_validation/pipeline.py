@@ -16,7 +16,7 @@ from tools.reporting.markdown               import MarkdownDoc, MarkdownTable, S
 from tools.runtime.reproducibility          import Reproducibility
 
 from pipelines.dataset.pipeline    import DatasetPipeline
-from pipelines.dataset.splitting   import CrossValidationSplitter
+from pipelines.dataset.splitting   import PlaneSplitter
 from pipelines.inference.scoring   import InferenceMetrics, Predictor
 from pipelines.shared.run_metadata import TrainingRunMetadata
 from pipelines.training.trainer    import OptimizerOverrideApplier, Trainer
@@ -50,12 +50,11 @@ class CrossValidationReport:
 
     def _write_json(self, fold_records, aggregate):
         payload = {
-            "n_folds"             : self.config.n_folds,
-            "stratified"          : self.config.stratified,
-            "validation_fraction" : self.config.validation_fraction,
-            "random_state"        : self.config.random_state,
-            "folds"               : fold_records,
-            "aggregate"           : aggregate,
+            "n_folds"      : self.config.n_folds,
+            "val_share"    : self.config.val_share,
+            "random_state" : self.config.random_state,
+            "folds"        : fold_records,
+            "aggregate"    : aggregate,
         }
         metrics_path = self.output_directory / IoNames.cv_metrics_file
         metrics_path.write_text(json.dumps(payload, indent=IoNames.json_indent), encoding="utf-8")
@@ -64,8 +63,8 @@ class CrossValidationReport:
     def _build_markdown(self, fold_records, aggregate):
         document = MarkdownDoc(title="Cross-Validation Report")
         document.bold_kv("Folds", self.config.n_folds)
-        document.bold_kv("Stratified", self.config.stratified)
-        document.bold_kv("Validation fraction", self.config.validation_fraction)
+        document.bold_kv("Validation share", self.config.val_share)
+        document.bold_kv("Fold layout", f"fold k holds out the lattice planes whose index along each axis is k modulo {self.config.n_folds}; each axis is scored on its held-out coordinates")
         document.blank()
 
         per_fold_table = MarkdownTable(["Fold", *CrossValidationReportFields.summary_metrics], align=["right"] + ["right"] * len(CrossValidationReportFields.summary_metrics))
@@ -142,7 +141,9 @@ class CrossValidationPipeline:
         self.samples          = self.dataset_pipeline.prepare_samples()
 
         present_base_ids, target_dataframe = self.dataset_pipeline.base_event_targets(self.samples)
-        event_folds                        = CrossValidationSplitter(self.logger, self.entry.dataset.data.coordinate_columns, self.cross_validation).split(target_dataframe)
+        targets                            = target_dataframe.to_numpy(dtype=np.float32)
+        settings                           = self.cross_validation
+        event_folds                        = [PlaneSplitter(self.logger, settings.n_folds, fold_index, settings.val_share, settings.random_state).split(targets) for fold_index in range(settings.n_folds)]
         self.folds                         = self._expand_event_folds(present_base_ids, event_folds)
 
         self.logger.subsection(f"Samples: {len(self.samples)} | Base events: {len(present_base_ids)} | Folds: {len(self.folds)}")
@@ -161,6 +162,12 @@ class CrossValidationPipeline:
 
     def _train_fold(self, fold_index, train_indices, validation_indices, test_indices):
         Reproducibility.seed_everything(self.entry.seed + fold_index)
+
+        split              = self.entry.dataset.split
+        split.plane_stride = self.cross_validation.n_folds
+        split.plane_offset = fold_index
+        split.val_share    = self.cross_validation.val_share
+        split.random_state = self.cross_validation.random_state
 
         datasets, stats = self.dataset_pipeline.run_with_indices(train_indices, validation_indices, test_indices)
         loop            = self.training_config.loop
@@ -201,8 +208,8 @@ class CrossValidationPipeline:
         checkpoint_path = run_metadata.checkpoint_path
         predictor       = Predictor(model, checkpoint_path, stats, device, run_metadata.logger).prepare()
 
-        predictions, targets = predictor.predict(test_loader)
-        return InferenceMetrics(run_metadata.logger, run_metadata.tracker).compute(predictions, targets, stage="cross_validation_test")
+        predictions, targets, scored = predictor.predict(test_loader)
+        return InferenceMetrics(run_metadata.logger, run_metadata.tracker).compute(predictions, targets, scored, stage="cross_validation_test")
 
     def _run_folds(self):
         self.fold_records = []

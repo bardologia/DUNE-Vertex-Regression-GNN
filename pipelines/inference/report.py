@@ -40,10 +40,11 @@ class FigureWriter:
 
 
 class AnalysisPlots(FigureWriter):
-    def _predicted_vs_true(self, predictions, targets):
+    def _predicted_vs_true(self, predictions, targets, scored):
         for index, name in enumerate(CoordinateAxes.names):
-            true_values      = targets[:, index]
-            predicted_values = predictions[:, index]
+            rows             = scored[:, index]
+            true_values      = targets[rows, index]
+            predicted_values = predictions[rows, index]
             limits           = [min(true_values.min(), predicted_values.min()), max(true_values.max(), predicted_values.max())]
 
             figure, axis = plt.subplots(figsize=AnalysisPlotStyle.square_figure)
@@ -55,9 +56,10 @@ class AnalysisPlots(FigureWriter):
             axis.set_aspect("equal", adjustable="box")
             self._save(figure, IoNames.predicted_vs_true_figure.format(coordinate=name))
 
-    def _residual_histograms(self, predictions, targets):
+    def _residual_histograms(self, predictions, targets, scored):
         for index, name in enumerate(CoordinateAxes.names):
-            residuals = predictions[:, index] - targets[:, index]
+            rows      = scored[:, index]
+            residuals = predictions[rows, index] - targets[rows, index]
 
             figure, axis = plt.subplots(figsize=AnalysisPlotStyle.panel_figure)
             axis.hist(residuals, bins=AnalysisPlotStyle.bins, color=PlotStyle.primary_color, alpha=AnalysisPlotStyle.bar_alpha)
@@ -67,10 +69,11 @@ class AnalysisPlots(FigureWriter):
             axis.set_title(f"Residual distribution {name}")
             self._save(figure, IoNames.residual_histogram_figure.format(coordinate=name))
 
-    def _error_vs_true(self, predictions, targets):
+    def _error_vs_true(self, predictions, targets, scored):
         for index, name in enumerate(CoordinateAxes.names):
-            true_values     = targets[:, index]
-            absolute_errors = np.abs(predictions[:, index] - targets[:, index])
+            rows            = scored[:, index]
+            true_values     = targets[rows, index]
+            absolute_errors = np.abs(predictions[rows, index] - targets[rows, index])
 
             figure, axis = plt.subplots(figsize=AnalysisPlotStyle.panel_figure)
             axis.scatter(true_values, absolute_errors, s=AnalysisPlotStyle.point_size, alpha=AnalysisPlotStyle.point_alpha, color=PlotStyle.primary_color, edgecolors="none")
@@ -79,27 +82,6 @@ class AnalysisPlots(FigureWriter):
             axis.set_title(f"Absolute error versus true {name}")
             self._save(figure, IoNames.error_vs_true_figure.format(coordinate=name))
 
-    def _euclidean_histogram(self, distances):
-        figure, axis = plt.subplots(figsize=AnalysisPlotStyle.panel_figure)
-        axis.hist(distances, bins=AnalysisPlotStyle.bins, color=PlotStyle.secondary_color, alpha=AnalysisPlotStyle.bar_alpha)
-        axis.axvline(float(np.median(distances)), color=PlotStyle.accent_color, linewidth=AnalysisPlotStyle.line_width, linestyle="--")
-        axis.set_xlabel(f"Euclidean error [{CoordinateAxes.unit}]")
-        axis.set_ylabel("Count")
-        axis.set_title("Euclidean error distribution")
-        self._save(figure, IoNames.euclidean_histogram_figure)
-
-    def _euclidean_cumulative(self, distances):
-        sorted_distances    = np.sort(distances)
-        cumulative_fraction = np.arange(1, len(sorted_distances) + 1) / len(sorted_distances)
-
-        figure, axis = plt.subplots(figsize=AnalysisPlotStyle.panel_figure)
-        axis.plot(sorted_distances, cumulative_fraction, color=PlotStyle.primary_color, linewidth=AnalysisPlotStyle.cumulative_width)
-        axis.set_xlabel(f"Euclidean error [{CoordinateAxes.unit}]")
-        axis.set_ylabel("Cumulative fraction")
-        axis.set_title("Cumulative euclidean error")
-        axis.set_ylim(0, 1)
-        self._save(figure, IoNames.euclidean_cumulative_figure)
-
     def _error_three_dimensional(self, targets, distances):
         figure  = plt.figure(figsize=AnalysisPlotStyle.volume_figure)
         axis    = figure.add_subplot(projection="3d")
@@ -107,20 +89,19 @@ class AnalysisPlots(FigureWriter):
         axis.set_xlabel(f"x [{CoordinateAxes.unit}]")
         axis.set_ylabel(f"y [{CoordinateAxes.unit}]")
         axis.set_zlabel(f"z [{CoordinateAxes.unit}]")
-        axis.set_title("Spatial distribution of euclidean error")
-        figure.colorbar(scatter, ax=axis, shrink=AnalysisPlotStyle.colorbar_shrink, label=f"Euclidean error [{CoordinateAxes.unit}]")
+        axis.set_title("Spatial distribution of the error on held-out coordinates")
+        figure.colorbar(scatter, ax=axis, shrink=AnalysisPlotStyle.colorbar_shrink, label=f"Error on held-out coordinates [{CoordinateAxes.unit}]")
         self._save(figure, IoNames.error_volume_figure)
 
-    def run(self, predictions, targets):
+    def run(self, predictions, targets, scored):
         predictions = predictions.detach().cpu().numpy()
         targets     = targets.detach().cpu().numpy()
-        distances   = np.sqrt(((predictions - targets) ** 2).sum(axis=1))
+        scored      = scored.detach().cpu().numpy()
+        distances   = np.sqrt((((predictions - targets) ** 2) * scored).sum(axis=1))
 
-        self._predicted_vs_true(predictions, targets)
-        self._residual_histograms(predictions, targets)
-        self._error_vs_true(predictions, targets)
-        self._euclidean_histogram(distances)
-        self._euclidean_cumulative(distances)
+        self._predicted_vs_true(predictions, targets, scored)
+        self._residual_histograms(predictions, targets, scored)
+        self._error_vs_true(predictions, targets, scored)
         self._error_three_dimensional(targets, distances)
 
         self.logger.subsection(f"Generated {len(self.generated)} analysis plots in {self.output_directory}")
@@ -128,13 +109,13 @@ class AnalysisPlots(FigureWriter):
 
 
 class AnalysisAnimations(FigureWriter):
-    def _subsample(self, predictions, targets):
+    def _subsample(self, predictions, targets, scored):
         if predictions.shape[0] <= AnalysisAnimationStyle.maximum_points:
-            return predictions, targets
+            return predictions, targets, scored
 
         generator = np.random.default_rng(0)
         selection = generator.choice(predictions.shape[0], size=AnalysisAnimationStyle.maximum_points, replace=False)
-        return predictions[selection], targets[selection]
+        return predictions[selection], targets[selection], scored[selection]
 
     def _rotating_predictions(self, predictions, targets):
         figure = plt.figure(figsize=AnalysisPlotStyle.volume_figure)
@@ -150,8 +131,8 @@ class AnalysisAnimations(FigureWriter):
         figure  = plt.figure(figsize=AnalysisPlotStyle.volume_figure)
         axis    = figure.add_subplot(projection="3d")
         scatter = axis.scatter(targets[:, 0], targets[:, 1], targets[:, 2], c=distances, cmap=AnalysisPlotStyle.colormap, s=AnalysisAnimationStyle.error_point_size, alpha=AnalysisPlotStyle.volume_alpha)
-        self._label_volume(axis, "Euclidean error over the detector volume")
-        figure.colorbar(scatter, ax=axis, shrink=AnalysisPlotStyle.colorbar_shrink, label=f"Euclidean error [{CoordinateAxes.unit}]")
+        self._label_volume(axis, "Error on held-out coordinates over the detector volume")
+        figure.colorbar(scatter, ax=axis, shrink=AnalysisPlotStyle.colorbar_shrink, label=f"Error on held-out coordinates [{CoordinateAxes.unit}]")
 
         self._spin(figure, axis, IoNames.rotating_error_animation)
 
@@ -171,11 +152,11 @@ class AnalysisAnimations(FigureWriter):
         self.generated.append(filename)
         plt.close(figure)
 
-    def run(self, predictions, targets):
-        predictions          = predictions.detach().cpu().numpy()
-        targets              = targets.detach().cpu().numpy()
-        predictions, targets = self._subsample(predictions, targets)
-        distances            = np.sqrt(((predictions - targets) ** 2).sum(axis=1))
+    def run(self, predictions, targets, scored):
+        predictions                  = predictions.detach().cpu().numpy()
+        targets                      = targets.detach().cpu().numpy()
+        predictions, targets, scored = self._subsample(predictions, targets, scored.detach().cpu().numpy())
+        distances                    = np.sqrt((((predictions - targets) ** 2) * scored).sum(axis=1))
 
         self._rotating_predictions(predictions, targets)
         self._rotating_error(targets, distances)
@@ -197,12 +178,11 @@ class AnalysisReport:
         document.table(table)
 
         document.kv_table({
-            "euclidean_mean"   : f"{metrics['euclidean_mean']:.4f}",
-            "euclidean_median" : f"{metrics['euclidean_median']:.4f}",
-            "euclidean_p90"    : f"{metrics['euclidean_p90']:.4f}",
-            "euclidean_p95"    : f"{metrics['euclidean_p95']:.4f}",
-            "count"            : metrics["count"],
-        }, header=("Euclidean metric", "Value"))
+            "rms_3d" : f"{metrics['rms_3d']:.4f}",
+            "count"  : metrics["count"],
+            **{f"count_{name}": metrics[f"count_{name}"] for name in CoordinateAxes.names},
+        }, header=("Metric", "Value"))
+        document.paragraph("Each axis is scored only on the events whose coordinate on that axis lies on a lattice plane held out of training; rms_3d is the square root of the sum of the three per-axis mean squared errors.")
 
     def build(self, per_split_results):
         document = MarkdownDoc("Inference Analysis")

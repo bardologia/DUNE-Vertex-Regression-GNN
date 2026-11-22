@@ -37,14 +37,17 @@ class Loss:
             "Light falloff weight" : self.config.light_falloff_weight,
         })
 
-    def _data_term(self, predictions, targets):
+    def _elementwise(self, predictions, targets):
         if self.config.data_term == "mse":
-            return F.mse_loss(predictions, targets)
+            return (predictions - targets) ** 2
         if self.config.data_term == "huber":
-            return F.huber_loss(predictions, targets, delta=self.config.huber_delta)
+            return F.huber_loss(predictions, targets, delta=self.config.huber_delta, reduction="none")
 
-    def _euclidean_term(self, predictions, targets):
-        return torch.sqrt(((predictions - targets) ** 2).sum(dim=1) + LossSettings.epsilon).mean()
+    def _data_term(self, predictions, targets, scored):
+        return (self._elementwise(predictions, targets) * scored).sum() / scored.sum()
+
+    def _euclidean_term(self, predictions, targets, scored):
+        return torch.sqrt((((predictions - targets) ** 2) * scored).sum(dim=1) + LossSettings.epsilon).mean()
 
     def _light_falloff_term(self, predictions, data):
         device         = predictions.device
@@ -71,14 +74,14 @@ class Loss:
     def __call__(self, predictions, data):
         targets = data.y
 
-        data_term  = self._data_term(predictions, targets)
+        data_term  = self._data_term(predictions, targets, data.scored)
         total_loss = self.config.data_weight * data_term
 
         if self.config.euclidean_weight > 0.0:
             physical_predictions = self.stats.target.inverse_torch(predictions, predictions.device)
             physical_targets     = self.stats.target.inverse_torch(targets, predictions.device)
 
-            euclidean  = self._euclidean_term(physical_predictions, physical_targets)
+            euclidean  = self._euclidean_term(physical_predictions, physical_targets, data.scored)
             total_loss = total_loss + self.config.euclidean_weight * euclidean
 
         if self.config.light_falloff_weight > 0.0 and hasattr(data, "batch") and data.batch is not None:
@@ -346,7 +349,7 @@ class Trainer:
                     data                   = data.to(self.device, non_blocking=True)
                     predictions, loss_dict = self.forward(data)
 
-                    coordinate_errors.update(self._physical_residual(predictions, data.y))
+                    coordinate_errors.update(self._physical_residual(predictions, data.y), data.scored)
 
                     weighted_loss += loss_dict["total_loss"].item() * data.num_graphs
                     graph_count   += data.num_graphs

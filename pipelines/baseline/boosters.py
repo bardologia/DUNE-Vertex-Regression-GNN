@@ -15,17 +15,18 @@ class BoostedAxisEnsemble:
         self.seed    = int(seed)
         self.models  = []
 
-    def fit(self, features, targets, validation_features, validation_targets, params):
+    def fit(self, features, targets, validation_features, validation_targets, validation_scored, params):
         self.models = []
 
-        features            = np.ascontiguousarray(features)
-        validation_features = np.ascontiguousarray(validation_features)
+        features = np.ascontiguousarray(features)
 
         for axis_index in range(targets.shape[1]):
+            rows              = validation_scored[:, axis_index]
             target            = np.ascontiguousarray(targets[:, axis_index])
-            validation_target = np.ascontiguousarray(validation_targets[:, axis_index])
+            validation_axis   = np.ascontiguousarray(validation_features[rows])
+            validation_target = np.ascontiguousarray(validation_targets[rows, axis_index])
 
-            self.models.append(self._fit_axis(features, target, validation_features, validation_target, params, axis_index))
+            self.models.append(self._fit_axis(features, target, validation_axis, validation_target, params, axis_index))
         return self
 
     def predict(self, features):

@@ -65,12 +65,12 @@ class InferencePipeline:
         self.logger.section(f"[Inference: {split_name}]")
 
         loader               = GraphDataLoader(self.dataset_splits[split_name], batch_size=self.batch_size, shuffle=False)
-        predictions, targets = self.predictor.predict(loader)
+        predictions, targets, scored = self.predictor.predict(loader)
 
-        metrics         = InferenceMetrics(self.logger).compute(predictions, targets, stage=split_name)
+        metrics         = InferenceMetrics(self.logger).compute(predictions, targets, scored, stage=split_name)
         split_directory = self.analysis_directory / split_name
-        plots           = AnalysisPlots(split_directory, self.logger).run(predictions, targets)
-        animations      = AnalysisAnimations(split_directory, self.logger).run(predictions, targets)
+        plots           = AnalysisPlots(split_directory, self.logger).run(predictions, targets, scored)
+        animations      = AnalysisAnimations(split_directory, self.logger).run(predictions, targets, scored)
 
         return {"metrics": metrics, "plots": plots, "animations": animations}
 

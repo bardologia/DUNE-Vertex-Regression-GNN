@@ -187,7 +187,7 @@ class EventExportPipeline:
     def _predict_split(self, split_name):
         dataset              = self.inference.dataset_splits[split_name]
         loader               = GraphDataLoader(dataset, batch_size=self.inference.batch_size, shuffle=False)
-        predictions, targets = self.inference.predictor.predict(loader)
+        predictions, targets, _ = self.inference.predictor.predict(loader)
         return dataset, predictions.numpy().astype(np.float32), targets.numpy().astype(np.float32)
 
     def _event_sensors(self, base_dataset, index):

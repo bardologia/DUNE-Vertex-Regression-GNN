@@ -24,7 +24,7 @@ def test_inference_pipeline_outputs(parquet_store, tmp_path):
     results = InferencePipeline(run_directory, logger=Logger(log_dir="", name="infer", level="ERROR"), device="cpu", splits=("test",), batch_size=8).run()
 
     assert "test" in results
-    assert "euclidean_mean" in results["test"]["metrics"]
+    assert "rms_3d" in results["test"]["metrics"]
     assert "mae_x" in results["test"]["metrics"]
 
     analysis_directory = Path(run_directory) / "analysis" / "test"

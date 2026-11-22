@@ -64,7 +64,7 @@ class SweepPlots(FigureWriter):
         for index, series_value in enumerate(series_values):
             axis.plot(x_values, curves[index], marker="o", markersize=SweepPlotStyle.marker_size, linewidth=SweepPlotStyle.line_width, color=colours[index], label=f"{series_value:g}")
         axis.set_xlabel(x_label)
-        axis.set_ylabel("Mean euclidean error [m]")
+        axis.set_ylabel("3D RMS error [m]")
         axis.set_title(title)
         axis.legend(title=series_label, fontsize=SweepPlotStyle.legend_font_size, title_fontsize=SweepPlotStyle.legend_font_size, ncol=2, loc="best")
         self._save(figure, filename)
@@ -81,9 +81,9 @@ class SweepPlots(FigureWriter):
                 continue
             self._heatmap(metric_grids[metric_key], metric_label, IoNames.heatmap_figure.format(metric=metric_key), cmap)
 
-        euclidean = metric_grids["euclidean_mean"]
-        self._lines(self.scale_values, self.efficiency_values, euclidean, SweepPlotStyle.lines_vs_scale_colormap, SweepPlotStyle.scale_label, SweepPlotStyle.efficiency_label, "Mean euclidean error versus light scale factor", IoNames.euclidean_vs_scale_figure)
-        self._lines(self.efficiency_values, self.scale_values, euclidean.T, SweepPlotStyle.lines_vs_efficiency_colormap, SweepPlotStyle.efficiency_label, SweepPlotStyle.scale_label, "Mean euclidean error versus detection efficiency", IoNames.euclidean_vs_efficiency_figure)
+        rms_3d = metric_grids["rms_3d"]
+        self._lines(self.scale_values, self.efficiency_values, rms_3d, SweepPlotStyle.lines_vs_scale_colormap, SweepPlotStyle.scale_label, SweepPlotStyle.efficiency_label, "3D RMS error versus light scale factor", IoNames.rms_3d_vs_scale_figure)
+        self._lines(self.efficiency_values, self.scale_values, rms_3d.T, SweepPlotStyle.lines_vs_efficiency_colormap, SweepPlotStyle.efficiency_label, SweepPlotStyle.scale_label, "3D RMS error versus detection efficiency", IoNames.rms_3d_vs_efficiency_figure)
 
         self.logger.subsection(f"Generated {len(self.generated)} sweep plots in {self.output_directory}")
         return self.generated
@@ -139,21 +139,21 @@ class SweepReport:
         document.table(table)
 
     def _highlights(self, document, records):
-        ranked = sorted(records, key=lambda record: record["metrics"]["euclidean_mean"])
+        ranked = sorted(records, key=lambda record: record["metrics"]["rms_3d"])
         best   = ranked[0]
         worst  = ranked[-1]
 
         document.heading("Highlights", level=2)
         document.kv_table({
-            "Best mean euclidean error [m]"  : f"{best['metrics']['euclidean_mean']:.4f} at scale={best['scale_factor']:g}, efficiency={best['detection_efficiency']:g}",
-            "Worst mean euclidean error [m]" : f"{worst['metrics']['euclidean_mean']:.4f} at scale={worst['scale_factor']:g}, efficiency={worst['detection_efficiency']:g}",
+            "Best 3D RMS error [m]"  : f"{best['metrics']['rms_3d']:.4f} at scale={best['scale_factor']:g}, efficiency={best['detection_efficiency']:g}",
+            "Worst 3D RMS error [m]" : f"{worst['metrics']['rms_3d']:.4f} at scale={worst['scale_factor']:g}, efficiency={worst['detection_efficiency']:g}",
         }, code_keys=False)
 
     def _results_table(self, document, records):
         document.heading("Per-cell metrics", level=2)
         table = MarkdownTable(
-            ["Scale", "Efficiency", "Count", "MAE [m]", "RMSE [m]", "Eucl. mean [m]", "Eucl. median [m]", "R2"],
-            align=["right", "right", "right", "right", "right", "right", "right", "right"],
+            ["Scale", "Efficiency", "Count", "MAE [m]", "RMSE [m]", "3D RMS [m]", "R2"],
+            align=["right", "right", "right", "right", "right", "right", "right"],
         )
         for record in records:
             metrics = record["metrics"]
@@ -163,8 +163,7 @@ class SweepReport:
                 metrics["count"],
                 f"{metrics['mae']:.4f}",
                 f"{metrics['rmse']:.4f}",
-                f"{metrics['euclidean_mean']:.4f}",
-                f"{metrics['euclidean_median']:.4f}",
+                f"{metrics['rms_3d']:.4f}",
                 f"{metrics['r2']:.4f}",
             )
         document.table(table)

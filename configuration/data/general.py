@@ -52,8 +52,9 @@ class PhysicsConfig:
 
 @dataclass
 class SplitConfig:
-    test_size    : float = 0.1
-    val_ratio    : float = 0.1
+    plane_stride : int   = 6
+    plane_offset : int   = 3
+    val_share    : float = 0.5
     random_state : int   = 42
 
 
@@ -177,10 +178,3 @@ class NormalizationSettings:
     target_frames        : tuple = ("isotropic", "axiswise")
     node_spatial_group   : str   = "position"
     graph_spatial_groups : tuple = ("light_centroid", "sharp_centroid", "light_quantile")
-
-
-@dataclass(frozen=True)
-class StratificationSettings:
-    maximum_bins    : int = 10
-    targets_per_bin : int = 10
-    percentile_span : int = 100

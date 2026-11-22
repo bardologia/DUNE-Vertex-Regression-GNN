@@ -6,7 +6,6 @@ from datetime import datetime
 from pathlib  import Path
 
 import matplotlib.pyplot as plt
-import numpy as np
 import optuna
 import torch
 
@@ -19,9 +18,10 @@ from tools.reporting.markdown       import MarkdownDoc, MarkdownTable
 from tools.runtime.config_cli       import ConfigCli
 from tools.runtime.reproducibility  import Reproducibility
 
-from pipelines.inference.scoring     import InferenceMetrics
-from pipelines.inference.report      import PublicationStyle
-from pipelines.shared.store_geometry import StoreGeometryRecord
+from pipelines.inference.scoring       import InferenceMetrics
+from pipelines.inference.report        import PublicationStyle
+from pipelines.shared.coordinate_errors import CoordinateErrors
+from pipelines.shared.store_geometry   import StoreGeometryRecord
 
 from pipelines.baseline.boosters import BaselineFamilies
 from pipelines.baseline.features import TabularSplitBuilder
@@ -35,15 +35,15 @@ class BoosterTuner:
         self.seed    = seed
         self.logger  = logger
 
-        self.train_features, self.train_targets           = splits["train"]
-        self.validation_features, self.validation_targets = splits["val"]
+        self.train_features, self.train_targets, _                                = splits["train"]
+        self.validation_features, self.validation_targets, self.validation_scored = splits["val"]
 
     def _objective(self, trial):
         params = self.family.search_space(trial)
-        model  = self.family(self.booster, self.seed).fit(self.train_features, self.train_targets, self.validation_features, self.validation_targets, params)
+        model  = self.family(self.booster, self.seed).fit(self.train_features, self.train_targets, self.validation_features, self.validation_targets, self.validation_scored, params)
 
         predictions = model.predict(self.validation_features)
-        return float(np.mean(np.linalg.norm(predictions - self.validation_targets, axis=1)))
+        return CoordinateErrors().update(torch.from_numpy(predictions - self.validation_targets), torch.from_numpy(self.validation_scored)).results()["rms_3d"]
 
     def optimize(self):
         if self.search.startup_trials >= self.search.n_trials:
@@ -53,7 +53,7 @@ class BoosterTuner:
         study   = optuna.create_study(direction="minimize", sampler=sampler)
         study.optimize(self._objective, n_trials=self.search.n_trials)
 
-        self.logger.subsection(f"{self.family.LABEL} best val euclidean mean: {study.best_value:.4f} m (trial {study.best_trial.number})")
+        self.logger.subsection(f"{self.family.LABEL} best val 3D RMS: {study.best_value:.4f} m (trial {study.best_trial.number})")
         self.logger.kv_table(study.best_params, title=f"{self.family.LABEL} Best Hyperparameters")
         return study
 
@@ -119,7 +119,7 @@ class BaselineRunWriter:
         document.kv_table({
             "trials"             : len(study.trials),
             "best_trial"         : study.best_trial.number,
-            "best_val_euclidean" : f"{study.best_value:.4f} m",
+            "best_val_rms_3d"    : f"{study.best_value:.4f} m",
             "best_iterations"    : ", ".join(str(value) for value in model.best_iterations()),
             "octants"            : entry_config.dataset.data.augment_octants,
             "seed"               : entry_config.seed,
@@ -129,10 +129,10 @@ class BaselineRunWriter:
         document.kv_table(study.best_params)
 
         document.heading("Metrics", level=2)
-        columns = ["Split", "Euclidean mean [m]", "Euclidean median [m]", "P90 [m]", "MAE x [m]", "MAE y [m]", "MAE z [m]"]
+        columns = ["Split", "3D RMS [m]", "MAE x [m]", "MAE y [m]", "MAE z [m]"]
         table   = MarkdownTable(columns, align=["left"] + ["right"] * (len(columns) - 1))
         for split_name, metrics in per_split_metrics.items():
-            table.add_row(split_name, f"{metrics['euclidean_mean']:.4f}", f"{metrics['euclidean_median']:.4f}", f"{metrics['euclidean_p90']:.4f}", f"{metrics['mae_x']:.4f}", f"{metrics['mae_y']:.4f}", f"{metrics['mae_z']:.4f}")
+            table.add_row(split_name, f"{metrics['rms_3d']:.4f}", f"{metrics['mae_x']:.4f}", f"{metrics['mae_y']:.4f}", f"{metrics['mae_z']:.4f}")
         document.table(table)
 
         document.heading("Feature importance", level=2)
@@ -178,16 +178,16 @@ class BaselinePipeline:
     def _final_fit(self, family, best_params):
         self.logger.section(f"[Final Fit | {family.LABEL}]")
 
-        train_features, train_targets           = self.splits["train"]
-        validation_features, validation_targets = self.splits["val"]
-        return family(self.entry.baseline.booster, self.entry.seed).fit(train_features, train_targets, validation_features, validation_targets, best_params)
+        train_features, train_targets, _                           = self.splits["train"]
+        validation_features, validation_targets, validation_scored = self.splits["val"]
+        return family(self.entry.baseline.booster, self.entry.seed).fit(train_features, train_targets, validation_features, validation_targets, validation_scored, best_params)
 
     def _evaluate(self, family, model):
         per_split_metrics = {}
         for split_name in DatasetSplits.names:
-            features, targets             = self.splits[split_name]
+            features, targets, scored     = self.splits[split_name]
             predictions                   = model.predict(features)
-            per_split_metrics[split_name] = InferenceMetrics(self.logger).compute(torch.from_numpy(predictions), torch.from_numpy(targets), stage=f"{family.KEY}/{split_name}")
+            per_split_metrics[split_name] = InferenceMetrics(self.logger).compute(torch.from_numpy(predictions), torch.from_numpy(targets), torch.from_numpy(scored), stage=f"{family.KEY}/{split_name}")
         return per_split_metrics
 
     def _write_run(self, family, study, model, per_split_metrics):
@@ -219,15 +219,14 @@ class BaselinePipeline:
         for key, payload in summary.items():
             rows.append({
                 "Model"           : BaselineFamilies.by_key()[key].LABEL,
-                "Val euclidean"   : f"{payload['metrics']['val']['euclidean_mean']:.4f}",
-                "Test euclidean"  : f"{payload['metrics']['test']['euclidean_mean']:.4f}",
-                "Test median"     : f"{payload['metrics']['test']['euclidean_median']:.4f}",
-                "Test p90"        : f"{payload['metrics']['test']['euclidean_p90']:.4f}",
+                "Val 3D RMS"      : f"{payload['metrics']['val']['rms_3d']:.4f}",
+                "Test 3D RMS"     : f"{payload['metrics']['test']['rms_3d']:.4f}",
+                "Test MAE x/y/z"  : " / ".join(f"{payload['metrics']['test'][f'mae_{name}']:.4f}" for name in CoordinateAxes.names),
             })
-        self.logger.metrics_table(rows, ["Model", "Val euclidean", "Test euclidean", "Test median", "Test p90"], title="Baseline Comparison [m]")
+        self.logger.metrics_table(rows, ["Model", "Val 3D RMS", "Test 3D RMS", "Test MAE x/y/z"], title="Baseline Comparison [m]")
 
-        strongest = min(summary, key=lambda key: summary[key]["metrics"]["val"]["euclidean_mean"])
-        self.logger.subsection(f"Strongest baseline by val euclidean mean: {BaselineFamilies.by_key()[strongest].LABEL} (test euclidean mean {summary[strongest]['metrics']['test']['euclidean_mean']:.4f} m)")
+        strongest = min(summary, key=lambda key: summary[key]["metrics"]["val"]["rms_3d"])
+        self.logger.subsection(f"Strongest baseline by val 3D RMS: {BaselineFamilies.by_key()[strongest].LABEL} (test 3D RMS {summary[strongest]['metrics']['test']['rms_3d']:.4f} m)")
         return strongest
 
     def run(self):

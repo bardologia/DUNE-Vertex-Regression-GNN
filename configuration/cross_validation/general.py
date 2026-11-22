@@ -5,13 +5,11 @@ from dataclasses import dataclass
 
 @dataclass
 class CrossValidationConfig:
-    n_folds             : int   = 5
-    validation_fraction : float = 0.1
-    stratified          : bool  = True
-    shuffle             : bool  = True
-    random_state        : int   = 42
+    n_folds      : int   = 6
+    val_share    : float = 0.5
+    random_state : int   = 42
 
 
 @dataclass(frozen=True)
 class CrossValidationReportFields:
-    summary_metrics : tuple = ("euclidean_mean", "euclidean_median", "mae", "rmse", "median_error", "r2")
+    summary_metrics : tuple = ("rms_3d", "mae", "rmse", "median_error", "r2")

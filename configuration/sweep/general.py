@@ -30,8 +30,8 @@ class EnergyEfficiencySweepConfig:
 
 @dataclass(frozen=True)
 class SweepMetrics:
-    grid_keys   : tuple = ("euclidean_mean", "euclidean_median", "mae", "rmse", "r2")
-    csv_columns : tuple = ("scale_factor", "detection_efficiency", "count", "mae", "rmse", "r2", "median_error", "bias", "euclidean_mean", "euclidean_median", "euclidean_p90", "euclidean_p95")
+    grid_keys   : tuple = ("rms_3d", "mae", "rmse", "r2")
+    csv_columns : tuple = ("scale_factor", "detection_efficiency", "count", "mae", "rmse", "r2", "median_error", "bias", "rms_3d")
 
 
 @dataclass(frozen=True)
@@ -41,7 +41,7 @@ class SweepGridSettings:
 
 @dataclass(frozen=True)
 class SweepPlotStyle:
-    heatmaps                     : tuple = (("euclidean_mean", "Mean euclidean error [m]", "viridis_r"), ("euclidean_median", "Median euclidean error [m]", "viridis_r"), ("mae", "Mean absolute error [m]", "viridis_r"), ("rmse", "Root-mean-square error [m]", "viridis_r"), ("r2", "Coefficient of determination", "viridis"))
+    heatmaps                     : tuple = (("rms_3d", "3D RMS error [m]", "viridis_r"), ("mae", "Mean absolute error [m]", "viridis_r"), ("rmse", "Root-mean-square error [m]", "viridis_r"), ("r2", "Coefficient of determination", "viridis"))
     scale_label                  : str   = "Light scale factor"
     efficiency_label             : str   = "Detection efficiency"
     heatmap_figure               : tuple = (6, 5)

@@ -247,8 +247,8 @@ class TrainingStage(BenchmarkStage):
         predictor   = Predictor(model, checkpoint_path, self.stats, self.device, self.logger).prepare()
         test_loader = GraphDataLoader(self.datasets["test"], batch_size=self.config.training.loop.batch_size, shuffle=False)
 
-        predictions, targets = predictor.predict(test_loader)
-        return InferenceMetrics(self.logger).compute(predictions, targets, stage=f"benchmark_{model_name}")
+        predictions, targets, scored = predictor.predict(test_loader)
+        return InferenceMetrics(self.logger).compute(predictions, targets, scored, stage=f"benchmark_{model_name}")
 
     def _write_metrics(self, run_directory, metrics):
         metrics_path = Path(run_directory) / IoNames.metadata_dir / IoNames.metrics_file
@@ -294,7 +294,7 @@ class TrainingStage(BenchmarkStage):
                 "run_directory" : summary["run_directory"],
                 "metrics"       : metrics,
             })
-            self.logger.subsection(f"{model_name}: best val loss {summary['best_val_loss']:.4f} in {elapsed:.1f} s | test euclidean {metrics['euclidean_mean']:.4f} m")
+            self.logger.subsection(f"{model_name}: best val loss {summary['best_val_loss']:.4f} in {elapsed:.1f} s | test 3D RMS {metrics['rms_3d']:.4f} m")
         except Exception:
             record["status"] = "FAILED"
             record["error"]  = traceback.format_exc().strip().splitlines()[-1]
